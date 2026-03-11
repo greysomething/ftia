@@ -1,0 +1,65 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Redirect legacy WordPress feed URL
+[[redirects]]
+  from = "/feed"
+  to = "/api/feed"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/feed/"
+  to = "/api/feed"
+  status = 301
+  force = true
+
+# WordPress admin — 410 Gone
+[[redirects]]
+  from = "/wp-admin/*"
+  to = "/404"
+  status = 410
+
+[[redirects]]
+  from = "/wp-login.php"
+  to = "/login"
+  status = 301
+
+# Sitemap
+[[redirects]]
+  from = "/sitemap_index.xml"
+  to = "/sitemap.xml"
+  status = 301
+
+# Headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+[[headers]]
+  for = "/api/stripe/webhook"
+  [headers.values]
+    # Raw body needed for Stripe signature verification
+    x-netlify-raw-body = "true"
+
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/api/feed"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, s-maxage=3600"
