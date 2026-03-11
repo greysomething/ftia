@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply text-gray-800;
+    font-family: var(--font-sans);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold leading-tight;
+  }
+
+  a {
+    @apply text-primary hover:text-primary-light transition-colors;
+  }
+}
+
+@layer components {
+  .page-wrap {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .white-bg {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200;
+  }
+
+  .pro-title {
+    @apply text-lg font-semibold text-primary border-b border-gray-200 pb-2 mb-4 mt-6;
+  }
+
+  .production-status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .member-blur {
+    @apply blur-sm select-none pointer-events-none;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center px-4 py-2 bg-primary text-white font-medium rounded-md
+           hover:bg-primary-light transition-colors focus:outline-none focus:ring-2
+           focus:ring-primary focus:ring-offset-2;
+  }
+
+  .btn-accent {
+    @apply inline-flex items-center px-4 py-2 bg-accent text-white font-medium rounded-md
+           hover:bg-accent-dark transition-colors focus:outline-none focus:ring-2
+           focus:ring-accent focus:ring-offset-2;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center px-4 py-2 border border-primary text-primary font-medium rounded-md
+           hover:bg-primary hover:text-white transition-colors;
+  }
+
+  .form-input {
+    @apply block w-full rounded-md border border-gray-300 px-3 py-2 text-sm
+           focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  .pagination-link {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded border border-gray-300
+           text-sm hover:bg-primary hover:text-white hover:border-primary transition-colors;
+  }
+
+  .pagination-link-active {
+    @apply bg-primary text-white border-primary;
+  }
+}
