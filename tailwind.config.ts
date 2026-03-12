@@ -15,9 +15,13 @@ const config: Config = {
           light: '#2a5a8c',
         },
         accent: {
-          DEFAULT: '#e8a020',
-          dark: '#c07010',
-          light: '#f0b840',
+          DEFAULT: '#009BDE',
+          dark: '#007ab5',
+          light: '#33b5e8',
+        },
+        charcoal: {
+          DEFAULT: '#262626',
+          light: '#3a3a3a',
         },
         status: {
           'pre-production': '#2563eb',

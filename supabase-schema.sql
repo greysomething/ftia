@@ -654,7 +654,7 @@ ALTER TABLE user_memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE membership_orders ENABLE ROW LEVEL SECURITY;
 
 -- Helper function: check if current user has an active membership
-CREATE OR REPLACE FUNCTION auth.has_active_membership()
+CREATE OR REPLACE FUNCTION public.has_active_membership()
 RETURNS BOOLEAN AS $$
   SELECT EXISTS (
     SELECT 1 FROM user_memberships

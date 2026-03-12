@@ -299,6 +299,8 @@ export interface UserProfile {
   organization_type: string | null
   avatar_url: string | null
   wp_role: string
+  role: 'admin' | 'member'
+  stripe_customer_id: string | null
   wp_registered_at: string | null
   created_at: string
   updated_at: string

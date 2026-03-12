@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import type { UserProfile } from '@/types/database'
 
 export async function getSession() {
   const supabase = await createClient()
@@ -58,6 +59,41 @@ export async function getUserProfile() {
     .single()
 
   return data
+}
+
+export async function getAdminUser() {
+  const supabase = await createClient()
+  const user = await getUser()
+  if (!user) return null
+
+  const { data: profileData } = await supabase
+    .from('user_profiles')
+    .select('id, role, first_name, last_name, display_name')
+    .eq('id', user.id)
+    .single()
+
+  const profile = profileData as Pick<UserProfile, 'id' | 'role' | 'first_name' | 'last_name' | 'display_name'> | null
+
+  if (profile?.role !== 'admin') return null
+  return { user, profile }
+}
+
+export async function requireAdmin() {
+  const result = await getAdminUser()
+  if (!result) {
+    redirect('/login?message=Admin+access+required')
+  }
+  return result
+}
+
+export async function isAdmin(userId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', userId)
+    .single()
+  return data?.role === 'admin'
 }
 
 export async function isMember(userId: string): Promise<boolean> {

@@ -9,13 +9,13 @@ export const metadata: Metadata = {
 }
 
 export default async function HomePage() {
-  // Public visitors see the marketing homepage (logged-in users are redirected by middleware)
+  // Public visitors see the marketing homepage
   const { productions } = await getProductions({ page: 1 }).catch(() => ({ productions: [] }))
 
   return (
     <div>
       {/* Hero */}
-      <section className="bg-gradient-to-br from-primary to-primary-dark text-white py-20">
+      <section className="bg-gradient-to-br from-charcoal to-charcoal-light text-white py-20">
         <div className="page-wrap text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
             The Film &amp; Television<br />Industry Alliance
@@ -28,9 +28,39 @@ export default async function HomePage() {
             <Link href="/membership-account/membership-levels" className="btn-accent text-lg px-8 py-3">
               Join Now — See Plans
             </Link>
-            <Link href="/what-is-production-list" className="btn-outline border-white text-white hover:bg-white hover:text-primary text-lg px-8 py-3">
+            <Link
+              href="/what-is-production-list"
+              className="inline-flex items-center justify-center text-lg px-8 py-3 border border-white/40 text-white rounded-md hover:bg-white/10 transition-colors"
+            >
               Learn More
             </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats bar */}
+      <section className="bg-accent text-white py-4">
+        <div className="page-wrap">
+          <div className="flex flex-wrap justify-center items-center gap-6 text-sm font-semibold tracking-wide">
+            <span className="flex items-center gap-2">
+              <span className="text-xl font-bold">1,500+</span>
+              <span className="text-white/90">Active Productions</span>
+            </span>
+            <span className="text-white/40 hidden sm:inline">|</span>
+            <span className="flex items-center gap-2">
+              <span className="text-xl font-bold">2,000+</span>
+              <span className="text-white/90">Production Companies</span>
+            </span>
+            <span className="text-white/40 hidden sm:inline">|</span>
+            <span className="flex items-center gap-2">
+              <span className="text-xl font-bold">500+</span>
+              <span className="text-white/90">Crew Listings</span>
+            </span>
+            <span className="text-white/40 hidden sm:inline">|</span>
+            <span className="flex items-center gap-2">
+              <span className="text-xl font-bold">Daily</span>
+              <span className="text-white/90">Updates</span>
+            </span>
           </div>
         </div>
       </section>
@@ -97,7 +127,7 @@ export default async function HomePage() {
       )}
 
       {/* Pricing CTA */}
-      <section className="py-16 bg-primary text-white">
+      <section className="py-16 bg-charcoal text-white">
         <div className="page-wrap text-center">
           <h2 className="text-3xl font-bold mb-4">Ready to Join the Alliance?</h2>
           <p className="text-white/80 mb-8 max-w-xl mx-auto">
