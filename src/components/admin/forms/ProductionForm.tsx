@@ -17,7 +17,7 @@ interface ProductionFormProps {
 }
 
 const VISIBILITY_OPTIONS = [
-  { value: 'public', label: 'Public' },
+  { value: 'publish', label: 'Published' },
   { value: 'members_only', label: 'Members Only' },
   { value: 'private', label: 'Private (Draft)' },
 ]
@@ -60,7 +60,7 @@ export function ProductionForm({ production }: ProductionFormProps) {
 
         <div>
           <label className="form-label">Visibility</label>
-          <select name="visibility" defaultValue={production?.visibility ?? 'public'} className="form-input">
+          <select name="visibility" defaultValue={production?.visibility ?? 'publish'} className="form-input">
             {VISIBILITY_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}

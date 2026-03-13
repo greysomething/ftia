@@ -39,14 +39,13 @@ export default async function AdminCompaniesPage({ searchParams }: Props) {
             <tr>
               <th>ID</th>
               <th>Name</th>
-              <th>City</th>
               <th>Visibility</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {companies.length === 0 ? (
-              <tr><td colSpan={5} className="text-center text-gray-400 py-10">No companies found.</td></tr>
+              <tr><td colSpan={4} className="text-center text-gray-400 py-10">No companies found.</td></tr>
             ) : companies.map((c: any) => (
               <tr key={c.id}>
                 <td className="text-gray-400 text-xs w-16">{c.id}</td>
@@ -55,10 +54,9 @@ export default async function AdminCompaniesPage({ searchParams }: Props) {
                     {c.title}
                   </Link>
                 </td>
-                <td className="text-gray-500 text-sm">{[c.city, c.province].filter(Boolean).join(', ') || '—'}</td>
                 <td>
-                  <span className={`badge ${c.visibility === 'public' ? 'badge-green' : c.visibility === 'members_only' ? 'badge-blue' : 'badge-gray'}`}>
-                    {c.visibility}
+                  <span className={`badge ${c.visibility === 'publish' ? 'badge-green' : c.visibility === 'members_only' ? 'badge-blue' : 'badge-gray'}`}>
+                    {c.visibility === 'publish' ? 'Published' : c.visibility}
                   </span>
                 </td>
                 <td className="text-right">

@@ -13,6 +13,12 @@ export function CompanyForm({ company }: CompanyFormProps) {
 
   const v = (key: string) => company?.[key] ?? ''
 
+  // companies uses arrays for addresses/phones/faxes/emails; show the first entry in the form
+  const firstAddress = Array.isArray(company?.addresses) ? company.addresses[0] ?? '' : ''
+  const firstPhone = Array.isArray(company?.phones) ? company.phones[0] ?? '' : ''
+  const firstFax = Array.isArray(company?.faxes) ? company.faxes[0] ?? '' : ''
+  const firstEmail = Array.isArray(company?.emails) ? company.emails[0] ?? '' : ''
+
   return (
     <form action={action} className="space-y-6 max-w-2xl">
       {company && <input type="hidden" name="id" value={company.id} />}
@@ -35,8 +41,8 @@ export function CompanyForm({ company }: CompanyFormProps) {
         </div>
         <div>
           <label className="form-label">Visibility</label>
-          <select name="visibility" defaultValue={v('visibility') || 'public'} className="form-input">
-            <option value="public">Public</option>
+          <select name="visibility" defaultValue={v('visibility') || 'publish'} className="form-input">
+            <option value="publish">Published</option>
             <option value="members_only">Members Only</option>
             <option value="private">Private (Draft)</option>
           </select>
@@ -47,35 +53,21 @@ export function CompanyForm({ company }: CompanyFormProps) {
         <h2 className="font-semibold text-gray-700">Contact Details</h2>
         <div>
           <label className="form-label">Address</label>
-          <input name="address" defaultValue={v('address')} className="form-input" />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="form-label">City</label>
-            <input name="city" defaultValue={v('city')} className="form-input" />
-          </div>
-          <div>
-            <label className="form-label">Province / State</label>
-            <input name="province" defaultValue={v('province')} className="form-input" />
-          </div>
+          <input name="address" defaultValue={firstAddress} className="form-input" />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="form-label">Phone</label>
-            <input name="phone" defaultValue={v('phone')} className="form-input" />
+            <input name="phone" defaultValue={firstPhone} className="form-input" />
           </div>
           <div>
             <label className="form-label">Fax</label>
-            <input name="fax" defaultValue={v('fax')} className="form-input" />
+            <input name="fax" defaultValue={firstFax} className="form-input" />
           </div>
         </div>
         <div>
           <label className="form-label">Email</label>
-          <input name="email" type="email" defaultValue={v('email')} className="form-input" />
-        </div>
-        <div>
-          <label className="form-label">Website</label>
-          <input name="website" type="url" defaultValue={v('website')} className="form-input" placeholder="https://" />
+          <input name="email" type="email" defaultValue={firstEmail} className="form-input" />
         </div>
         <div>
           <label className="form-label">LinkedIn URL</label>

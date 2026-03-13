@@ -65,7 +65,7 @@ export function getMediaUrl(storagePath: string | null, originalUrl: string | nu
   if (storagePath) {
     return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/media/${storagePath}`
   }
-  return originalUrl ?? '/images/placeholder.jpg'
+  return originalUrl ?? '/images/placeholder.svg'
 }
 
 /** Pagination helper */

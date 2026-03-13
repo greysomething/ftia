@@ -15,18 +15,23 @@ export default async function HomePage() {
   return (
     <div>
       {/* Hero */}
-      <section className="bg-gradient-to-br from-charcoal to-charcoal-light text-white py-20">
-        <div className="page-wrap text-center">
+      <section className="relative min-h-[500px] md:min-h-[600px] flex items-center justify-center text-white overflow-hidden">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/images/hero-bg.jpg')" }}
+        />
+        <div className="absolute inset-0 bg-black/60" />
+        <div className="page-wrap text-center relative z-10 py-20">
           <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
-            The Film &amp; Television<br />Industry Alliance
+            Tracking Filmmaking Opportunities &amp;<br />Connecting Filmmakers Worldwide
           </h1>
           <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
-            Access 1,500+ active productions in pre-production. Find contacts, crew, and project
-            details for productions filming near you.
+            Monitoring all major film &amp; TV projects currently in pre-production
+            across North America. Updated daily by our editorial team.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/membership-account/membership-levels" className="btn-accent text-lg px-8 py-3">
-              Join Now — See Plans
+              Get Started
             </Link>
             <Link
               href="/what-is-production-list"

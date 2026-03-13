@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
         'id, title, slug, excerpt, created_at, production_type_links(production_types(name))',
         { count: 'exact' }
       )
-      .eq('visibility', 'public')
+      .eq('visibility', 'publish')
       .textSearch('fts', searchQuery, { type: 'websearch', config: 'english' })
       .range(offset, offset + perPage - 1)
 
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
         'id, title, slug, excerpt, company_category_links(company_categories(name))',
         { count: 'exact' }
       )
-      .eq('visibility', 'public')
+      .eq('visibility', 'publish')
       .textSearch('fts', searchQuery, { type: 'websearch', config: 'english' })
       .range(offset, offset + perPage - 1)
 
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
         'id, title, slug, excerpt, crew_category_links(role_categories(name))',
         { count: 'exact' }
       )
-      .eq('visibility', 'public')
+      .eq('visibility', 'publish')
       .textSearch('fts', searchQuery, { type: 'websearch', config: 'english' })
       .range(offset, offset + perPage - 1)
 

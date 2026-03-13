@@ -30,7 +30,7 @@ export default async function ProductionListArchivePage({
   const { data: lists, count } = await supabase
     .from('production_lists')
     .select('id, title, slug, excerpt, created_at', { count: 'exact' })
-    .eq('visibility', 'public')
+    .eq('visibility', 'publish')
     .order('created_at', { ascending: false })
     .range(offset, offset + PER_PAGE - 1)
 

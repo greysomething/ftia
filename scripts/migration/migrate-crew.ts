@@ -72,28 +72,27 @@ export async function runCrewMigration() {
 
     return {
       id: parseInt(p.ID, 10),
-      title: p.post_title,
+      wp_id: parseInt(p.ID, 10),
+      name: p.post_title,
       slug: p.post_name,
-      content: p.post_content || null,
-      excerpt: p.post_excerpt || null,
-      visibility: p.post_status === 'publish' ? 'public'
-        : p.post_status === 'private' ? 'members_only' : 'draft',
+      visibility: p.post_status === 'publish' ? 'publish'
+        : p.post_status === 'private' ? 'private' : 'draft',
       linkedin: meta.linkedin || null,
       twitter: meta.twitter || null,
-      emails: emails.length > 0 ? emails : null,
-      phones: phones.length > 0 ? phones : null,
-      thumbnail_id: meta._thumbnail_id ? parseInt(meta._thumbnail_id, 10) : null,
-      wp_id: parseInt(p.ID, 10),
-      created_at: p.post_date ? new Date(p.post_date).toISOString() : null,
-      updated_at: p.post_modified ? new Date(p.post_modified).toISOString() : null,
+      emails: emails.length > 0 ? emails : [],
+      phones: phones.length > 0 ? phones : [],
+      wp_created_at: p.post_date ? new Date(p.post_date).toISOString() : null,
+      wp_updated_at: p.post_modified ? new Date(p.post_modified).toISOString() : null,
     }
   })
 
-  await batchUpsert('crew_members', crewRows, 200, 'id')
+  const validRows = crewRows.filter(r => r.id && !isNaN(r.id) && r.name)
+  console.log(`  Filtered: ${crewRows.length} → ${validRows.length} valid rows`)
+  await batchUpsert('crew_members', validRows, 200, 'id')
 
   // Category links
   const catRows = catLinks.map((r) => ({
-    crew_member_id: parseInt(r.post_id, 10),
+    crew_id: parseInt(r.post_id, 10),
     category_id: parseInt(r.term_id, 10),
   }))
   if (catRows.length > 0) {

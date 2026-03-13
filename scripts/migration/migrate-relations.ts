@@ -21,6 +21,17 @@
 import { mysql, unserializePhp } from './db'
 import { supabase, batchUpsert } from './supabase-admin'
 
+/** Handle double-serialized PHP data: unserialize, and if result is a string, unserialize again */
+function deepUnserialize(val: string): any {
+  let result = unserializePhp(val)
+  // WordPress sometimes double-serializes: s:NNN:"a:5:{...}"
+  if (typeof result === 'string' && result.match(/^[abisNd][:;]/)) {
+    const inner = unserializePhp(result)
+    if (inner !== null) result = inner
+  }
+  return result
+}
+
 export async function runRelationsMigration() {
   console.log('\n=== RELATIONS MIGRATION ===')
 
@@ -52,7 +63,7 @@ export async function runRelationsMigration() {
 
   for (const row of contactMeta) {
     const productionId = parseInt(row.post_id, 10)
-    const parsed = unserializePhp(row.meta_value)
+    const parsed = deepUnserialize(row.meta_value)
     if (!parsed) continue
 
     const contacts = Array.isArray(parsed) ? parsed : [parsed]
@@ -69,9 +80,9 @@ export async function runRelationsMigration() {
             company_id: companyId,
             inline_name: null,
             inline_address: null,
-            inline_phone: null,
-            inline_fax: null,
-            inline_email: null,
+            inline_phones: [],
+            inline_faxes: [],
+            inline_emails: [],
           })
         }
       } else if (contact.companies !== undefined) {
@@ -93,9 +104,9 @@ export async function runRelationsMigration() {
             company_id: null,
             inline_name: name,
             inline_address: addresses[i] || null,
-            inline_phone: phones[i] || null,
-            inline_fax: faxes[i] || null,
-            inline_email: emails[i] || null,
+            inline_phones: phones[i] ? [phones[i]] : [],
+            inline_faxes: faxes[i] ? [faxes[i]] : [],
+            inline_emails: emails[i] ? [emails[i]] : [],
           })
         }
       }
@@ -107,7 +118,7 @@ export async function runRelationsMigration() {
 
   for (const row of rolesMeta) {
     const productionId = parseInt(row.post_id, 10)
-    const parsed = unserializePhp(row.meta_value)
+    const parsed = deepUnserialize(row.meta_value)
     if (!parsed) continue
 
     const roles = Array.isArray(parsed) ? parsed : [parsed]
@@ -117,7 +128,7 @@ export async function runRelationsMigration() {
 
       if (roleGroup.rolename !== undefined && roleGroup.peoples !== undefined) {
         // New format
-        const roleName = roleGroup.rolename || null
+        const roleName = roleGroup.rolename || 'Unknown'
         const peoples = Array.isArray(roleGroup.peoples) ? roleGroup.peoples : []
 
         for (const person of peoples) {
@@ -127,7 +138,7 @@ export async function runRelationsMigration() {
             if (!isNaN(crewId) && crewId > 0) {
               crewRoleRows.push({
                 production_id: productionId,
-                crew_member_id: crewId,
+                crew_id: crewId,
                 role_name: roleName,
                 inline_name: null,
               })
@@ -135,7 +146,7 @@ export async function runRelationsMigration() {
           } else if (typeof person === 'string' && person.trim()) {
             crewRoleRows.push({
               production_id: productionId,
-              crew_member_id: null,
+              crew_id: null,
               role_name: roleName,
               inline_name: person.trim(),
             })
@@ -148,13 +159,13 @@ export async function runRelationsMigration() {
         const maxLen = Math.max(roleArr.length, nameArr.length)
 
         for (let i = 0; i < maxLen; i++) {
-          const roleName = roleArr[i] || null
+          const roleName = roleArr[i] || 'Unknown'
           const personName = nameArr[i] || null
           if (!roleName && !personName) continue
 
           crewRoleRows.push({
             production_id: productionId,
-            crew_member_id: null,
+            crew_id: null,
             role_name: roleName,
             inline_name: personName,
           })
@@ -163,17 +174,44 @@ export async function runRelationsMigration() {
     }
   }
 
-  console.log(`  Inserting ${companyLinkRows.length} company links...`)
-  if (companyLinkRows.length > 0) {
-    // Clear and re-insert
+  // Pre-fetch valid IDs to filter out FK violations
+  const { data: validCompanies } = await supabase.from('companies').select('id')
+  const validCompanyIds = new Set((validCompanies ?? []).map((c: any) => c.id))
+  const { data: validCrew } = await supabase.from('crew_members').select('id')
+  const validCrewIds = new Set((validCrew ?? []).map((c: any) => c.id))
+  const { data: validProds } = await supabase.from('productions').select('id')
+  const validProdIds = new Set((validProds ?? []).map((p: any) => p.id))
+
+  // Filter out rows with invalid FK references
+  const filteredCompanyLinks = companyLinkRows.filter(r => {
+    if (!validProdIds.has(r.production_id)) return false
+    if (r.company_id && !validCompanyIds.has(r.company_id)) {
+      // Convert to inline link instead of discarding
+      r.inline_name = r.inline_name || `Company #${r.company_id}`
+      r.company_id = null
+    }
+    return true
+  })
+
+  const filteredCrewRoles = crewRoleRows.filter(r => {
+    if (!validProdIds.has(r.production_id)) return false
+    if (r.crew_id && !validCrewIds.has(r.crew_id)) {
+      r.inline_name = r.inline_name || `Crew #${r.crew_id}`
+      r.crew_id = null
+    }
+    return true
+  })
+
+  console.log(`  Inserting ${filteredCompanyLinks.length} company links (${companyLinkRows.length - filteredCompanyLinks.length} filtered)...`)
+  if (filteredCompanyLinks.length > 0) {
     await supabase.from('production_company_links').delete().gte('production_id', 1)
-    await batchUpsert('production_company_links', companyLinkRows, 500)
+    await batchUpsert('production_company_links', filteredCompanyLinks, 500)
   }
 
-  console.log(`  Inserting ${crewRoleRows.length} crew role links...`)
-  if (crewRoleRows.length > 0) {
+  console.log(`  Inserting ${filteredCrewRoles.length} crew role links (${crewRoleRows.length - filteredCrewRoles.length} filtered)...`)
+  if (filteredCrewRoles.length > 0) {
     await supabase.from('production_crew_roles').delete().gte('production_id', 1)
-    await batchUpsert('production_crew_roles', crewRoleRows, 500)
+    await batchUpsert('production_crew_roles', filteredCrewRoles, 500)
   }
 
   console.log('\n✓ Relations migration complete.')

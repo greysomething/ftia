@@ -1,6 +1,31 @@
-.next/
+# Dependencies
 node_modules/
+
+# Next.js build
+.next/
+out/
+
+# Environment variables (secrets)
 .env.local
 .env.*.local
-*.log
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
+# Vercel
+.vercel

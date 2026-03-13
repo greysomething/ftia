@@ -48,7 +48,7 @@ export function RegisterForm() {
 
     // Update profile with additional fields
     if (data.user) {
-      await supabase.from('user_profiles').upsert({
+      await (supabase.from as any)('user_profiles').upsert({
         id: data.user.id,
         first_name: form.firstName,
         last_name: form.lastName,

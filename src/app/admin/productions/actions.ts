@@ -13,7 +13,7 @@ export async function saveProduction(prevState: any, formData: FormData) {
   const id = formData.get('id') ? Number(formData.get('id')) : null
   const title = String(formData.get('title') ?? '').trim()
   const slug = String(formData.get('slug') ?? '').trim() || slugify(title)
-  const visibility = String(formData.get('visibility') ?? 'public')
+  const visibility = String(formData.get('visibility') ?? 'publish')
   const content = String(formData.get('content') ?? '') || null
   const production_date_start = (formData.get('production_date_start') as string) || null
   const production_date_end = (formData.get('production_date_end') as string) || null

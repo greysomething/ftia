@@ -74,14 +74,15 @@ export default async function CompanyPage({ params }: Props) {
 
             <div className="pro-title">Company Details:</div>
             <div className="space-y-2 text-sm">
-              {company.addresses?.[0] && (
+              {member && company.addresses?.[0] ? (
                 <div>
                   <span className="font-medium text-gray-600">Address: </span>
-                  {member ? (
-                    <span>{company.addresses[0]}</span>
-                  ) : (
-                    <span className="blur-sm">████████████████</span>
-                  )}
+                  <span>{company.addresses[0]}</span>
+                </div>
+              ) : !member && (
+                <div>
+                  <span className="font-medium text-gray-600">Address: </span>
+                  <span className="text-gray-400 italic">[Members Only]</span>
                 </div>
               )}
               {member && company.phones?.filter(Boolean).length > 0 && (

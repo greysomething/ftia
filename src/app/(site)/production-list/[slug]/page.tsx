@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { getUser, isMember } from '@/lib/auth'
 import ProductionCard from '@/components/ProductionCard'
 import MemberGate from '@/components/MemberGate'
@@ -25,11 +25,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export async function generateStaticParams() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { data } = await supabase
     .from('production_lists')
     .select('slug')
-    .eq('visibility', 'public')
+    .eq('visibility', 'publish')
   return (data ?? []).map((r) => ({ slug: r.slug }))
 }
 
@@ -58,7 +58,7 @@ export default async function ProductionListDetailPage({ params }: Props) {
       production_locations(location_text)
     `)
     .eq('list_id', list.id)
-    .eq('visibility', 'public')
+    .eq('visibility', 'publish')
     .order('title')
 
   const jsonLd = {

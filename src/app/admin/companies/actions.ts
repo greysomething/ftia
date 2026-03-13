@@ -13,17 +13,19 @@ export async function saveCompany(prevState: any, formData: FormData) {
   const id = formData.get('id') ? Number(formData.get('id')) : null
   const title = String(formData.get('title') ?? '').trim()
   const slug = String(formData.get('slug') ?? '').trim() || slugify(title)
-  const visibility = String(formData.get('visibility') ?? 'public')
+  const visibility = String(formData.get('visibility') ?? 'publish')
+
+  const addressVal = (formData.get('address') as string)?.trim() || null
+  const phoneVal = (formData.get('phone') as string)?.trim() || null
+  const faxVal = (formData.get('fax') as string)?.trim() || null
+  const emailVal = (formData.get('email') as string)?.trim() || null
 
   const row = {
     title, slug, visibility,
-    address: (formData.get('address') as string) || null,
-    city: (formData.get('city') as string) || null,
-    province: (formData.get('province') as string) || null,
-    phone: (formData.get('phone') as string) || null,
-    fax: (formData.get('fax') as string) || null,
-    email: (formData.get('email') as string) || null,
-    website: (formData.get('website') as string) || null,
+    addresses: addressVal ? [addressVal] : [],
+    phones: phoneVal ? [phoneVal] : [],
+    faxes: faxVal ? [faxVal] : [],
+    emails: emailVal ? [emailVal] : [],
     linkedin: (formData.get('linkedin') as string) || null,
     twitter: (formData.get('twitter') as string) || null,
     content: (formData.get('content') as string) || null,
@@ -32,10 +34,10 @@ export async function saveCompany(prevState: any, formData: FormData) {
   if (!title) return { error: 'Title is required.' }
 
   if (id) {
-    const { error } = await supabase.from('production_contacts').update(row).eq('id', id)
+    const { error } = await supabase.from('companies').update(row).eq('id', id)
     if (error) return { error: error.message }
   } else {
-    const { error } = await supabase.from('production_contacts').insert(row)
+    const { error } = await supabase.from('companies').insert(row)
     if (error) return { error: error.message }
   }
 
@@ -47,7 +49,7 @@ export async function saveCompany(prevState: any, formData: FormData) {
 export async function deleteCompany(id: number) {
   await requireAdmin()
   const supabase = createAdminClient()
-  const { error } = await supabase.from('production_contacts').delete().eq('id', id)
+  const { error } = await supabase.from('companies').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/companies')
   revalidatePath('/production-contact')

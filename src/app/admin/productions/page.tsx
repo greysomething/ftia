@@ -85,11 +85,11 @@ export default async function AdminProductionsPage({ searchParams }: Props) {
                     </td>
                     <td>
                       <span className={`badge ${
-                        p.visibility === 'public' ? 'badge-green'
+                        p.visibility === 'publish' ? 'badge-green'
                           : p.visibility === 'members_only' ? 'badge-blue'
                           : 'badge-gray'
                       }`}>
-                        {p.visibility}
+                        {p.visibility === 'publish' ? 'Published' : p.visibility}
                       </span>
                     </td>
                     <td className="text-right">

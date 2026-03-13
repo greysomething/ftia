@@ -33,6 +33,11 @@ export async function Header() {
             <Link href="/blog" className="text-white/90 hover:text-accent transition-colors">
               News
             </Link>
+            {user && (
+              <Link href="/do-not-work" className="text-white/90 hover:text-accent transition-colors">
+                DNW Notices
+              </Link>
+            )}
             <Link href="/what-is-production-list" className="text-white/90 hover:text-accent transition-colors">
               About
             </Link>

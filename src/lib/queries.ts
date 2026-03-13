@@ -2,7 +2,7 @@
  * Data-fetching helpers — all run server-side via Supabase.
  * These functions are called from Server Components and route handlers.
  */
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import type { Production, Company, CrewMember, BlogPost, Page, TaxonomyTerm } from '@/types/database'
 
 const PER_PAGE = 20
@@ -263,7 +263,7 @@ export async function getBlogPosts(page = 1) {
   return { posts: data ?? [], total: count ?? 0, page, perPage: PER_PAGE }
 }
 
-export async function getBlogPostBySlug(slug: string) {
+export async function getBlogPostBySlug(slug: string): Promise<(BlogPost & Record<string, any>) | null> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -281,10 +281,10 @@ export async function getBlogPostBySlug(slug: string) {
     .single()
 
   if (error) return null
-  return data
+  return data as any
 }
 
-export async function getBlogPostsByCategory(categorySlug: string, page = 1) {
+export async function getBlogPostsByCategory(categorySlug: string, page = 1): Promise<any> {
   const supabase = await createClient()
   const from = (page - 1) * PER_PAGE
 
@@ -340,7 +340,7 @@ export async function getBlogPostsByTag(tagSlug: string, page = 1) {
 // PAGES
 // ============================================================
 
-export async function getPageBySlug(slug: string, parentSlug?: string) {
+export async function getPageBySlug(slug: string, parentSlug?: string): Promise<(Page & Record<string, any>) | null> {
   const supabase = await createClient()
 
   let query = supabase
@@ -363,7 +363,7 @@ export async function getPageBySlug(slug: string, parentSlug?: string) {
 
   const { data, error } = await query.single()
   if (error) return null
-  return data
+  return data as any
 }
 
 // ============================================================
@@ -381,7 +381,7 @@ export async function getMembershipLevels() {
   return data ?? []
 }
 
-export async function getUserActiveMembership(userId: string) {
+export async function getUserActiveMembership(userId: string): Promise<any> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('user_memberships')
@@ -439,8 +439,9 @@ export async function getRecentProductionsForRSS(limit = 20) {
   return data ?? []
 }
 
-export async function getProductionSlugs() {
-  const supabase = await createClient()
+/** Used by generateStaticParams — no request context, so use admin client */
+export async function getProductionSlugs(): Promise<Array<{ slug: string; wp_updated_at: string | null }>> {
+  const supabase = createAdminClient()
   const { data } = await supabase
     .from('productions')
     .select('slug, wp_updated_at')
@@ -448,11 +449,32 @@ export async function getProductionSlugs() {
   return data ?? []
 }
 
-export async function getBlogSlugs() {
-  const supabase = await createClient()
+/** Used by generateStaticParams — no request context, so use admin client */
+export async function getBlogSlugs(): Promise<Array<{ slug: string; published_at: string | null }>> {
+  const supabase = createAdminClient()
   const { data } = await supabase
     .from('blog_posts')
     .select('slug, published_at')
     .eq('visibility', 'publish')
   return data ?? []
+}
+
+// ============================================================
+// DO NOT WORK NOTICES
+// ============================================================
+
+export async function getDnwNotices({ page = 1 }: { page?: number } = {}) {
+  const supabase = await createClient()
+  const from = (page - 1) * PER_PAGE
+  const to = from + PER_PAGE - 1
+
+  const { data, count, error } = await supabase
+    .from('dnw_notices')
+    .select('id, production_title, company_name, reason, details, notice_date, status', { count: 'exact' })
+    .eq('status', 'active')
+    .order('notice_date', { ascending: false })
+    .range(from, to)
+
+  if (error) throw error
+  return { notices: data ?? [], total: count ?? 0, page, perPage: PER_PAGE }
 }

@@ -191,11 +191,19 @@ export default async function ProductionPage({ params }: Props) {
                       // Inline (no linked company)
                       return (
                         <div key={link.id} className="border rounded-lg p-4">
-                          <span className={`font-semibold ${member ? 'text-gray-800' : 'blur-sm'}`}>
-                            {link.inline_name}
-                          </span>
-                          {member && link.inline_address && (
-                            <p className="text-sm text-gray-500 mt-1">{link.inline_address}</p>
+                          {member ? (
+                            <>
+                              <span className="font-semibold text-gray-800">
+                                {link.inline_name}
+                              </span>
+                              {link.inline_address && (
+                                <p className="text-sm text-gray-500 mt-1">{link.inline_address}</p>
+                              )}
+                            </>
+                          ) : (
+                            <span className="font-semibold text-gray-400 italic">
+                              [Members Only]
+                            </span>
                           )}
                         </div>
                       )
@@ -216,8 +224,8 @@ export default async function ProductionPage({ params }: Props) {
                             {role.role_name}
                           </td>
                           <td className="py-2 text-gray-800">
-                            {role.crew_members ? (
-                              member ? (
+                            {member ? (
+                              role.crew_members ? (
                                 <Link
                                   href={`/production-role/${role.crew_members.slug}`}
                                   className="text-primary hover:underline"
@@ -225,12 +233,10 @@ export default async function ProductionPage({ params }: Props) {
                                   {role.crew_members.name}
                                 </Link>
                               ) : (
-                                <span className="blur-sm">{role.crew_members.name}</span>
+                                role.inline_name
                               )
-                            ) : member ? (
-                              role.inline_name
                             ) : (
-                              <span className="blur-sm">{role.inline_name}</span>
+                              <span className="text-gray-400 italic">[Members Only]</span>
                             )}
                           </td>
                         </tr>

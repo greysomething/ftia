@@ -35,10 +35,11 @@ export async function requireMembership() {
     .limit(1)
     .single()
 
+  const m = membership as { id: number; status: string; enddate: string | null } | null
   const hasActive =
-    membership &&
-    membership.status === 'active' &&
-    (!membership.enddate || new Date(membership.enddate) > new Date())
+    m &&
+    m.status === 'active' &&
+    (!m.enddate || new Date(m.enddate) > new Date())
 
   if (!hasActive) {
     redirect('/membership-account/membership-levels')
@@ -93,11 +94,32 @@ export async function isAdmin(userId: string): Promise<boolean> {
     .select('role')
     .eq('id', userId)
     .single()
-  return data?.role === 'admin'
+  return (data as { role: string } | null)?.role === 'admin'
 }
 
 export async function isMember(userId: string): Promise<boolean> {
   const supabase = await createClient()
+
+  // Admins automatically have member access unless viewing as visitor
+  const { data: profileData } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', userId)
+    .single()
+
+  const profile = profileData as { role: string } | null
+
+  if (profile?.role === 'admin') {
+    // Check for "view as visitor" override cookie
+    const { cookies } = await import('next/headers')
+    const cookieStore = await cookies()
+    if (cookieStore.get('admin_view_as')?.value === 'visitor') {
+      return false
+    }
+    return true
+  }
+
+  // Regular membership check
   const { data } = await supabase
     .from('user_memberships')
     .select('id')

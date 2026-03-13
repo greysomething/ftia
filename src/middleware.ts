@@ -46,6 +46,7 @@ export async function middleware(request: NextRequest) {
     '/membership-account',
     '/welcome',
     '/admin',
+    '/do-not-work',
   ]
 
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p))

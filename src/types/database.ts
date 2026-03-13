@@ -2,6 +2,7 @@ export type PostVisibility = 'publish' | 'private' | 'draft' | 'password'
 export type MembershipStatus = 'active' | 'inactive' | 'cancelled' | 'expired' | 'pending' | 'token' | 'review'
 export type MembershipPeriod = 'Day' | 'Week' | 'Month' | 'Year'
 export type ProductionPhase = 'in-pre-production' | 'in-production' | 'in-post-production' | 'completed'
+export type DnwNoticeStatus = 'active' | 'resolved'
 
 export interface Database {
   public: {
@@ -85,6 +86,21 @@ export interface Database {
         Row: { id: number; name: string; slug: string; description: string | null }
         Insert: Omit<{ id: number; name: string; slug: string; description: string | null }, 'id'>
         Update: Partial<{ name: string; slug: string; description: string | null }>
+      }
+      blog_post_categories: {
+        Row: { post_id: number; category_id: number }
+        Insert: { post_id: number; category_id: number }
+        Update: Partial<{ post_id: number; category_id: number }>
+      }
+      blog_post_tags: {
+        Row: { post_id: number; tag_id: number }
+        Insert: { post_id: number; tag_id: number }
+        Update: Partial<{ post_id: number; tag_id: number }>
+      }
+      dnw_notices: {
+        Row: DnwNotice
+        Insert: Omit<DnwNotice, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<DnwNotice, 'id'>>
       }
       production_locations: {
         Row: ProductionLocation
@@ -420,6 +436,18 @@ export interface ProductionCrewRole {
   inline_phones: string[]
   inline_emails: string[]
   sort_order: number
+}
+
+export interface DnwNotice {
+  id: number
+  production_title: string
+  company_name: string
+  reason: string
+  details: string
+  notice_date: string
+  status: DnwNoticeStatus
+  created_at: string
+  updated_at: string
 }
 
 export interface Media {

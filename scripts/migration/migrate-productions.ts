@@ -85,25 +85,33 @@ export async function runProductionsMigration() {
 
     return {
       id: parseInt(p.ID, 10),
+      wp_id: parseInt(p.ID, 10),
       title: p.post_title,
       slug: p.post_name,
       content: p.post_content || null,
       excerpt: p.post_excerpt || null,
-      visibility: p.post_status === 'publish' ? 'public'
-        : p.post_status === 'private' ? 'members_only' : 'draft',
-      date_start: parseProductionDate(meta.production_date_start || meta.production_date_startpost),
-      date_end: parseProductionDate(meta.production_date_end || meta.production_date_endpost),
-      thumbnail_id: meta._thumbnail_id ? parseInt(meta._thumbnail_id, 10) : null,
+      visibility: p.post_status === 'publish' ? 'publish'
+        : p.post_status === 'private' ? 'private' : 'draft',
+      production_date_start: parseProductionDate(meta.production_date_start),
+      production_date_end: parseProductionDate(meta.production_date_end),
+      production_date_startpost: parseProductionDate(meta.production_date_startpost),
+      production_date_endpost: parseProductionDate(meta.production_date_endpost),
+      thumbnail_id: null, // set to null initially; media table populated later
       _raw_contact: contactRaw ? JSON.stringify(unserializePhp(contactRaw)) : null,
       _raw_roles: rolesRaw ? JSON.stringify(unserializePhp(rolesRaw)) : null,
       _raw_locations: locationsRaw ? JSON.stringify(locationsJson) : null,
-      wp_id: parseInt(p.ID, 10),
-      created_at: p.post_date ? new Date(p.post_date).toISOString() : null,
-      updated_at: p.post_modified ? new Date(p.post_modified).toISOString() : null,
+      _raw_locations_new: meta.locations_new ? JSON.stringify(unserializePhp(meta.locations_new)) : null,
+      blog_linked: meta.blog_linked ? parseInt(meta.blog_linked, 10) : null,
+      wp_author_id: p.post_author ? parseInt(p.post_author, 10) : null,
+      wp_created_at: p.post_date ? new Date(p.post_date).toISOString() : null,
+      wp_updated_at: p.post_modified ? new Date(p.post_modified).toISOString() : null,
     }
   })
 
-  await batchUpsert('productions', productionRows, 200, 'id')
+  // Filter out rows with invalid IDs
+  const validRows = productionRows.filter(r => r.id && !isNaN(r.id) && r.title)
+  console.log(`  Filtered: ${productionRows.length} → ${validRows.length} valid rows`)
+  await batchUpsert('productions', validRows, 200, 'id')
 
   // Type links
   const typeRows = typeLinks.map((r) => ({
@@ -146,11 +154,17 @@ async function migrateProductionLocations(
 
     // locations_new is array of location strings or objects
     const locations = Array.isArray(parsed) ? parsed : Object.values(parsed)
+    let sortIdx = 0
     for (const loc of locations) {
       if (!loc) continue
+      const locStr = typeof loc === 'string' ? loc : (loc.location || loc.name || JSON.stringify(loc))
       locationRows.push({
         production_id: parseInt(p.ID, 10),
-        location_text: typeof loc === 'string' ? loc : JSON.stringify(loc),
+        location: locStr,
+        stage: typeof loc === 'object' ? (loc.stage || null) : null,
+        city: typeof loc === 'object' ? (loc.city || null) : null,
+        country: typeof loc === 'object' ? (loc.country || null) : null,
+        sort_order: sortIdx++,
       })
     }
   }

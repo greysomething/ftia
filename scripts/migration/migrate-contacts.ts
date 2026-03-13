@@ -59,27 +59,27 @@ export async function runContactsMigration() {
 
     return {
       id: parseInt(p.ID, 10),
+      wp_id: parseInt(p.ID, 10),
       title: p.post_title,
       slug: p.post_name,
       content: p.post_content || null,
-      excerpt: p.post_excerpt || null,
-      visibility: p.post_status === 'publish' ? 'public'
-        : p.post_status === 'private' ? 'members_only' : 'draft',
-      address: meta.address || null,
-      phone: meta.phone || null,
-      fax: meta.fax || null,
-      email: meta.email || null,
+      visibility: p.post_status === 'publish' ? 'publish'
+        : p.post_status === 'private' ? 'private' : 'draft',
+      addresses: meta.address ? [meta.address] : [],
+      phones: meta.phone ? [meta.phone] : [],
+      faxes: meta.fax ? [meta.fax] : [],
+      emails: meta.email ? [meta.email] : [],
       linkedin: meta.linkedin || null,
       twitter: meta.twitter || null,
-      thumbnail_id: meta._thumbnail_id ? parseInt(meta._thumbnail_id, 10) : null,
-      _raw_staffs: staffsJson ? JSON.stringify(staffsJson) : null,
-      wp_id: parseInt(p.ID, 10),
-      created_at: p.post_date ? new Date(p.post_date).toISOString() : null,
-      updated_at: p.post_modified ? new Date(p.post_modified).toISOString() : null,
+      thumbnail_id: null, // set to null initially; media table populated later
+      wp_created_at: p.post_date ? new Date(p.post_date).toISOString() : null,
+      wp_updated_at: p.post_modified ? new Date(p.post_modified).toISOString() : null,
     }
   })
 
-  await batchUpsert('companies', companyRows, 200, 'id')
+  const validRows = companyRows.filter(r => r.id && !isNaN(r.id) && r.title)
+  console.log(`  Filtered: ${companyRows.length} → ${validRows.length} valid rows`)
+  await batchUpsert('companies', validRows, 200, 'id')
 
   // Category links
   const catRows = catLinks.map((r) => ({
@@ -135,19 +135,17 @@ async function migrateCompanyStaff(
     const count = parseInt(staffs['staffs'] || '0', 10)
 
     for (let i = 0; i < count; i++) {
-      const name = staffs[`staffs_${i}_name`] || staffs[`staffs_${i}_staff_name`] || null
-      const role = staffs[`staffs_${i}_role`] || staffs[`staffs_${i}_staff_role`] || null
-      const email = staffs[`staffs_${i}_email`] || staffs[`staffs_${i}_staff_email`] || null
-      const phone = staffs[`staffs_${i}_phone`] || staffs[`staffs_${i}_staff_phone`] || null
+      // ACF staff repeater may reference a crew_id or store inline data
+      const crewIdStr = staffs[`staffs_${i}_staff`] || staffs[`staffs_${i}_crew_id`] || null
+      const position = staffs[`staffs_${i}_role`] || staffs[`staffs_${i}_staff_role`] || staffs[`staffs_${i}_position`] || null
+      const crewId = crewIdStr ? parseInt(crewIdStr, 10) : null
 
-      if (!name && !email) continue
+      if (!crewId) continue
 
       staffRows.push({
         company_id: companyId,
-        name: name,
-        role: role,
-        email: email,
-        phone: phone,
+        crew_id: crewId,
+        position: position,
         sort_order: i,
       })
     }

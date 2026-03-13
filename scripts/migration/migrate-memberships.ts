@@ -31,7 +31,7 @@ export async function runMembershipsMigration() {
            mu.initial_payment, mu.billing_amount, mu.billing_limit, mu.billing_period,
            mu.status, mu.startdate, mu.enddate,
            u.user_email
-    FROM pmpro_memberships_users mu
+    FROM wp_pmpro_memberships_users mu
     JOIN wp_users u ON u.ID = mu.user_id
     ORDER BY mu.id ASC
   `)
@@ -67,7 +67,7 @@ export async function runMembershipsMigration() {
            o.cardtype, o.payment_transaction_id, o.subscription_transaction_id,
            o.status, o.timestamp,
            u.user_email
-    FROM pmpro_membership_orders o
+    FROM wp_pmpro_membership_orders o
     JOIN wp_users u ON u.ID = o.user_id
     ORDER BY o.id ASC
   `)
@@ -121,7 +121,7 @@ export async function runMembershipsMigration() {
            dc.trial_amount, dc.trial_limit, dc.initial_payment,
            dc.billing_amount, dc.billing_limit, dc.billing_period,
            dc.description
-    FROM pmpro_discount_codes dc
+    FROM wp_pmpro_discount_codes dc
     ORDER BY dc.id ASC
   `)
 
@@ -145,7 +145,7 @@ export async function runMembershipsMigration() {
     // Code ↔ level associations
     const codeLevels = mysql(`
       SELECT dcl.code_id, dcl.level_id
-      FROM pmpro_discount_codes_levels dcl
+      FROM wp_pmpro_discount_codes_levels dcl
     `)
 
     if (codeLevels.length > 0) {

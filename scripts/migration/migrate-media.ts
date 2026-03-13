@@ -24,18 +24,25 @@ export async function runMediaMigration() {
 
   console.log(`  Found ${attachments.length} attachments`)
 
-  const rows = attachments.map((a) => ({
-    id: parseInt(a.ID, 10),
-    title: a.post_title || null,
-    slug: a.post_name || null,
-    mime_type: a.post_mime_type || null,
-    file_path: a.attached_file || null,
-    original_url: a.attached_file ? `${WP_UPLOAD_BASE}/${a.attached_file}` : (a.guid || null),
-    alt_text: a.alt_text || null,
-    created_at: a.post_date ? new Date(a.post_date).toISOString() : null,
-    // storage_path will be set after actual file upload
-    storage_path: null,
-  }))
+  const rows = attachments.map((a) => {
+    const attachedFile = a.attached_file || null
+    // Extract filename from path (e.g. "2024/01/photo.jpg" -> "photo.jpg")
+    const filename = attachedFile
+      ? attachedFile.split('/').pop() || attachedFile
+      : (a.post_name || 'unknown')
+
+    return {
+      id: parseInt(a.ID, 10),
+      wp_id: parseInt(a.ID, 10),
+      title: a.post_title || null,
+      filename: filename,
+      mime_type: a.post_mime_type || null,
+      original_url: attachedFile ? `${WP_UPLOAD_BASE}/${attachedFile}` : (a.guid || null),
+      alt_text: a.alt_text || null,
+      // storage_path will be set after actual file upload
+      storage_path: null,
+    }
+  }).filter(r => r.id && !isNaN(r.id))
 
   await batchUpsert('media', rows, 500, 'id')
 

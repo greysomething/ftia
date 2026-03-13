@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useState, useEffect } from 'react'
 
 const NAV_ITEMS = [
   {
@@ -55,6 +56,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: '/admin/dnw-notices',
+    label: 'DNW Notices',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/users',
     label: 'Users',
     icon: (
@@ -78,6 +89,35 @@ const NAV_ITEMS = [
 
 export function AdminSidebar() {
   const pathname = usePathname()
+  const [viewMode, setViewMode] = useState<'member' | 'visitor'>('member')
+  const [switching, setSwitching] = useState(false)
+
+  // Read cookie on mount to set initial state
+  useEffect(() => {
+    const cookie = document.cookie.split('; ').find(c => c.startsWith('admin_view_as='))
+    if (cookie?.split('=')[1] === 'visitor') {
+      setViewMode('visitor')
+    }
+  }, [])
+
+  async function toggleViewMode() {
+    const newMode = viewMode === 'member' ? 'visitor' : 'member'
+    setSwitching(true)
+    try {
+      await fetch('/api/admin/view-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode }),
+      })
+      setViewMode(newMode)
+      // Open the public site in a new tab to preview
+      if (newMode === 'visitor') {
+        window.open('/productions', '_blank')
+      }
+    } finally {
+      setSwitching(false)
+    }
+  }
 
   function isActive(href: string) {
     if (href === '/admin') return pathname === '/admin'
@@ -85,11 +125,18 @@ export function AdminSidebar() {
   }
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-charcoal text-white flex flex-col min-h-screen">
+    <aside
+      className="w-64 flex-shrink-0 flex flex-col min-h-screen"
+      style={{ backgroundColor: '#262626', color: '#ffffff' }}
+    >
       {/* Logo */}
-      <div className="px-6 py-5 border-b border-white/10">
-        <span className="text-base font-bold tracking-tight">Production List</span>
-        <span className="block text-xs text-white/50 mt-0.5">Admin Dashboard</span>
+      <div className="px-6 py-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        <span className="text-base font-bold tracking-tight" style={{ color: '#ffffff' }}>
+          Production List
+        </span>
+        <span className="block text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          Admin Dashboard
+        </span>
       </div>
 
       {/* Nav */}
@@ -98,11 +145,24 @@ export function AdminSidebar() {
           <Link
             key={href}
             href={href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors"
+            style={
               isActive(href)
-                ? 'bg-accent text-white'
-                : 'text-white/70 hover:bg-white/10 hover:text-white'
-            }`}
+                ? { backgroundColor: '#009BDE', color: '#ffffff' }
+                : { color: 'rgba(255,255,255,0.7)' }
+            }
+            onMouseEnter={(e) => {
+              if (!isActive(href)) {
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'
+                e.currentTarget.style.color = '#ffffff'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isActive(href)) {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.color = 'rgba(255,255,255,0.7)'
+              }
+            }}
           >
             {icon}
             {label}
@@ -110,11 +170,60 @@ export function AdminSidebar() {
         ))}
       </nav>
 
+      {/* View As Toggle */}
+      <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        <div className="px-3 py-2">
+          <span className="block text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            View Site As
+          </span>
+          <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.2)' }}>
+            <button
+              onClick={() => viewMode !== 'member' && toggleViewMode()}
+              disabled={switching}
+              className="flex-1 py-1.5 text-xs font-medium transition-colors"
+              style={
+                viewMode === 'member'
+                  ? { backgroundColor: '#009BDE', color: '#ffffff' }
+                  : { backgroundColor: 'transparent', color: 'rgba(255,255,255,0.6)' }
+              }
+            >
+              Member
+            </button>
+            <button
+              onClick={() => viewMode !== 'visitor' && toggleViewMode()}
+              disabled={switching}
+              className="flex-1 py-1.5 text-xs font-medium transition-colors"
+              style={
+                viewMode === 'visitor'
+                  ? { backgroundColor: '#e97320', color: '#ffffff' }
+                  : { backgroundColor: 'transparent', color: 'rgba(255,255,255,0.6)' }
+              }
+            >
+              Visitor
+            </button>
+          </div>
+          {viewMode === 'visitor' && (
+            <p className="text-xs mt-1.5" style={{ color: '#e97320' }}>
+              Viewing public site as non-member
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* Footer */}
-      <div className="px-3 py-4 border-t border-white/10">
+      <div className="px-3 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
         <Link
           href="/"
-          className="flex items-center gap-2 px-3 py-2 text-sm text-white/60 hover:text-white transition-colors rounded-md hover:bg-white/10"
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors"
+          style={{ color: 'rgba(255,255,255,0.6)' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'
+            e.currentTarget.style.color = '#ffffff'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+            e.currentTarget.style.color = 'rgba(255,255,255,0.6)'
+          }}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />

@@ -14,9 +14,13 @@ const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD ?? 'root'
 
 export function mysql(sql: string): any[] {
   const escaped = sql.replace(/'/g, `'\\''`)
-  const cmd = `"${MYSQL_BIN}" -u${MYSQL_USER} -p${MYSQL_PASSWORD} -S "${MYSQL_SOCKET}" ${MYSQL_DB} --batch --raw -e '${escaped}'`
+  const cmd = `"${MYSQL_BIN}" -u${MYSQL_USER} -p${MYSQL_PASSWORD} --protocol=socket -S "${MYSQL_SOCKET}" ${MYSQL_DB} --batch --raw -e '${escaped}'`
   try {
-    const out = execSync(cmd, { maxBuffer: 512 * 1024 * 1024 }).toString()
+    // Strip MYSQL_HOST / MYSQL_TCP_PORT from env so they don't override socket
+    const cleanEnv = { ...process.env }
+    delete cleanEnv.MYSQL_HOST
+    delete cleanEnv.MYSQL_TCP_PORT
+    const out = execSync(cmd, { maxBuffer: 512 * 1024 * 1024, env: cleanEnv }).toString()
     if (!out.trim()) return []
     const lines = out.split('\n').filter(Boolean)
     if (lines.length < 2) return []

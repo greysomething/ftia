@@ -12,6 +12,10 @@ export function CrewForm({ crew }: CrewFormProps) {
   const [state, action, pending] = useActionState(saveCrew, null)
   const v = (key: string) => crew?.[key] ?? ''
 
+  // crew_members uses arrays for emails/phones; show the first entry in the form
+  const firstEmail = Array.isArray(crew?.emails) ? crew.emails[0] ?? '' : ''
+  const firstPhone = Array.isArray(crew?.phones) ? crew.phones[0] ?? '' : ''
+
   return (
     <form action={action} className="space-y-6 max-w-2xl">
       {crew && <input type="hidden" name="id" value={crew.id} />}
@@ -25,7 +29,7 @@ export function CrewForm({ crew }: CrewFormProps) {
       <div className="admin-card space-y-4">
         <div>
           <label className="form-label">Name *</label>
-          <input name="title" required defaultValue={v('title')} className="form-input" />
+          <input name="name" required defaultValue={v('name')} className="form-input" />
         </div>
         <div>
           <label className="form-label">Slug</label>
@@ -33,27 +37,27 @@ export function CrewForm({ crew }: CrewFormProps) {
         </div>
         <div>
           <label className="form-label">Visibility</label>
-          <select name="visibility" defaultValue={v('visibility') || 'public'} className="form-input">
-            <option value="public">Public</option>
+          <select name="visibility" defaultValue={v('visibility') || 'publish'} className="form-input">
+            <option value="publish">Published</option>
             <option value="members_only">Members Only</option>
             <option value="private">Private (Draft)</option>
           </select>
         </div>
         <div>
           <label className="form-label">Email</label>
-          <input name="email" type="email" defaultValue={v('email')} className="form-input" />
+          <input name="email" type="email" defaultValue={firstEmail} className="form-input" />
         </div>
         <div>
           <label className="form-label">Phone</label>
-          <input name="phone" defaultValue={v('phone')} className="form-input" />
+          <input name="phone" defaultValue={firstPhone} className="form-input" />
         </div>
         <div>
           <label className="form-label">LinkedIn URL</label>
           <input name="linkedin" defaultValue={v('linkedin')} className="form-input" placeholder="https://linkedin.com/in/…" />
         </div>
         <div>
-          <label className="form-label">Notes</label>
-          <textarea name="content" rows={5} defaultValue={v('content')} className="form-textarea" />
+          <label className="form-label">Twitter / X Handle</label>
+          <input name="twitter" defaultValue={v('twitter')} className="form-input" placeholder="@handle" />
         </div>
       </div>
 

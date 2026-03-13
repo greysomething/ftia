@@ -51,12 +51,12 @@ export default async function AdminCrewPage({ searchParams }: Props) {
                 <td className="text-gray-400 text-xs w-16">{c.id}</td>
                 <td>
                   <Link href={`/production-role/${c.slug}`} target="_blank" className="font-medium text-primary hover:underline">
-                    {c.title}
+                    {c.name}
                   </Link>
                 </td>
                 <td>
-                  <span className={`badge ${c.visibility === 'public' ? 'badge-green' : c.visibility === 'members_only' ? 'badge-blue' : 'badge-gray'}`}>
-                    {c.visibility}
+                  <span className={`badge ${c.visibility === 'publish' ? 'badge-green' : c.visibility === 'members_only' ? 'badge-blue' : 'badge-gray'}`}>
+                    {c.visibility === 'publish' ? 'Published' : c.visibility}
                   </span>
                 </td>
                 <td className="text-right">

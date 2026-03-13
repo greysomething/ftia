@@ -19,7 +19,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { data: productions } = await supabase
     .from('productions')
     .select('slug, updated_at')
-    .eq('visibility', 'public')
+    .eq('visibility', 'publish')
     .order('updated_at', { ascending: false })
     .limit(5000)
 
@@ -34,7 +34,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { data: companies } = await supabase
     .from('companies')
     .select('slug, updated_at')
-    .eq('visibility', 'public')
+    .eq('visibility', 'publish')
     .limit(5000)
 
   const companyRoutes: MetadataRoute.Sitemap = (companies ?? []).map((c) => ({
@@ -48,7 +48,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { data: crew } = await supabase
     .from('crew_members')
     .select('slug, updated_at')
-    .eq('visibility', 'public')
+    .eq('visibility', 'publish')
     .limit(5000)
 
   const crewRoutes: MetadataRoute.Sitemap = (crew ?? []).map((c) => ({

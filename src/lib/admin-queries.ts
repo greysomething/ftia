@@ -19,8 +19,8 @@ export async function getAdminStats() {
     { count: activeMembers },
   ] = await Promise.all([
     supabase.from('productions').select('*', { count: 'exact', head: true }),
-    supabase.from('production_contacts').select('*', { count: 'exact', head: true }),
-    supabase.from('production_roles').select('*', { count: 'exact', head: true }),
+    supabase.from('companies').select('*', { count: 'exact', head: true }),
+    supabase.from('crew_members').select('*', { count: 'exact', head: true }),
     supabase.from('user_profiles').select('*', { count: 'exact', head: true }),
     supabase
       .from('user_memberships')
@@ -89,8 +89,8 @@ export async function getAdminCompanies({ page = 1, q }: { page?: number; q?: st
   const to = from + PER_PAGE - 1
 
   let query = supabase
-    .from('production_contacts')
-    .select('id, title, slug, visibility, city, province, updated_at', { count: 'exact' })
+    .from('companies')
+    .select('id, title, slug, visibility, wp_updated_at', { count: 'exact' })
     .order('title', { ascending: true })
     .range(from, to)
 
@@ -104,7 +104,7 @@ export async function getAdminCompanies({ page = 1, q }: { page?: number; q?: st
 export async function getAdminCompanyById(id: number) {
   const supabase = createAdminClient()
   const { data, error } = await supabase
-    .from('production_contacts')
+    .from('companies')
     .select('*')
     .eq('id', id)
     .single()
@@ -120,12 +120,12 @@ export async function getAdminCrew({ page = 1, q }: { page?: number; q?: string 
   const to = from + PER_PAGE - 1
 
   let query = supabase
-    .from('production_roles')
-    .select('id, title, slug, visibility, updated_at', { count: 'exact' })
-    .order('title', { ascending: true })
+    .from('crew_members')
+    .select('id, name, slug, visibility, wp_updated_at', { count: 'exact' })
+    .order('name', { ascending: true })
     .range(from, to)
 
-  if (q) query = query.ilike('title', `%${q}%`)
+  if (q) query = query.ilike('name', `%${q}%`)
 
   const { data, count, error } = await query
   if (error) throw error
@@ -135,7 +135,7 @@ export async function getAdminCrew({ page = 1, q }: { page?: number; q?: string 
 export async function getAdminCrewById(id: number) {
   const supabase = createAdminClient()
   const { data, error } = await supabase
-    .from('production_roles')
+    .from('crew_members')
     .select('*')
     .eq('id', id)
     .single()
@@ -167,6 +167,39 @@ export async function getAdminBlogPostById(id: number) {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('blog_posts')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return data
+}
+
+// ─── DNW Notices ─────────────────────────────────────────────────────────────
+
+export async function getAdminDnwNotices({ page = 1, q }: { page?: number; q?: string } = {}) {
+  const supabase = createAdminClient()
+  const from = (page - 1) * PER_PAGE
+  const to = from + PER_PAGE - 1
+
+  let query = supabase
+    .from('dnw_notices')
+    .select('id, production_title, company_name, reason, notice_date, status, created_at', { count: 'exact' })
+    .order('notice_date', { ascending: false })
+    .range(from, to)
+
+  if (q) {
+    query = query.or(`production_title.ilike.%${q}%,company_name.ilike.%${q}%`)
+  }
+
+  const { data, count, error } = await query
+  if (error) throw error
+  return { notices: data ?? [], total: count ?? 0, perPage: PER_PAGE }
+}
+
+export async function getAdminDnwNoticeById(id: number) {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('dnw_notices')
     .select('*')
     .eq('id', id)
     .single()
