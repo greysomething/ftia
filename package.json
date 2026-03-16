@@ -13,7 +13,7 @@
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.49.1",
     "dotenv": "^17.3.1",
-    "next": "15.2.1",
+    "next": "15.2.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "resend": "^6.9.3",
