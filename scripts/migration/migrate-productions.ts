@@ -80,7 +80,7 @@ export async function runProductionsMigration() {
 
     let locationsJson: any = null
     try {
-      if (locationsRaw) locationsJson = unserializePhp(locationsRaw)
+      if (locationsRaw) locationsJson = deepUnserialize(locationsRaw)
     } catch {}
 
     return {
@@ -100,7 +100,7 @@ export async function runProductionsMigration() {
       _raw_contact: contactRaw ? JSON.stringify(unserializePhp(contactRaw)) : null,
       _raw_roles: rolesRaw ? JSON.stringify(unserializePhp(rolesRaw)) : null,
       _raw_locations: locationsRaw ? JSON.stringify(locationsJson) : null,
-      _raw_locations_new: meta.locations_new ? JSON.stringify(unserializePhp(meta.locations_new)) : null,
+      _raw_locations_new: meta.locations_new ? JSON.stringify(deepUnserialize(meta.locations_new)) : null,
       blog_linked: meta.blog_linked ? parseInt(meta.blog_linked, 10) : null,
       wp_author_id: p.post_author ? parseInt(p.post_author, 10) : null,
       wp_created_at: p.post_date ? new Date(p.post_date).toISOString() : null,
@@ -137,6 +137,41 @@ export async function runProductionsMigration() {
   console.log('\n✓ Productions migration complete.')
 }
 
+/** Recursively unserialize PHP data — handles double-serialized values */
+function deepUnserialize(raw: string): any {
+  let val = unserializePhp(raw)
+  // If the result is still a serialized PHP string, unserialize again
+  while (typeof val === 'string' && /^[aOsbiNd]:/.test(val)) {
+    const next = unserializePhp(val)
+    if (next === null || next === val) break
+    val = next
+  }
+  // If still a string (corrupted serialization), try regex extraction
+  if (typeof val === 'string' && val.includes('"city"')) {
+    return regexExtractLocations(val)
+  }
+  return val
+}
+
+/** Fallback: extract city/stage/country from corrupted PHP serialized data via regex */
+function regexExtractLocations(raw: string): any[] {
+  const locations: any[] = []
+  // Match quoted string values after field names in serialized format
+  // Pattern: s:N:"fieldname";s:N:"value" — also handles truncated data
+  const cityMatch = raw.match(/"city";s:\d+:"([^"]+)/)
+  const stageMatch = raw.match(/"stage";s:\d+:"([^"]+)/)
+  const countryMatch = raw.match(/"country";s:\d+:"([^"]+)/)
+
+  if (cityMatch || countryMatch) {
+    locations.push({
+      city: cityMatch?.[1]?.replace(/".*/, '') || '',
+      stage: stageMatch?.[1]?.replace(/".*/, '') || '',
+      country: countryMatch?.[1]?.replace(/".*/, '') || '',
+    })
+  }
+  return locations.length > 0 ? locations : []
+}
+
 async function migrateProductionLocations(
   posts: any[],
   metaByPost: Record<string, Record<string, string>>
@@ -146,10 +181,18 @@ async function migrateProductionLocations(
 
   for (const p of posts) {
     const meta = metaByPost[p.ID] ?? {}
-    const raw = meta.locations_new || meta.locations
-    if (!raw) continue
-
-    const parsed = unserializePhp(raw)
+    // Prefer locations_new (structured), fall back to locations (plain strings)
+    // WordPress stores these as double-serialized: s:NNN:"a:...{...}"
+    let parsed: any = null
+    if (meta.locations_new) {
+      parsed = deepUnserialize(meta.locations_new)
+    }
+    // If locations_new is empty/null, try old format
+    if (!parsed || (Array.isArray(parsed) && parsed.length === 0)) {
+      if (meta.locations) {
+        parsed = deepUnserialize(meta.locations)
+      }
+    }
     if (!parsed) continue
 
     // locations_new is array of location strings or objects
@@ -157,13 +200,27 @@ async function migrateProductionLocations(
     let sortIdx = 0
     for (const loc of locations) {
       if (!loc) continue
-      const locStr = typeof loc === 'string' ? loc : (loc.location || loc.name || JSON.stringify(loc))
+      const isObj = typeof loc === 'object' && loc !== null
+      const city = isObj ? (loc.city || null) : null
+      const stage = isObj ? (loc.stage || null) : null
+      const country = isObj ? (loc.country || null) : null
+
+      // Build a human-readable location string from components
+      let locStr: string
+      if (typeof loc === 'string') {
+        locStr = loc
+      } else {
+        const parts = [city, stage, country].filter(Boolean)
+        locStr = parts.length > 0 ? parts.join(', ') : (loc.location || loc.name || '')
+      }
+      if (!locStr) continue
+
       locationRows.push({
         production_id: parseInt(p.ID, 10),
         location: locStr,
-        stage: typeof loc === 'object' ? (loc.stage || null) : null,
-        city: typeof loc === 'object' ? (loc.city || null) : null,
-        country: typeof loc === 'object' ? (loc.country || null) : null,
+        stage,
+        city,
+        country,
         sort_order: sortIdx++,
       })
     }

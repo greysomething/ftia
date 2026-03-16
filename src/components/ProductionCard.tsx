@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { formatProductionDate, PHASE_LABELS, PHASE_COLORS } from '@/lib/utils'
+import { formatProductionDate, formatLocation, PHASE_LABELS, PHASE_COLORS } from '@/lib/utils'
 import type { ProductionPhase } from '@/types/database'
 
 interface ProductionCardProps {
@@ -14,7 +14,12 @@ interface ProductionCardProps {
       is_primary: boolean
       production_types: { name: string; slug: string }
     }>
-    production_locations?: Array<{ location: string }>
+    production_locations?: Array<{
+      location: string
+      city?: string | null
+      stage?: string | null
+      country?: string | null
+    }>
   }
   isMember?: boolean
 }
@@ -23,7 +28,9 @@ export function ProductionCard({ production, isMember }: ProductionCardProps) {
   const primaryType = production.production_type_links?.find((l) => l.is_primary)?.production_types
     ?? production.production_type_links?.[0]?.production_types
 
-  const location = production.production_locations?.[0]?.location
+  const location = production.production_locations?.[0]
+    ? formatLocation(production.production_locations[0])
+    : undefined
 
   return (
     <article className="white-bg p-4 hover:shadow-md transition-shadow">

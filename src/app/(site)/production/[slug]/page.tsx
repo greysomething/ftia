@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getProductionBySlug, getProductionSlugs } from '@/lib/queries'
 import { getUser, isMember } from '@/lib/auth'
-import { formatProductionDate, PHASE_LABELS, PHASE_COLORS } from '@/lib/utils'
+import { formatProductionDate, formatLocation, PHASE_LABELS, PHASE_COLORS } from '@/lib/utils'
 import { MemberGate } from '@/components/MemberGate'
 
 interface Props {
@@ -129,9 +129,11 @@ export default async function ProductionPage({ params }: Props) {
                   )}
                   {locations.length > 0 && (
                     <tr className="border-b">
-                      <th className="py-2 pr-4 text-left text-gray-500 font-medium">Locations:</th>
+                      <th className="py-2 pr-4 text-left text-gray-500 font-medium">
+                        {locations.length === 1 ? 'Location:' : 'Locations:'}
+                      </th>
                       <td className="py-2 text-gray-800">
-                        {locations.map((l: any) => l.location).join(', ')}
+                        {locations.map((l: any) => formatLocation(l)).filter(Boolean).join(' | ')}
                       </td>
                     </tr>
                   )}

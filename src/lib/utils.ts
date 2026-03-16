@@ -68,6 +68,41 @@ export function getMediaUrl(storagePath: string | null, originalUrl: string | nu
   return originalUrl ?? '/images/placeholder.svg'
 }
 
+/** Format a production location from its component fields */
+export function formatLocation(loc: {
+  location?: string | null
+  city?: string | null
+  stage?: string | null
+  country?: string | null
+}): string {
+  // If city/stage/country are available, build a clean string
+  const parts: string[] = []
+  if (loc.city) parts.push(loc.city)
+  if (loc.stage) parts.push(loc.stage)
+  if (loc.country) parts.push(loc.country)
+
+  if (parts.length > 0) return parts.join(', ')
+
+  // Fallback to raw location field — clean up JSON if needed
+  if (loc.location) {
+    const raw = loc.location.trim()
+    // If it's a JSON string from bad migration, parse it
+    if (raw.startsWith('{')) {
+      try {
+        const obj = JSON.parse(raw)
+        const parsed: string[] = []
+        if (obj.city) parsed.push(obj.city)
+        if (obj.stage) parsed.push(obj.stage)
+        if (obj.country) parsed.push(obj.country)
+        if (parsed.length > 0) return parsed.join(', ')
+      } catch {}
+    }
+    return raw
+  }
+
+  return ''
+}
+
 /** Pagination helper */
 export function getPaginationRange(current: number, total: number, perPage: number) {
   const totalPages = Math.ceil(total / perPage)

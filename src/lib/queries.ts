@@ -34,7 +34,7 @@ export async function getProductions({
       production_date_start, wp_updated_at,
       production_type_links(is_primary, production_types(id,name,slug)),
       production_status_links(is_primary, production_statuses(id,name,slug)),
-      production_locations(location, sort_order),
+      production_locations(location, city, stage, country, sort_order),
       media(storage_path, original_url, alt_text)
     `,
       { count: 'exact' }

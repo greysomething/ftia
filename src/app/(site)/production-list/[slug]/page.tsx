@@ -55,7 +55,7 @@ export default async function ProductionListDetailPage({ params }: Props) {
       id, title, slug, created_at, visibility,
       production_type_links(production_types(name, slug)),
       production_status_links(production_statuses(name, slug)),
-      production_locations(location_text)
+      production_locations(location, city, stage, country)
     `)
     .eq('list_id', list.id)
     .eq('visibility', 'publish')
