@@ -62,10 +62,26 @@ export function maskPhone(phone: string): string {
 
 /** Generate media URL from Supabase Storage or original WP URL */
 export function getMediaUrl(storagePath: string | null, originalUrl: string | null): string {
+  // If we have a storage_path, construct URL to production WP uploads
+  // (media files live on productionlist.com, not in Supabase Storage)
   if (storagePath) {
-    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/media/${storagePath}`
+    return `https://productionlist.com/wp-content/uploads/${storagePath}`
+  }
+  // Fix local WP URLs to production
+  if (originalUrl?.includes('productionlist-wp-local.local')) {
+    return originalUrl.replace(
+      /https?:\/\/productionlist-wp-local\.local\/wp-content\/uploads/,
+      'https://productionlist.com/wp-content/uploads'
+    )
   }
   return originalUrl ?? '/images/placeholder.svg'
+}
+
+/** Get featured image URL from a post with media relation */
+export function getFeaturedImageUrl(post: any): string | null {
+  const media = post?.media
+  if (!media) return null
+  return getMediaUrl(media.storage_path ?? null, media.original_url ?? null)
 }
 
 /** Format a production location from its component fields */
@@ -75,32 +91,153 @@ export function formatLocation(loc: {
   stage?: string | null
   country?: string | null
 }): string {
-  // If city/stage/country are available, build a clean string
-  const parts: string[] = []
-  if (loc.city) parts.push(loc.city)
-  if (loc.stage) parts.push(loc.stage)
-  if (loc.country) parts.push(loc.country)
+  const city = loc.city?.trim() || null
+  const stage = loc.stage?.trim() || null    // state/province (WP called it "stage")
+  const country = loc.country?.trim() || null
 
-  if (parts.length > 0) return parts.join(', ')
+  if (city || stage || country) {
+    // For US locations: "City, ST" (omit "United States")
+    // For other countries: "City, Country" or "City, Region, Country"
+    const isUS = country === 'United States' || country === 'US' || country === 'USA'
+    const isCanada = country === 'Canada'
+    const isUK = country === 'United Kingdom' || country === 'UK'
 
-  // Fallback to raw location field — clean up JSON if needed
+    if (isUS || isCanada) {
+      // US/Canada: "City, ST" — state abbreviation is in stage
+      if (city && stage) return `${city}, ${stage}`
+      if (city) return city
+      if (stage) return stage
+    }
+
+    if (isUK) {
+      // UK: "City, Region" or just "City" — omit country
+      if (city && stage) return `${city}, ${stage}`
+      if (city) return city
+      if (stage) return stage
+      return 'United Kingdom'
+    }
+
+    // International: "City, Country"
+    const parts: string[] = []
+    if (city) parts.push(city)
+    if (stage && stage !== city && stage !== country) parts.push(stage)
+    if (country) parts.push(country)
+    return parts.join(', ')
+  }
+
+  // Fallback to raw location field
   if (loc.location) {
     const raw = loc.location.trim()
-    // If it's a JSON string from bad migration, parse it
-    if (raw.startsWith('{')) {
-      try {
-        const obj = JSON.parse(raw)
-        const parsed: string[] = []
-        if (obj.city) parsed.push(obj.city)
-        if (obj.stage) parsed.push(obj.stage)
-        if (obj.country) parsed.push(obj.country)
-        if (parsed.length > 0) return parsed.join(', ')
-      } catch {}
-    }
-    return raw
+    // Skip junk entries (single chars, PHP serialization fragments)
+    if (raw.length <= 1 || /^[{};:"\d]$/.test(raw)) return ''
+    // Clean up trailing quotes/semicolons from bad migration
+    return raw.replace(/[";]+$/, '').trim()
   }
 
   return ''
+}
+
+/** Format multiple locations into a display string */
+export function formatLocations(locations: Array<{
+  location?: string | null
+  city?: string | null
+  stage?: string | null
+  country?: string | null
+}>): string {
+  return locations
+    .map(formatLocation)
+    .filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i) // deduplicate
+    .join(' · ')
+}
+
+/**
+ * Parse PHP serialized data and extract string values.
+ * Handles common patterns from WordPress meta fields:
+ *   a:1:{i:0;s:46:"10100 Santa Monica Blvd, Los Angeles, CA 90067";}
+ *   s:15:"info@example.com";
+ * Returns an array of extracted string values.
+ */
+export function parsePhpSerialized(raw: any): string[] {
+  if (!raw) return []
+
+  // If it's already an array, try to parse each element
+  if (Array.isArray(raw)) {
+    const results: string[] = []
+    for (const item of raw) {
+      if (typeof item === 'string') {
+        // Check if this array element is itself PHP-serialized
+        if (item.includes(':{') || item.startsWith('a:') || item.startsWith('s:')) {
+          const parsed = parsePhpSerialized(item)
+          results.push(...parsed)
+        } else if (item.trim()) {
+          results.push(item.trim())
+        }
+      }
+    }
+    return results
+  }
+
+  if (typeof raw !== 'string') return []
+
+  // If it's already a clean value (no PHP serialization markers), return as-is
+  if (!raw.includes(':{') && !raw.startsWith('a:') && !raw.startsWith('s:')) {
+    return raw.trim() ? [raw.trim()] : []
+  }
+
+  const results: string[] = []
+  // Match all s:N:"value"; patterns
+  const regex = /s:\d+:"(.*?)";/g
+  let match
+  while ((match = regex.exec(raw)) !== null) {
+    const val = match[1].trim()
+    if (val) results.push(val)
+  }
+  return results
+}
+
+/**
+ * Parse a PHP serialized field and return the first non-empty value, or null.
+ */
+export function parsePhpSerializedFirst(raw: string | null | undefined): string | null {
+  const vals = parsePhpSerialized(raw)
+  return vals.length > 0 ? vals[0] : null
+}
+
+/** Strip HTML and return plain text */
+export function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** Generate excerpt from HTML content */
+export function generateExcerpt(content: string | null, maxLen = 180): string {
+  if (!content) return ''
+  const plain = stripHtml(content)
+  if (plain.length <= maxLen) return plain
+  return plain.substring(0, maxLen).replace(/\s+\S*$/, '') + '...'
+}
+
+/** Estimate read time from HTML content */
+export function estimateReadTime(content: string | null): number {
+  if (!content) return 1
+  const words = stripHtml(content).split(/\s+/).length
+  return Math.max(1, Math.round(words / 225))
+}
+
+/** Format date as relative time (e.g. "2 hours ago", "3 days ago") or fallback to formatted date */
+export function formatRelativeDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffHours < 1) return 'Just now'
+  if (diffHours < 24) return `${diffHours}h ago`
+  if (diffDays < 7) return `${diffDays}d ago`
+  return formatDate(iso)
 }
 
 /** Pagination helper */

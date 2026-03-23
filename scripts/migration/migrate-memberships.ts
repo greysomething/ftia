@@ -49,7 +49,7 @@ export async function runMembershipsMigration() {
       level_id: parseInt(m.membership_id, 10),
       status: m.status === 'active' ? 'active' : 'expired',
       startdate: m.startdate ? new Date(m.startdate).toISOString() : null,
-      current_period_end: m.enddate && m.enddate !== '0000-00-00 00:00:00'
+      enddate: m.enddate && m.enddate !== '0000-00-00 00:00:00'
         ? new Date(m.enddate).toISOString()
         : null,
       stripe_subscription_id: null, // retrieved from orders below
@@ -88,8 +88,8 @@ export async function runMembershipsMigration() {
       status: o.status === 'success' ? 'success' : o.status === 'pending' ? 'pending' : 'failed',
       total: total,
       gateway: o.payment_type || 'stripe',
-      gateway_tx_id: o.payment_transaction_id || null,
-      gateway_subscription_id: o.subscription_transaction_id || null,
+      payment_transaction_id: o.payment_transaction_id || null,
+      subscription_transaction_id: o.subscription_transaction_id || null,
       code_id: o.code_id && o.code_id !== '0' ? parseInt(o.code_id, 10) : null,
       created_at: o.timestamp ? new Date(parseInt(o.timestamp, 10) * 1000).toISOString() : null,
     })

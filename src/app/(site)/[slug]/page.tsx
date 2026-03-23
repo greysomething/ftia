@@ -2,19 +2,23 @@
  * Catch-all for WordPress /%postname%/ permalink structure.
  * WordPress uses a flat namespace — blog posts AND pages share the same URL depth.
  * We check blog_posts first, then pages, then 404.
- *
- * Known static pages (served here): blog, contact, privacy-policy, terms-of-service,
- * what-is-production-list, my-account, production-resources, membership-plans,
- * membership-offers, monthly-membership-offer, welcome, thank-you, current-production-list, home
- *
- * These specific page slugs could also be their own route files if needed.
  */
 
 import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getBlogPostBySlug, getPageBySlug, getBlogSlugs } from '@/lib/queries'
-import { formatDate, getMediaUrl } from '@/lib/utils'
+import Image from 'next/image'
+import { Suspense } from 'react'
+import { getBlogPostBySlug, getPageBySlug, getBlogSlugs, getBlogPosts } from '@/lib/queries'
+import {
+  formatDate,
+  formatRelativeDate,
+  generateExcerpt,
+  estimateReadTime,
+  stripHtml,
+  getFeaturedImageUrl,
+} from '@/lib/utils'
+import { TrendingSearches } from '@/components/TrendingSearches'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -26,14 +30,29 @@ const REDIRECTS: Record<string, string> = {
   'home': '/',
 }
 
+/* ── Category colors ──────────────────────────────────── */
+const CAT_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  'project-alerts': { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500' },
+  'industry-news': { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' },
+  'casting-calls': { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
+  'film-jobs': { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+  'how-to': { bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-500' },
+  'production-list': { bg: 'bg-sky-50', text: 'text-sky-700', dot: 'bg-sky-500' },
+}
+
+function getCatColor(slug: string) {
+  return CAT_COLORS[slug] ?? { bg: 'bg-gray-50', text: 'text-gray-700', dot: 'bg-gray-500' }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
 
   const post = await getBlogPostBySlug(slug)
   if (post) {
+    const desc = post.content ? generateExcerpt(post.content, 160) : undefined
     return {
       title: post.title,
-      description: post.excerpt ? post.excerpt.replace(/<[^>]+>/g, '').slice(0, 160) : undefined,
+      description: desc,
       alternates: { canonical: `/${post.slug}` },
     }
   }
@@ -69,77 +88,279 @@ export default async function SlugPage({ params }: Props) {
     const p = post as any
     const categories = p.blog_post_categories ?? []
     const tags = p.blog_post_tags ?? []
+    const readTime = estimateReadTime(post.content)
+    const wordCount = post.content ? stripHtml(post.content).split(/\s+/).length : 0
+    const featuredImage = getFeaturedImageUrl(p)
+
+    // Fetch related posts
+    const { posts: recentPosts } = await getBlogPosts(1, { perPage: 4 })
+    const relatedPosts = (recentPosts as any[]).filter((rp: any) => rp.slug !== slug).slice(0, 3)
 
     return (
-      <div className="page-wrap py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
-          <article className="flex-1">
-            <div className="white-bg p-6 lg:p-8">
-              {/* Categories */}
-              {categories.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {categories.map((cat: any) => (
+      <>
+        {/* ─── Article Header ───────────────────────────── */}
+        <div className="bg-primary">
+          <div className="page-wrap py-8 md:py-10">
+            {/* Breadcrumb */}
+            <nav className="flex items-center gap-2 text-sm text-white mb-4">
+              <Link href="/" className="text-white/80 hover:text-white transition-colors">Home</Link>
+              <span className="text-white/50">/</span>
+              <Link href="/blog" className="text-white/80 hover:text-white transition-colors">News</Link>
+              {categories[0] && (
+                <>
+                  <span className="text-white/40">/</span>
+                  <Link
+                    href={`/blog?category=${categories[0].blog_categories.slug}`}
+                    className="text-accent hover:text-white transition-colors"
+                  >
+                    {categories[0].blog_categories.name}
+                  </Link>
+                </>
+              )}
+            </nav>
+
+            {/* Categories */}
+            {categories.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {categories.map((cat: any) => {
+                  const c = getCatColor(cat.blog_categories.slug)
+                  return (
                     <Link
                       key={cat.blog_categories.id}
-                      href={`/category/${cat.blog_categories.slug}`}
-                      className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded"
+                      href={`/blog?category=${cat.blog_categories.slug}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${c.bg} ${c.text}`}
                     >
+                      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
                       {cat.blog_categories.name}
                     </Link>
-                  ))}
-                </div>
-              )}
+                  )
+                })}
+              </div>
+            )}
 
-              <h1 className="text-3xl font-bold text-gray-900 mb-3">{post.title}</h1>
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-extrabold text-white leading-tight max-w-4xl">
+              {post.title}
+            </h1>
 
-              <time className="text-sm text-gray-400 block mb-6">
+            {/* Meta */}
+            <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-white/70">
+              <time className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
                 {formatDate(post.published_at)}
               </time>
+              <span className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {readTime} min read
+              </span>
+              <span className="text-white/50">{wordCount.toLocaleString()} words</span>
+            </div>
+          </div>
+          <div className="h-1 bg-accent" />
+        </div>
 
-              {post.thumbnail_id && p.media && (
-                <div className="mb-6">
-                  <img
-                    src={getMediaUrl(p.media.storage_path, p.media.original_url)}
-                    alt={p.media.alt_text ?? post.title}
-                    className="w-full rounded-lg"
+        {/* ─── Main Content Area ────────────────────────── */}
+        <div className="page-wrap py-8">
+          <div className="flex flex-col lg:flex-row gap-8">
+            {/* Article Body */}
+            <article className="flex-1 min-w-0">
+              {/* Featured Image */}
+              {featuredImage && (
+                <div className="relative w-full aspect-[16/9] rounded-xl overflow-hidden shadow-sm mb-8">
+                  <Image
+                    src={featuredImage}
+                    alt={post.title}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 1024px) 100vw, 70vw"
+                    priority
                   />
                 </div>
               )}
+              <div className="bg-white rounded-xl border border-gray-200 p-6 md:p-8 lg:p-10">
+                <div
+                  className="prose prose-lg max-w-none
+                    prose-headings:text-gray-900 prose-headings:font-bold
+                    prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-4
+                    prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
+                    prose-h4:text-lg prose-h4:mt-6 prose-h4:mb-2
+                    prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-4
+                    prose-a:text-accent prose-a:no-underline hover:prose-a:underline
+                    prose-strong:text-gray-900
+                    prose-ul:my-4 prose-ol:my-4
+                    prose-li:text-gray-700
+                    prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:py-1 prose-blockquote:rounded-r-lg
+                    prose-img:rounded-lg prose-img:shadow-sm"
+                  dangerouslySetInnerHTML={{ __html: post.content ?? '' }}
+                />
 
-              <div
-                className="prose prose-sm sm:prose max-w-none"
-                dangerouslySetInnerHTML={{ __html: post.content ?? '' }}
-              />
+                {/* Tags */}
+                {tags.length > 0 && (
+                  <div className="mt-10 pt-6 border-t border-gray-200">
+                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+                      Tagged
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((tag: any) => (
+                        <Link
+                          key={tag.blog_tags.id}
+                          href={`/tag/${tag.blog_tags.slug}`}
+                          className="text-sm text-gray-600 hover:text-accent border border-gray-200 hover:border-accent/30 px-3 py-1.5 rounded-full transition-colors"
+                        >
+                          #{tag.blog_tags.name}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-              {tags.length > 0 && (
-                <div className="mt-8 pt-6 border-t">
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((tag: any) => (
-                      <Link
-                        key={tag.blog_tags.id}
-                        href={`/tag/${tag.blog_tags.slug}`}
-                        className="text-xs text-gray-500 hover:text-primary border border-gray-200 px-2 py-1 rounded"
-                      >
-                        #{tag.blog_tags.name}
-                      </Link>
-                    ))}
+              {/* ─── Inline CTA (below article) ────────── */}
+              <div className="bg-primary rounded-xl p-8 mt-8 text-center">
+                <h3 className="text-xl font-bold text-white mb-2">
+                  Stay Ahead of the Industry
+                </h3>
+                <p className="text-white/70 mb-5 max-w-lg mx-auto">
+                  Get full access to 1,500+ active productions with contacts, crew details, and weekly
+                  updated project lists. Everything you need to find your next opportunity.
+                </p>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <Link
+                    href="/membership-plans"
+                    className="bg-accent hover:bg-accent-dark text-white font-semibold px-8 py-3 rounded-lg transition-colors"
+                  >
+                    View Membership Plans
+                  </Link>
+                  <Link
+                    href="/productions"
+                    className="text-white/70 hover:text-white font-medium px-4 py-3 transition-colors"
+                  >
+                    Browse Productions →
+                  </Link>
+                </div>
+              </div>
+
+              {/* ─── Related Articles ──────────────────── */}
+              {relatedPosts.length > 0 && (
+                <div className="mt-10">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="h-px flex-1 bg-gray-200" />
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+                      More Stories
+                    </span>
+                    <div className="h-px flex-1 bg-gray-200" />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {relatedPosts.map((rp: any) => {
+                      const rpCat = rp.blog_post_categories?.[0]?.blog_categories
+                      const rpColor = rpCat ? getCatColor(rpCat.slug) : null
+                      const rpImage = getFeaturedImageUrl(rp)
+                      return (
+                        <Link key={rp.id} href={`/${rp.slug}`} className="group">
+                          <div className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all h-full overflow-hidden">
+                            {rpImage && (
+                              <div className="relative h-32 overflow-hidden">
+                                <Image
+                                  src={rpImage}
+                                  alt={rp.title}
+                                  fill
+                                  className="object-cover group-hover:scale-105 transition-transform duration-300"
+                                  sizes="33vw"
+                                />
+                              </div>
+                            )}
+                            <div className="p-4">
+                              {rpColor && rpCat && (
+                                <span className={`text-xs font-semibold ${rpColor.text} mb-2 block`}>
+                                  {rpCat.name}
+                                </span>
+                              )}
+                              <h4 className="font-bold text-gray-900 leading-snug group-hover:text-accent transition-colors mb-2 line-clamp-3">
+                                {rp.title}
+                              </h4>
+                              <p className="text-sm text-gray-500 line-clamp-2">
+                                {generateExcerpt(rp.content, 100)}
+                              </p>
+                              <div className="text-xs text-gray-400 mt-3">
+                                {formatRelativeDate(rp.published_at)}
+                              </div>
+                            </div>
+                          </div>
+                        </Link>
+                      )
+                    })}
                   </div>
                 </div>
               )}
-            </div>
-          </article>
+            </article>
 
-          {/* Sidebar */}
-          <aside className="lg:w-64 flex-shrink-0">
-            <div className="white-bg p-4">
-              <h3 className="font-semibold text-primary mb-3">More News</h3>
-              <Link href="/blog" className="text-sm text-primary hover:underline">
-                View all articles →
-              </Link>
-            </div>
-          </aside>
+            {/* ─── Sidebar ──────────────────────────────── */}
+            <aside className="lg:w-72 flex-shrink-0 space-y-5">
+              {/* Membership CTA */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 text-center">
+                <div className="w-12 h-12 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <h3 className="font-bold text-gray-900 mb-1">Join Production List</h3>
+                <p className="text-sm text-gray-500 mb-4 leading-relaxed">
+                  Full access to contacts, crew details, and all production listings.
+                </p>
+                <Link
+                  href="/membership-plans"
+                  className="block bg-accent hover:bg-accent-dark text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
+                >
+                  See Plans &amp; Pricing
+                </Link>
+                <p className="text-xs text-gray-400 mt-2">Starting at $29.95/month</p>
+              </div>
+
+              {/* Trending Productions */}
+              <Suspense fallback={
+                <div className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-2/3 mb-4" />
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex gap-2 mb-2">
+                      <div className="w-5 h-5 rounded-full bg-gray-100" />
+                      <div className="h-3 bg-gray-100 rounded flex-1" />
+                    </div>
+                  ))}
+                </div>
+              }>
+                <TrendingSearches variant="sidebar" limit={8} />
+              </Suspense>
+
+              {/* News Categories */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <h3 className="font-semibold text-gray-900 mb-3 text-sm">News Categories</h3>
+                <div className="space-y-1.5">
+                  {Object.entries(CAT_COLORS).map(([catSlug, colors]) => (
+                    <Link
+                      key={catSlug}
+                      href={`/blog?category=${catSlug}`}
+                      className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors py-1"
+                    >
+                      <span className={`w-2 h-2 rounded-full ${colors.dot}`} />
+                      {catSlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                    </Link>
+                  ))}
+                </div>
+                <Link
+                  href="/blog"
+                  className="block text-accent hover:underline text-sm font-medium mt-4 pt-3 border-t border-gray-100"
+                >
+                  &larr; All articles
+                </Link>
+              </div>
+            </aside>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
 
@@ -148,10 +369,10 @@ export default async function SlugPage({ params }: Props) {
   if (page) {
     return (
       <div className="page-wrap py-8">
-        <div className="white-bg p-6 lg:p-8 max-w-4xl">
+        <div className="bg-white rounded-xl border border-gray-200 p-6 lg:p-10 max-w-4xl">
           <h1 className="text-3xl font-bold text-primary mb-6">{page.title}</h1>
           <div
-            className="prose prose-sm sm:prose max-w-none"
+            className="prose prose-lg max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-accent"
             dangerouslySetInnerHTML={{ __html: page.content ?? '' }}
           />
         </div>

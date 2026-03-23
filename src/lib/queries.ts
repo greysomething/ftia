@@ -13,18 +13,84 @@ const PER_PAGE = 20
 
 export async function getProductions({
   page = 1,
+  perPage = PER_PAGE,
   typeSlug,
   statusSlug,
+  locationFilter,
   search,
+  sort = 'updated',
 }: {
   page?: number
+  perPage?: number
   typeSlug?: string
   statusSlug?: string
+  locationFilter?: string
   search?: string
+  sort?: string
 } = {}) {
   const supabase = await createClient()
-  const from = (page - 1) * PER_PAGE
-  const to = from + PER_PAGE - 1
+  const from = (page - 1) * perPage
+  const to = from + perPage - 1
+
+  // If filtering by type or status, we need to find matching production IDs first
+  let productionIds: number[] | null = null
+
+  if (typeSlug) {
+    const { data: typeData } = await supabase
+      .from('production_types')
+      .select('id')
+      .eq('slug', typeSlug)
+      .single()
+    if (typeData) {
+      const { data: links } = await supabase
+        .from('production_type_links')
+        .select('production_id')
+        .eq('type_id', typeData.id)
+      productionIds = links?.map(l => l.production_id) ?? []
+    } else {
+      productionIds = []
+    }
+  }
+
+  if (statusSlug) {
+    const { data: statusData } = await supabase
+      .from('production_statuses')
+      .select('id')
+      .eq('slug', statusSlug)
+      .single()
+    if (statusData) {
+      const { data: links } = await supabase
+        .from('production_status_links')
+        .select('production_id')
+        .eq('status_id', statusData.id)
+      const statusIds = new Set(links?.map(l => l.production_id) ?? [])
+      if (productionIds !== null) {
+        productionIds = productionIds.filter(id => statusIds.has(id))
+      } else {
+        productionIds = [...statusIds]
+      }
+    } else if (productionIds === null) {
+      productionIds = []
+    }
+  }
+
+  if (locationFilter) {
+    // locationFilter can be "Los Angeles, CA" or "United States" or "Canada" etc.
+    let locQuery = supabase.from('production_locations').select('production_id')
+    // Check if it's a country filter or city filter
+    if (['United States', 'Canada', 'United Kingdom', 'France', 'Germany', 'Australia', 'Mexico'].includes(locationFilter)) {
+      locQuery = locQuery.or(`country.eq.${locationFilter},location.ilike.%${locationFilter}%`)
+    } else {
+      locQuery = locQuery.or(`location.eq.${locationFilter},location.ilike.${locationFilter}%`)
+    }
+    const { data: locLinks } = await locQuery
+    const locIds = new Set(locLinks?.map(l => l.production_id) ?? [])
+    if (productionIds !== null) {
+      productionIds = productionIds.filter(id => locIds.has(id))
+    } else {
+      productionIds = [...locIds]
+    }
+  }
 
   let query = supabase
     .from('productions')
@@ -40,17 +106,214 @@ export async function getProductions({
       { count: 'exact' }
     )
     .eq('visibility', 'publish')
-    .order('wp_updated_at', { ascending: false })
-    .range(from, to)
 
   if (search) {
-    query = query.textSearch('title', search, { type: 'websearch' })
+    query = query.ilike('title', `%${search}%`)
   }
+
+  if (productionIds !== null) {
+    if (productionIds.length === 0) {
+      return { productions: [], total: 0, page, perPage }
+    }
+    query = query.in('id', productionIds)
+  }
+
+  // Apply sorting
+  switch (sort) {
+    case 'title':
+      query = query.order('title', { ascending: true })
+      break
+    case 'title-desc':
+      query = query.order('title', { ascending: false })
+      break
+    case 'shoot-date':
+      query = query.order('production_date_start', { ascending: true, nullsFirst: false })
+      break
+    case 'shoot-date-desc':
+      query = query.order('production_date_start', { ascending: false, nullsFirst: false })
+      break
+    default: // 'updated'
+      query = query.order('wp_updated_at', { ascending: false })
+  }
+
+  query = query.range(from, to)
 
   const { data, count, error } = await query
   if (error) throw error
 
-  return { productions: data ?? [], total: count ?? 0, page, perPage: PER_PAGE }
+  return { productions: data ?? [], total: count ?? 0, page, perPage }
+}
+
+/**
+ * Get productions grouped by week for the Weekly List view.
+ * Uses the production_week_entries table so productions persist in old weeks
+ * even after being updated (and appearing in new weeks).
+ *
+ * Falls back to wp_updated_at grouping if the table doesn't exist yet.
+ */
+export async function getProductionWeeks() {
+  const supabase = await createClient()
+
+  // Try the week entries table first
+  const { data: weekEntries, error: weekError } = await (supabase as any)
+    .from('production_week_entries')
+    .select('week_monday, production_id') as { data: any[] | null; error: any }
+
+  if (!weekError && weekEntries && weekEntries.length > 0) {
+    // Group by week_monday and count unique productions
+    const weekMap = new Map<string, Set<number>>()
+    for (const entry of weekEntries) {
+      const mondayStr = typeof entry.week_monday === 'string'
+        ? entry.week_monday
+        : new Date(entry.week_monday).toISOString().split('T')[0]
+      const existing = weekMap.get(mondayStr)
+      if (existing) {
+        existing.add(entry.production_id)
+      } else {
+        weekMap.set(mondayStr, new Set([entry.production_id]))
+      }
+    }
+
+    return Array.from(weekMap.entries())
+      .map(([monday, ids]) => ({ monday, count: ids.size }))
+      .sort((a, b) => b.monday.localeCompare(a.monday))
+  }
+
+  // Fallback: group by wp_updated_at (before migration is run)
+  const { data: productions } = await supabase
+    .from('productions')
+    .select('id, wp_updated_at')
+    .eq('visibility', 'publish')
+    .not('wp_updated_at', 'is', null)
+    .order('wp_updated_at', { ascending: false })
+
+  if (!productions?.length) return []
+
+  const weekMap = new Map<string, { monday: string; count: number }>()
+  for (const p of productions) {
+    const date = new Date(p.wp_updated_at)
+    const day = date.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    const monday = new Date(date)
+    monday.setDate(date.getDate() + diff)
+    const mondayStr = monday.toISOString().split('T')[0]
+
+    const existing = weekMap.get(mondayStr)
+    if (existing) {
+      existing.count++
+    } else {
+      weekMap.set(mondayStr, { monday: mondayStr, count: 1 })
+    }
+  }
+
+  return Array.from(weekMap.values()).sort((a, b) => b.monday.localeCompare(a.monday))
+}
+
+/**
+ * Get productions for a specific week (Mon–Sun).
+ * Uses production_week_entries join table so a production can appear in multiple weeks.
+ * Falls back to wp_updated_at filtering if the table doesn't exist yet.
+ */
+export async function getProductionsForWeek(mondayDate: string) {
+  const supabase = await createClient()
+
+  // Try the week entries table first
+  const { data: weekEntries, error: weekError } = await (supabase as any)
+    .from('production_week_entries')
+    .select('production_id')
+    .eq('week_monday', mondayDate) as { data: any[] | null; error: any }
+
+  if (!weekError && weekEntries && weekEntries.length > 0) {
+    const productionIds = weekEntries.map((e: any) => e.production_id)
+
+    const { data, error } = await supabase
+      .from('productions')
+      .select(`
+        id, title, slug, excerpt, computed_status,
+        production_date_start, production_date_end, wp_updated_at, content,
+        production_type_links(is_primary, production_types(id,name,slug)),
+        production_status_links(is_primary, production_statuses(id,name,slug)),
+        production_locations(location, city, stage, country, sort_order),
+        production_company_links(*, companies(*)),
+        production_crew_roles(*, crew_members(*)),
+        media(storage_path, original_url, alt_text)
+      `)
+      .eq('visibility', 'publish')
+      .in('id', productionIds)
+      .order('title')
+
+    if (error) throw error
+    return data ?? []
+  }
+
+  // Fallback: use wp_updated_at range (before migration is run)
+  const monday = new Date(mondayDate + 'T00:00:00Z')
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 7)
+
+  const { data, error } = await supabase
+    .from('productions')
+    .select(`
+      id, title, slug, excerpt, computed_status,
+      production_date_start, production_date_end, wp_updated_at, content,
+      production_type_links(is_primary, production_types(id,name,slug)),
+      production_status_links(is_primary, production_statuses(id,name,slug)),
+      production_locations(location, city, stage, country, sort_order),
+      production_company_links(*, companies(*)),
+      production_crew_roles(*, crew_members(*)),
+      media(storage_path, original_url, alt_text)
+    `)
+    .eq('visibility', 'publish')
+    .gte('wp_updated_at', monday.toISOString())
+    .lt('wp_updated_at', sunday.toISOString())
+    .order('title')
+
+  if (error) throw error
+  return data ?? []
+}
+
+/** Get top location options for the filter dropdown */
+export async function getLocationFilterOptions() {
+  const supabase = await createClient()
+
+  const { data: locations } = await supabase
+    .from('production_locations')
+    .select('location, city, stage, country')
+
+  if (!locations?.length) return []
+
+  // Count by normalized location key
+  const counts = new Map<string, { label: string; value: string; count: number }>()
+
+  for (const loc of locations) {
+    let key: string
+    let label: string
+
+    if (loc.city && loc.stage) {
+      key = `${loc.city}, ${loc.stage}`
+      label = `${loc.city}, ${loc.stage}`
+    } else if (loc.city) {
+      key = loc.city
+      label = loc.city
+    } else if (loc.location) {
+      // Normalize common variations
+      key = loc.location
+      label = loc.location
+    } else {
+      continue
+    }
+
+    const existing = counts.get(key)
+    if (existing) {
+      existing.count++
+    } else {
+      counts.set(key, { label, value: key, count: 1 })
+    }
+  }
+
+  return Array.from(counts.values())
+    .filter(l => l.count >= 2) // Only show locations with 2+ productions
+    .sort((a, b) => b.count - a.count)
 }
 
 export async function getProductionBySlug(slug: string) {
@@ -240,15 +503,35 @@ export async function getCrewByCategory(categorySlug: string, page = 1) {
 // BLOG POSTS
 // ============================================================
 
-export async function getBlogPosts(page = 1) {
+export async function getBlogPosts(page = 1, { perPage, category }: { perPage?: number; category?: string } = {}) {
   const supabase = await createClient()
-  const from = (page - 1) * PER_PAGE
+  const limit = perPage ?? PER_PAGE
+  const from = (page - 1) * limit
 
-  const { data, count, error } = await supabase
+  // If filtering by category, get IDs first
+  let postIds: number[] | null = null
+  if (category) {
+    const { data: catData } = await supabase
+      .from('blog_categories')
+      .select('id')
+      .eq('slug', category)
+      .single()
+    if (catData) {
+      const { data: links } = await supabase
+        .from('blog_post_categories')
+        .select('post_id')
+        .eq('category_id', catData.id)
+      postIds = links?.map(l => l.post_id) ?? []
+    } else {
+      return { posts: [], total: 0, page, perPage: limit }
+    }
+  }
+
+  let query = supabase
     .from('blog_posts')
     .select(
       `
-      id, title, slug, excerpt, published_at, wp_updated_at,
+      id, title, slug, excerpt, content, published_at, wp_updated_at,
       media(storage_path, original_url, alt_text),
       blog_post_categories(blog_categories(id,name,slug)),
       blog_post_tags(blog_tags(id,name,slug))
@@ -257,10 +540,16 @@ export async function getBlogPosts(page = 1) {
     )
     .eq('visibility', 'publish')
     .order('published_at', { ascending: false })
-    .range(from, from + PER_PAGE - 1)
+
+  if (postIds !== null) {
+    if (postIds.length === 0) return { posts: [], total: 0, page, perPage: limit }
+    query = query.in('id', postIds)
+  }
+
+  const { data, count, error } = await query.range(from, from + limit - 1)
 
   if (error) throw error
-  return { posts: data ?? [], total: count ?? 0, page, perPage: PER_PAGE }
+  return { posts: data ?? [], total: count ?? 0, page, perPage: limit }
 }
 
 export async function getBlogPostBySlug(slug: string): Promise<(BlogPost & Record<string, any>) | null> {
@@ -334,6 +623,17 @@ export async function getBlogPostsByTag(tagSlug: string, page = 1) {
     total: count ?? 0,
     page,
   }
+}
+
+export async function getBlogCategories() {
+  const supabase = await createClient()
+
+  const { data } = await supabase
+    .from('blog_categories')
+    .select('id, name, slug')
+    .order('name')
+
+  return data ?? []
 }
 
 // ============================================================
@@ -422,6 +722,76 @@ export async function globalSearch(query: string, page = 1) {
     posts: posts.data ?? [],
     query,
   }
+}
+
+// ============================================================
+// WEEKLY LIST MANAGEMENT
+// ============================================================
+
+/**
+ * Add a production to the current week's list.
+ * Call this whenever a production is created or updated so it appears
+ * in this week's list while staying in any previous weeks.
+ */
+export async function addProductionToCurrentWeek(productionId: number) {
+  const supabase = createAdminClient()
+
+  // Calculate this week's Monday
+  const now = new Date()
+  const day = now.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + diff)
+  const mondayStr = monday.toISOString().split('T')[0]
+
+  await (supabase as any)
+    .from('production_week_entries')
+    .upsert(
+      { production_id: productionId, week_monday: mondayStr },
+      { onConflict: 'production_id,week_monday' }
+    )
+}
+
+/**
+ * Snapshot all currently active (published) productions into the current week.
+ * Useful for an admin "Generate Weekly List" action or a scheduled cron job.
+ */
+export async function snapshotCurrentWeek() {
+  const supabase = createAdminClient()
+
+  // Calculate this week's Monday
+  const now = new Date()
+  const day = now.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + diff)
+  const mondayStr = monday.toISOString().split('T')[0]
+
+  // Get all published productions
+  const { data: productions } = await supabase
+    .from('productions')
+    .select('id')
+    .eq('visibility', 'publish')
+
+  if (!productions?.length) return 0
+
+  // Insert into week entries (upsert to avoid duplicates)
+  const entries = productions.map((p: any) => ({
+    production_id: p.id,
+    week_monday: mondayStr,
+  }))
+
+  // Batch in chunks of 500
+  let inserted = 0
+  for (let i = 0; i < entries.length; i += 500) {
+    const chunk = entries.slice(i, i + 500)
+    const { error } = await (supabase as any)
+      .from('production_week_entries')
+      .upsert(chunk, { onConflict: 'production_id,week_monday' })
+    if (!error) inserted += chunk.length
+  }
+
+  return inserted
 }
 
 // ============================================================

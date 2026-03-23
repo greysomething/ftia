@@ -83,7 +83,7 @@ export default function MembershipOffersPage() {
         </p>
 
         <p className="text-sm text-gray-500">
-          <Link href="/membership-account/membership-levels" className="text-primary hover:underline">
+          <Link href="/membership-plans" className="text-primary hover:underline">
             View all membership options →
           </Link>
         </p>

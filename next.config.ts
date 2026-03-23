@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'productionlist.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'productionlist-wp-local.local',
+      },
     ],
   },
   // Preserve exact WP permalink structure

@@ -13,7 +13,7 @@ export function MemberGate({ message }: MemberGateProps) {
         {message ?? 'Join FTIA and get full access to 1,500+ active projects filming near you.'}
       </p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
-        <Link href="/membership-account/membership-levels" className="btn-accent">
+        <Link href="/membership-plans" className="btn-accent">
           Join Now — See Pricing
         </Link>
         <Link href="/login" className="btn-outline">

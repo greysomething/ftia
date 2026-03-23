@@ -221,7 +221,7 @@ All WordPress URLs are preserved exactly:
 | `/tag/{slug}` | `src/app/tag/[slug]/page.tsx` |
 | `/membership-account` | `src/app/membership-account/page.tsx` |
 | `/my-account` | Redirects to `/membership-account` |
-| `/membership-plans` | Redirects to `/membership-account/membership-levels` |
+| `/membership-plans` | Redirects to `/membership-plans` |
 | `/feed` | Redirects to `/api/feed` |
 | `/current-production-list` | Redirects to `/productions` |
 

@@ -1,8 +1,9 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState, useCallback } from 'react'
 import { saveDnwNotice } from '@/app/admin/dnw-notices/actions'
 import Link from 'next/link'
+import { ImageScanner } from '@/components/admin/ImageScanner'
 
 interface DnwNoticeFormProps {
   notice?: Record<string, any> | null
@@ -10,17 +11,30 @@ interface DnwNoticeFormProps {
 
 export function DnwNoticeForm({ notice }: DnwNoticeFormProps) {
   const [state, action, pending] = useActionState(saveDnwNotice, null)
-  const v = (key: string) => notice?.[key] ?? ''
+  const [scannedData, setScannedData] = useState<any>(null)
   const today = new Date().toISOString().slice(0, 10)
 
+  const handleScan = useCallback((data: any) => {
+    setScannedData(data)
+  }, [])
+
+  const v = (key: string) => {
+    if (scannedData?.[key] != null) return String(scannedData[key])
+    return notice?.[key] ?? ''
+  }
+
   return (
-    <form action={action} className="space-y-6 max-w-3xl">
+    <form action={action} className="space-y-6 max-w-3xl" key={scannedData ? 'scanned' : 'default'}>
       {notice && <input type="hidden" name="id" value={notice.id} />}
 
       {state?.error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
           {state.error}
         </div>
+      )}
+
+      {!notice && (
+        <ImageScanner type="dnw_notice" onScanComplete={handleScan} />
       )}
 
       <div className="admin-card space-y-4">
@@ -66,6 +80,11 @@ export function DnwNoticeForm({ notice }: DnwNoticeFormProps) {
             className="form-textarea"
             placeholder="Any additional information about this notice"
           />
+          {scannedData?.details && (
+            <p className="text-xs text-[#3ea8c8] mt-1">
+              ↑ Full notice text extracted by AI
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

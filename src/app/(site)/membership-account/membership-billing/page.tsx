@@ -56,7 +56,7 @@ export default async function BillingPage() {
             <Link href="/membership-account/membership-cancel" className="btn-outline text-sm text-red-600 border-red-200 hover:bg-red-50 hover:text-red-600">
               Cancel Membership
             </Link>
-            <Link href="/membership-account/membership-levels" className="btn-outline text-sm">
+            <Link href="/membership-plans" className="btn-outline text-sm">
               Change Plan
             </Link>
           </div>
@@ -64,7 +64,7 @@ export default async function BillingPage() {
       ) : (
         <div className="white-bg p-6 text-center">
           <p className="text-gray-600 mb-4">No active membership found.</p>
-          <Link href="/membership-account/membership-levels" className="btn-primary">
+          <Link href="/membership-plans" className="btn-primary">
             View Plans
           </Link>
         </div>

@@ -43,7 +43,7 @@ export default async function MembershipAccountPage() {
               ['My Account', '/membership-account'],
               ['Billing', '/membership-account/membership-billing'],
               ['Cancel', '/membership-account/membership-cancel'],
-              ['Membership Plans', '/membership-account/membership-levels'],
+              ['Membership Plans', '/membership-plans'],
               ['Invoice', '/membership-account/membership-invoice'],
             ].map(([label, href]) => (
               <Link
@@ -108,7 +108,7 @@ export default async function MembershipAccountPage() {
                       <span className="w-2 h-2 rounded-full bg-red-500"></span>
                       <span className="text-red-700 font-medium">No active membership</span>
                     </div>
-                    <Link href="/membership-account/membership-levels" className="btn-accent text-sm">
+                    <Link href="/membership-plans" className="btn-accent text-sm">
                       View Plans
                     </Link>
                   </div>

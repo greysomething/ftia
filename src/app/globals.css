@@ -40,6 +40,10 @@
     @apply text-lg font-semibold text-primary border-b border-gray-200 pb-2 mb-4 mt-6;
   }
 
+  .filter-heading {
+    @apply font-semibold text-primary text-sm uppercase tracking-wide mb-2;
+  }
+
   /* ── Badges ──────────────────────────────────── */
   .production-status-badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
@@ -64,25 +68,25 @@
 
   /* ── Buttons ─────────────────────────────────── */
   .btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2 bg-primary text-white font-medium rounded-md
-           hover:bg-primary-light transition-colors focus:outline-none focus:ring-2
+    @apply inline-flex items-center justify-center px-4 py-2 bg-primary !text-white font-medium rounded-md
+           hover:bg-primary-light hover:!text-white transition-colors focus:outline-none focus:ring-2
            focus:ring-primary focus:ring-offset-2;
   }
 
   .btn-accent {
-    @apply inline-flex items-center justify-center px-4 py-2 bg-accent text-white font-medium rounded-md
-           hover:bg-accent-dark transition-colors focus:outline-none focus:ring-2
+    @apply inline-flex items-center justify-center px-4 py-2 bg-accent !text-white font-medium rounded-md
+           hover:bg-accent-dark hover:!text-white transition-colors focus:outline-none focus:ring-2
            focus:ring-accent focus:ring-offset-2;
   }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center px-4 py-2 border border-primary text-primary font-medium rounded-md
-           hover:bg-primary hover:text-white transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 border border-primary !text-primary font-medium rounded-md
+           hover:bg-primary hover:!text-white transition-colors;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center px-4 py-2 bg-red-600 text-white font-medium rounded-md
-           hover:bg-red-700 transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 bg-red-600 !text-white font-medium rounded-md
+           hover:bg-red-700 hover:!text-white transition-colors;
   }
 
   /* ── Forms ───────────────────────────────────── */

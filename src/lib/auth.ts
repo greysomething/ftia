@@ -42,7 +42,7 @@ export async function requireMembership() {
     (!m.enddate || new Date(m.enddate) > new Date())
 
   if (!hasActive) {
-    redirect('/membership-account/membership-levels')
+    redirect('/membership-plans')
   }
 
   return { user, membership }

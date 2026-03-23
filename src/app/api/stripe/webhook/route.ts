@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { getActiveStripeKeys } from '@/lib/stripe-settings'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const stripeKey = process.env.STRIPE_SECRET_KEY
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+  const { secretKey, webhookSecret } = await getActiveStripeKeys()
 
-  if (!stripeKey || !webhookSecret) {
+  if (!secretKey || !webhookSecret) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }
 
   const Stripe = (await import('stripe')).default
-  const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' as any })
+  const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any })
 
   const body = await req.text()
   const sig = req.headers.get('stripe-signature')
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
         level_id: parseInt(levelId, 10),
         status: 'active',
         stripe_subscription_id: subscriptionId as string ?? null,
-        current_period_end: periodEnd,
+        enddate: periodEnd,
         startdate: new Date().toISOString(),
       }, { onConflict: 'user_id' })
 
@@ -61,9 +61,10 @@ export async function POST(req: NextRequest) {
         user_id: userId,
         level_id: parseInt(levelId, 10),
         status: 'success',
-        total: session.amount_total ?? 0,
+        total: session.amount_total ? (session.amount_total / 100) : 0,
         gateway: 'stripe',
-        gateway_tx_id: session.payment_intent as string ?? null,
+        payment_transaction_id: session.payment_intent as string ?? null,
+        subscription_transaction_id: subscriptionId as string ?? null,
       })
 
       break
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
 
       await supabase
         .from('user_memberships')
-        .update({ status: 'active', current_period_end: periodEnd })
+        .update({ status: 'active', enddate: periodEnd })
         .eq('user_id', userId)
         .eq('stripe_subscription_id', subscriptionId)
 
@@ -92,9 +93,10 @@ export async function POST(req: NextRequest) {
           user_id: userId,
           level_id: parseInt(levelId, 10),
           status: 'success',
-          total: invoice.amount_paid ?? 0,
+          total: invoice.amount_paid ? (invoice.amount_paid / 100) : 0,
           gateway: 'stripe',
-          gateway_tx_id: invoice.payment_intent as string ?? null,
+          payment_transaction_id: invoice.payment_intent as string ?? null,
+          subscription_transaction_id: subscriptionId as string ?? null,
         })
       }
 
@@ -134,7 +136,6 @@ export async function POST(req: NextRequest) {
     }
 
     default:
-      // Unhandled event type — ignore
       break
   }
 

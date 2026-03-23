@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams }: Props) {
 
           <div className="mt-6 text-center text-sm text-gray-500">
             Not a member?{' '}
-            <a href="/membership-account/membership-levels" className="text-primary hover:underline font-medium">
+            <a href="/membership-plans" className="text-primary hover:underline font-medium">
               Join Now
             </a>
           </div>

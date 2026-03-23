@@ -4,6 +4,7 @@ import { getAdminBlogPosts } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate } from '@/lib/utils'
 import { deleteBlogPost } from './actions'
+import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
 
 export const metadata: Metadata = { title: 'Blog' }
 
@@ -70,10 +71,7 @@ export default async function AdminBlogPage({ searchParams }: Props) {
                   <div className="flex items-center justify-end gap-2">
                     <Link href={`/admin/blog/${p.id}/edit`} className="text-xs btn-outline py-1 px-2">Edit</Link>
                     <form action={async () => { 'use server'; await deleteBlogPost(p.id) }}>
-                      <button type="submit" className="text-xs btn-danger py-1 px-2"
-                        onClick={(e) => { if (!confirm('Delete this post?')) e.preventDefault() }}>
-                        Delete
-                      </button>
+                      <ConfirmDeleteButton message="Delete this post?" />
                     </form>
                   </div>
                 </td>

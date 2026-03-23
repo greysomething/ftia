@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { getUser, getUserProfile } from '@/lib/auth'
 import { MobileMenu } from './MobileMenu'
 import { UserNav } from './UserNav'
@@ -12,11 +13,20 @@ export async function Header() {
       <div className="page-wrap">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex flex-col leading-tight text-white hover:text-accent transition-colors">
-            <span className="text-lg font-bold tracking-tight">Production List</span>
-            <span className="text-[10px] font-medium text-white/60 uppercase tracking-widest">
-              Film &amp; Television Industry Alliance
-            </span>
+          <Link href="/" className="flex items-center gap-3 text-white hover:text-accent transition-colors">
+            <Image
+              src="/images/pl-emblem.png"
+              alt="PL"
+              width={34}
+              height={34}
+              className="flex-shrink-0"
+            />
+            <div className="flex flex-col leading-tight">
+              <span className="text-lg font-bold tracking-tight">Production List</span>
+              <span className="text-[10px] font-medium text-white/60 uppercase tracking-widest">
+                Film &amp; Television Industry Alliance
+              </span>
+            </div>
           </Link>
 
           {/* Desktop Nav */}
@@ -52,7 +62,7 @@ export async function Header() {
                 <Link href="/login" className="text-sm text-white/90 hover:text-white">
                   Login
                 </Link>
-                <Link href="/membership-account/membership-levels" className="btn-accent text-sm py-1.5 px-3">
+                <Link href="/membership-plans" className="btn-accent text-sm py-1.5 px-3">
                   Join Now
                 </Link>
               </>

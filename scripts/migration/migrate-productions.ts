@@ -141,35 +141,87 @@ export async function runProductionsMigration() {
 function deepUnserialize(raw: string): any {
   let val = unserializePhp(raw)
   // If the result is still a serialized PHP string, unserialize again
-  while (typeof val === 'string' && /^[aOsbiNd]:/.test(val)) {
+  let attempts = 0
+  while (typeof val === 'string' && /^[aOsbiNd]:/.test(val) && attempts < 5) {
     const next = unserializePhp(val)
     if (next === null || next === val) break
     val = next
-  }
-  // If still a string (corrupted serialization), try regex extraction
-  if (typeof val === 'string' && val.includes('"city"')) {
-    return regexExtractLocations(val)
+    attempts++
   }
   return val
 }
 
-/** Fallback: extract city/stage/country from corrupted PHP serialized data via regex */
-function regexExtractLocations(raw: string): any[] {
-  const locations: any[] = []
-  // Match quoted string values after field names in serialized format
-  // Pattern: s:N:"fieldname";s:N:"value" — also handles truncated data
-  const cityMatch = raw.match(/"city";s:\d+:"([^"]+)/)
-  const stageMatch = raw.match(/"stage";s:\d+:"([^"]+)/)
-  const countryMatch = raw.match(/"country";s:\d+:"([^"]+)/)
+/**
+ * Extract locations from the NEW format (structured objects with city/stage/country).
+ * These are double-serialized PHP arrays of {city, stage, country} objects.
+ */
+function parseLocationsNew(raw: string): Array<{ city: string; stage: string; country: string }> {
+  // First try proper deserialization
+  const parsed = deepUnserialize(raw)
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    // It's an associative array / object — convert values to array
+    const arr = Object.values(parsed)
+    if (arr.length > 0 && typeof arr[0] === 'object') return arr as any
+  }
+  if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+    return parsed as any
+  }
 
-  if (cityMatch || countryMatch) {
-    locations.push({
-      city: cityMatch?.[1]?.replace(/".*/, '') || '',
-      stage: stageMatch?.[1]?.replace(/".*/, '') || '',
-      country: countryMatch?.[1]?.replace(/".*/, '') || '',
+  // Fallback: regex extract ALL location objects from the raw serialized string
+  // This handles cases where deserialization fails (corrupted data)
+  const results: Array<{ city: string; stage: string; country: string }> = []
+  // Find all city/stage/country triplets in the serialized data
+  const pattern = /"city";s:\d+:"([^"]*)";\s*s:\d+:"stage";s:\d+:"([^"]*)";\s*s:\d+:"country";s:\d+:"([^"]*)"/g
+  let match
+  // Work on the fully "unwrapped" string (one level of s:NNN:"..." wrapper removed)
+  let haystack = raw
+  const outerMatch = raw.match(/^s:\d+:"([\s\S]+)";?$/)
+  if (outerMatch) haystack = outerMatch[1]
+
+  while ((match = pattern.exec(haystack)) !== null) {
+    results.push({
+      city: match[1].trim(),
+      stage: match[2].trim(),
+      country: match[3].trim(),
     })
   }
-  return locations.length > 0 ? locations : []
+  return results
+}
+
+/**
+ * Extract locations from the OLD format (plain string array).
+ * These are double-serialized PHP arrays of plain strings like "Los Angeles", "NY", "Toronto / Cuba".
+ */
+function parseLocationsOld(raw: string): string[] {
+  const parsed = deepUnserialize(raw)
+  if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+    return parsed.filter(Boolean)
+  }
+
+  // Fallback: regex extract quoted strings from serialized data
+  const results: string[] = []
+  let haystack = raw
+  const outerMatch = raw.match(/^s:\d+:"([\s\S]+)";?$/)
+  if (outerMatch) haystack = outerMatch[1]
+
+  // Match s:N:"value" patterns inside the array
+  const pattern = /i:\d+;s:\d+:"([^"]+)"/g
+  let match
+  while ((match = pattern.exec(haystack)) !== null) {
+    const val = match[1].trim()
+    if (val && val !== 'TBA' && val.length > 1) results.push(val)
+    else if (val === 'TBA') results.push(val)
+  }
+  return results
+}
+
+/** Clean up encoding issues from PHP/MySQL (latin1 → utf8 artifacts) */
+function fixEncoding(str: string): string {
+  return str
+    .replace(/\uFFFD/g, '') // replacement character
+    .replace(/�/g, '')
+    .replace(/\t/g, ' ')     // tabs in stage fields
+    .trim()
 }
 
 async function migrateProductionLocations(
@@ -178,57 +230,90 @@ async function migrateProductionLocations(
 ) {
   console.log('\n  → Migrating production locations...')
   const locationRows: any[] = []
+  let skippedEmpty = 0
+  let fromNew = 0
+  let fromOld = 0
 
   for (const p of posts) {
     const meta = metaByPost[p.ID] ?? {}
-    // Prefer locations_new (structured), fall back to locations (plain strings)
-    // WordPress stores these as double-serialized: s:NNN:"a:...{...}"
-    let parsed: any = null
-    if (meta.locations_new) {
-      parsed = deepUnserialize(meta.locations_new)
-    }
-    // If locations_new is empty/null, try old format
-    if (!parsed || (Array.isArray(parsed) && parsed.length === 0)) {
-      if (meta.locations) {
-        parsed = deepUnserialize(meta.locations)
+    const prodId = parseInt(p.ID, 10)
+
+    // === Try locations_new first (structured: city/stage/country) ===
+    if (meta.locations_new && meta.locations_new.length > 10
+        && meta.locations_new !== 'a:0:{}'
+        && meta.locations_new !== 'N;'
+        && meta.locations_new !== 's:6:"a:0:{}"') {
+      const locs = parseLocationsNew(meta.locations_new)
+      if (locs.length > 0) {
+        fromNew++
+        locs.forEach((loc, idx) => {
+          const city = fixEncoding(loc.city || '')
+          const stage = fixEncoding(loc.stage || '')
+          const country = fixEncoding(loc.country || '')
+
+          if (!city && !stage && !country) { skippedEmpty++; return }
+
+          // Build display string
+          const isUS = country === 'United States' || country === 'US'
+          const isCanada = country === 'Canada'
+          const isUK = country === 'United Kingdom' || country === 'UK'
+
+          let locStr: string
+          if ((isUS || isCanada) && city && stage) {
+            locStr = `${city}, ${stage}`
+          } else if (isUK && city && stage) {
+            locStr = `${city}, ${stage}`
+          } else if (isUK && city) {
+            locStr = city
+          } else {
+            const parts = [city, stage, country].filter(Boolean)
+            locStr = parts.join(', ')
+          }
+
+          locationRows.push({
+            production_id: prodId,
+            location: locStr || null,
+            city: city || null,
+            stage: stage || null,
+            country: country || null,
+            sort_order: idx,
+          })
+        })
+        continue // Skip old format if new format had data
       }
     }
-    if (!parsed) continue
 
-    // locations_new is array of location strings or objects
-    const locations = Array.isArray(parsed) ? parsed : Object.values(parsed)
-    let sortIdx = 0
-    for (const loc of locations) {
-      if (!loc) continue
-      const isObj = typeof loc === 'object' && loc !== null
-      const city = isObj ? (loc.city || null) : null
-      const stage = isObj ? (loc.stage || null) : null
-      const country = isObj ? (loc.country || null) : null
+    // === Fall back to locations (old format: plain strings) ===
+    if (meta.locations && meta.locations.length > 10
+        && meta.locations !== 'a:0:{}'
+        && meta.locations !== 'N;'
+        && meta.locations !== 's:6:"a:0:{}"') {
+      const locs = parseLocationsOld(meta.locations)
+      if (locs.length > 0) {
+        fromOld++
+        locs.forEach((locStr, idx) => {
+          const clean = fixEncoding(locStr)
+          if (!clean || clean.length <= 1) { skippedEmpty++; return }
 
-      // Build a human-readable location string from components
-      let locStr: string
-      if (typeof loc === 'string') {
-        locStr = loc
-      } else {
-        const parts = [city, stage, country].filter(Boolean)
-        locStr = parts.length > 0 ? parts.join(', ') : (loc.location || loc.name || '')
+          locationRows.push({
+            production_id: prodId,
+            location: clean,
+            city: null,
+            stage: null,
+            country: null,
+            sort_order: idx,
+          })
+        })
       }
-      if (!locStr) continue
-
-      locationRows.push({
-        production_id: parseInt(p.ID, 10),
-        location: locStr,
-        stage,
-        city,
-        country,
-        sort_order: sortIdx++,
-      })
     }
   }
+
+  console.log(`  → Built ${locationRows.length} location rows (${fromNew} from locations_new, ${fromOld} from locations, ${skippedEmpty} skipped empty)`)
 
   if (locationRows.length > 0) {
     // Delete existing and re-insert (no stable ID)
     await supabase.from('production_locations').delete().gte('production_id', 1)
+    console.log('  → Cleared existing production_locations')
     await batchUpsert('production_locations', locationRows, 500)
   }
 }

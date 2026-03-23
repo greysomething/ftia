@@ -1,8 +1,9 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState, useCallback } from 'react'
 import { saveCrew } from '@/app/admin/crew/actions'
 import Link from 'next/link'
+import { ImageScanner } from '@/components/admin/ImageScanner'
 
 interface CrewFormProps {
   crew?: Record<string, any> | null
@@ -10,20 +11,32 @@ interface CrewFormProps {
 
 export function CrewForm({ crew }: CrewFormProps) {
   const [state, action, pending] = useActionState(saveCrew, null)
-  const v = (key: string) => crew?.[key] ?? ''
+  const [scannedData, setScannedData] = useState<any>(null)
 
-  // crew_members uses arrays for emails/phones; show the first entry in the form
-  const firstEmail = Array.isArray(crew?.emails) ? crew.emails[0] ?? '' : ''
-  const firstPhone = Array.isArray(crew?.phones) ? crew.phones[0] ?? '' : ''
+  const handleScan = useCallback((data: any) => {
+    setScannedData(data)
+  }, [])
+
+  const v = (key: string) => {
+    if (scannedData?.[key] != null) return String(scannedData[key])
+    return crew?.[key] ?? ''
+  }
+
+  const firstEmail = scannedData?.email ?? (Array.isArray(crew?.emails) ? crew.emails[0] ?? '' : '')
+  const firstPhone = scannedData?.phone ?? (Array.isArray(crew?.phones) ? crew.phones[0] ?? '' : '')
 
   return (
-    <form action={action} className="space-y-6 max-w-2xl">
+    <form action={action} className="space-y-6 max-w-2xl" key={scannedData ? 'scanned' : 'default'}>
       {crew && <input type="hidden" name="id" value={crew.id} />}
 
       {state?.error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
           {state.error}
         </div>
+      )}
+
+      {!crew && (
+        <ImageScanner type="crew" onScanComplete={handleScan} />
       )}
 
       <div className="admin-card space-y-4">
@@ -59,6 +72,24 @@ export function CrewForm({ crew }: CrewFormProps) {
           <label className="form-label">Twitter / X Handle</label>
           <input name="twitter" defaultValue={v('twitter')} className="form-input" placeholder="@handle" />
         </div>
+
+        {scannedData?.roles?.length > 0 && (
+          <div className="p-3 bg-[#3ea8c8]/5 border border-[#3ea8c8]/20 rounded-lg">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">AI Detected Roles</p>
+            <div className="flex flex-wrap gap-1">
+              {scannedData.roles.map((role: string, i: number) => (
+                <span key={i} className="text-xs bg-[#3ea8c8]/10 text-[#3ea8c8] px-2 py-0.5 rounded-full">{role}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {scannedData?.bio && (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">AI Extracted Bio</p>
+            <p className="text-sm text-gray-600">{scannedData.bio}</p>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-3">

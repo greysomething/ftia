@@ -1,8 +1,9 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState, useCallback } from 'react'
 import { saveCompany } from '@/app/admin/companies/actions'
 import Link from 'next/link'
+import { ImageScanner } from '@/components/admin/ImageScanner'
 
 interface CompanyFormProps {
   company?: Record<string, any> | null
@@ -10,23 +11,43 @@ interface CompanyFormProps {
 
 export function CompanyForm({ company }: CompanyFormProps) {
   const [state, action, pending] = useActionState(saveCompany, null)
+  const [scannedData, setScannedData] = useState<any>(null)
 
-  const v = (key: string) => company?.[key] ?? ''
+  const handleScan = useCallback((data: any) => {
+    setScannedData(data)
+  }, [])
 
-  // companies uses arrays for addresses/phones/faxes/emails; show the first entry in the form
-  const firstAddress = Array.isArray(company?.addresses) ? company.addresses[0] ?? '' : ''
-  const firstPhone = Array.isArray(company?.phones) ? company.phones[0] ?? '' : ''
-  const firstFax = Array.isArray(company?.faxes) ? company.faxes[0] ?? '' : ''
-  const firstEmail = Array.isArray(company?.emails) ? company.emails[0] ?? '' : ''
+  const v = (key: string) => {
+    if (scannedData?.[key] != null) return String(scannedData[key])
+    return company?.[key] ?? ''
+  }
+
+  const firstAddress = scannedData?.address ?? (Array.isArray(company?.addresses) ? company.addresses[0] ?? '' : '')
+  const firstPhone = scannedData?.phone ?? (Array.isArray(company?.phones) ? company.phones[0] ?? '' : '')
+  const firstFax = scannedData?.fax ?? (Array.isArray(company?.faxes) ? company.faxes[0] ?? '' : '')
+  const firstEmail = scannedData?.email ?? (Array.isArray(company?.emails) ? company.emails[0] ?? '' : '')
+
+  const contentDefault = (() => {
+    if (scannedData?.staff?.length) {
+      const staffLines = scannedData.staff.map((s: any) => `${s.name} — ${s.position ?? 'Staff'}`).join('\n')
+      const base = scannedData?.content ?? company?.content ?? ''
+      return base ? `${base}\n\n--- STAFF ---\n${staffLines}` : `--- STAFF ---\n${staffLines}`
+    }
+    return scannedData?.content ?? company?.content ?? ''
+  })()
 
   return (
-    <form action={action} className="space-y-6 max-w-2xl">
+    <form action={action} className="space-y-6 max-w-2xl" key={scannedData ? 'scanned' : 'default'}>
       {company && <input type="hidden" name="id" value={company.id} />}
 
       {state?.error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
           {state.error}
         </div>
+      )}
+
+      {!company && (
+        <ImageScanner type="company" onScanComplete={handleScan} />
       )}
 
       <div className="admin-card space-y-4">
@@ -81,7 +102,12 @@ export function CompanyForm({ company }: CompanyFormProps) {
 
       <div className="admin-card space-y-4">
         <h2 className="font-semibold text-gray-700">Notes</h2>
-        <textarea name="content" rows={5} defaultValue={v('content')} className="form-textarea" />
+        <textarea name="content" rows={5} defaultValue={contentDefault} className="form-textarea" />
+        {scannedData?.staff?.length > 0 && (
+          <p className="text-xs text-[#3ea8c8]">
+            ↑ AI extracted {scannedData.staff.length} staff member(s) from your screenshot
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-3">

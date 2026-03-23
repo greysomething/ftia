@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getAdminCrew } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
 import { deleteCrew } from './actions'
+import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
 
 export const metadata: Metadata = { title: 'Crew' }
 
@@ -63,10 +64,7 @@ export default async function AdminCrewPage({ searchParams }: Props) {
                   <div className="flex items-center justify-end gap-2">
                     <Link href={`/admin/crew/${c.id}/edit`} className="text-xs btn-outline py-1 px-2">Edit</Link>
                     <form action={async () => { 'use server'; await deleteCrew(c.id) }}>
-                      <button type="submit" className="text-xs btn-danger py-1 px-2"
-                        onClick={(e) => { if (!confirm('Delete this crew member?')) e.preventDefault() }}>
-                        Delete
-                      </button>
+                      <ConfirmDeleteButton message="Delete this crew member?" />
                     </form>
                   </div>
                 </td>

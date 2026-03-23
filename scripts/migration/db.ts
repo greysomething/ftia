@@ -14,7 +14,7 @@ const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD ?? 'root'
 
 export function mysql(sql: string): any[] {
   const escaped = sql.replace(/'/g, `'\\''`)
-  const cmd = `"${MYSQL_BIN}" -u${MYSQL_USER} -p${MYSQL_PASSWORD} --protocol=socket -S "${MYSQL_SOCKET}" ${MYSQL_DB} --batch --raw -e '${escaped}'`
+  const cmd = `"${MYSQL_BIN}" -u${MYSQL_USER} -p${MYSQL_PASSWORD} --protocol=socket -S "${MYSQL_SOCKET}" --default-character-set=utf8mb4 ${MYSQL_DB} --batch --raw -e '${escaped}'`
   try {
     // Strip MYSQL_HOST / MYSQL_TCP_PORT from env so they don't override socket
     const cleanEnv = { ...process.env }

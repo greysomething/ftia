@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-
-const LEVEL_PRICE_MAP: Record<string, string | undefined> = {
-  '1': process.env.STRIPE_PRICE_ANNUAL_PRO,
-  '2': process.env.STRIPE_PRICE_6MONTH,
-  '3': process.env.STRIPE_PRICE_MONTHLY,
-  '4': process.env.STRIPE_PRICE_1MONTH_TRIAL,
-  '5': process.env.STRIPE_PRICE_50PCT_ANNUAL,
-  '6': process.env.STRIPE_PRICE_14DAY_TRIAL,
-  '7': process.env.STRIPE_PRICE_14DAY_TRIAL_ALT,
-}
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { getActiveStripeKeys } from '@/lib/stripe-settings'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -22,23 +13,42 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { levelId } = body
 
-  if (!levelId || !LEVEL_PRICE_MAP[String(levelId)]) {
-    return NextResponse.json({ error: 'Invalid level' }, { status: 400 })
+  if (!levelId) {
+    return NextResponse.json({ error: 'Level ID is required' }, { status: 400 })
   }
 
-  const priceId = LEVEL_PRICE_MAP[String(levelId)]!
+  // Look up the Stripe price ID from the membership_levels table
+  const admin = createAdminClient()
+  const { data: level, error: levelError } = await admin
+    .from('membership_levels')
+    .select('stripe_price_id, name')
+    .eq('id', parseInt(String(levelId), 10))
+    .eq('is_active', true)
+    .single()
 
-  // Lazy import stripe to avoid build errors if not configured
-  const stripeKey = process.env.STRIPE_SECRET_KEY
-  if (!stripeKey) {
-    return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
+  if (levelError || !level?.stripe_price_id) {
+    return NextResponse.json(
+      { error: 'This plan is not available or has no Stripe price configured.' },
+      { status: 400 }
+    )
+  }
+
+  const priceId = level.stripe_price_id
+
+  // Get active Stripe keys (test or live based on admin setting)
+  const { secretKey, mode } = await getActiveStripeKeys()
+  if (!secretKey) {
+    return NextResponse.json(
+      { error: `Stripe ${mode} mode secret key is not configured. Update in Admin → Merchant Settings.` },
+      { status: 500 }
+    )
   }
 
   const Stripe = (await import('stripe')).default
-  const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' as any })
+  const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any })
 
   // Fetch or create Stripe customer
-  const { data: profile } = await supabase
+  const { data: profile } = await admin
     .from('user_profiles')
     .select('stripe_customer_id, first_name, last_name')
     .eq('id', user.id)
@@ -54,7 +64,7 @@ export async function POST(req: NextRequest) {
     })
     customerId = customer.id
 
-    await supabase
+    await admin
       .from('user_profiles')
       .update({ stripe_customer_id: customerId })
       .eq('id', user.id)
@@ -67,7 +77,7 @@ export async function POST(req: NextRequest) {
     mode: 'subscription',
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${origin}/membership-account/membership-confirmation?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/membership-account/membership-levels`,
+    cancel_url: `${origin}/membership-plans`,
     metadata: {
       supabase_user_id: user.id,
       level_id: String(levelId),

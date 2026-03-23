@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getAdminCompanies } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
 import { deleteCompany } from './actions'
+import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
 
 export const metadata: Metadata = { title: 'Companies' }
 
@@ -63,10 +64,7 @@ export default async function AdminCompaniesPage({ searchParams }: Props) {
                   <div className="flex items-center justify-end gap-2">
                     <Link href={`/admin/companies/${c.id}/edit`} className="text-xs btn-outline py-1 px-2">Edit</Link>
                     <form action={async () => { 'use server'; await deleteCompany(c.id) }}>
-                      <button type="submit" className="text-xs btn-danger py-1 px-2"
-                        onClick={(e) => { if (!confirm('Delete this company?')) e.preventDefault() }}>
-                        Delete
-                      </button>
+                      <ConfirmDeleteButton message="Delete this company?" />
                     </form>
                   </div>
                 </td>

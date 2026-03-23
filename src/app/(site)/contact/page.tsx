@@ -5,7 +5,15 @@ export const metadata: Metadata = {
   description: 'Get in touch with the Production List team.',
 }
 
-export default function ContactPage() {
+interface Props {
+  searchParams: Promise<{ success?: string; error?: string }>
+}
+
+export default async function ContactPage({ searchParams }: Props) {
+  const params = await searchParams
+  const success = params.success === 'true'
+  const error = params.error
+
   return (
     <div className="page-wrap py-16 max-w-2xl mx-auto">
       <div className="white-bg p-8">
@@ -13,6 +21,17 @@ export default function ContactPage() {
         <p className="text-gray-600 mb-8">
           Have a question or need support? We&apos;re here to help. Fill out the form below and we&apos;ll get back to you as soon as possible.
         </p>
+
+        {success && (
+          <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg p-4 mb-6 text-sm">
+            Thank you for your message! We&apos;ll get back to you shortly.
+          </div>
+        )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6 text-sm">
+            {error === 'missing_fields' ? 'Please fill out all required fields.' : 'Something went wrong. Please try again.'}
+          </div>
+        )}
 
         <form
           method="POST"

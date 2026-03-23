@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 export function Footer() {
   return (
@@ -6,10 +7,21 @@ export function Footer() {
       <div className="page-wrap py-12">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
           <div className="md:col-span-5">
-            <h3 className="text-lg font-bold mb-1">Production List</h3>
-            <p className="text-xs text-accent uppercase tracking-widest mb-3">
-              Film &amp; Television Industry Alliance
-            </p>
+            <div className="flex items-center gap-3 mb-3">
+              <Image
+                src="/images/pl-emblem.png"
+                alt="PL"
+                width={38}
+                height={38}
+                className="flex-shrink-0"
+              />
+              <div>
+                <h3 className="text-lg font-bold leading-tight">Production List</h3>
+                <p className="text-xs text-accent uppercase tracking-widest">
+                  Film &amp; Television Industry Alliance
+                </p>
+              </div>
+            </div>
             <p className="text-sm text-white/70 leading-relaxed">
               FTIA&apos;s Production List is the most comprehensive directory of
               active film and television productions in pre-production across
@@ -25,14 +37,14 @@ export function Footer() {
               <li><Link href="/productions" className="text-white/80 hover:text-white transition-colors">Productions</Link></li>
               <li><Link href="/production-contact" className="text-white/80 hover:text-white transition-colors">Companies</Link></li>
               <li><Link href="/production-role" className="text-white/80 hover:text-white transition-colors">Cast &amp; Crew</Link></li>
-              <li><Link href="/production-list" className="text-white/80 hover:text-white transition-colors">Production Lists</Link></li>
+              <li><Link href="/productions?view=weekly" className="text-white/80 hover:text-white transition-colors">Weekly Production List</Link></li>
             </ul>
           </div>
 
           <div className="md:col-span-2">
             <h4 className="font-semibold mb-3 text-accent">Membership</h4>
             <ul className="space-y-2 text-sm">
-              <li><Link href="/membership-account/membership-levels" className="text-white/80 hover:text-white transition-colors">Join Now</Link></li>
+              <li><Link href="/membership-plans" className="text-white/80 hover:text-white transition-colors">Join Now</Link></li>
               <li><Link href="/membership-plans" className="text-white/80 hover:text-white transition-colors">Pricing Plans</Link></li>
               <li><Link href="/membership-account" className="text-white/80 hover:text-white transition-colors">My Account</Link></li>
               <li><Link href="/what-is-production-list" className="text-white/80 hover:text-white transition-colors">About Us</Link></li>
@@ -42,7 +54,7 @@ export function Footer() {
           <div className="md:col-span-3">
             <h4 className="font-semibold mb-3 text-accent">Resources</h4>
             <ul className="space-y-2 text-sm">
-              <li><Link href="/blog" className="text-white/80 hover:text-white transition-colors">Production News</Link></li>
+              <li><Link href="/blog" className="text-white/80 hover:text-white transition-colors">Blog</Link></li>
               <li><Link href="/production-resources" className="text-white/80 hover:text-white transition-colors">Production Resources</Link></li>
               <li><Link href="/contact" className="text-white/80 hover:text-white transition-colors">Contact Us</Link></li>
               <li><Link href="/terms-of-service" className="text-white/80 hover:text-white transition-colors">Terms of Service</Link></li>

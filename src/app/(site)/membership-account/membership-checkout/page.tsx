@@ -26,7 +26,7 @@ export default async function MembershipCheckoutPage({ searchParams }: Props) {
   if (!level) {
     return (
       <div className="page-wrap py-12 text-center">
-        <p className="text-red-600">Invalid membership level. <a href="/membership-account/membership-levels" className="underline">View plans</a></p>
+        <p className="text-red-600">Invalid membership level. <a href="/membership-plans" className="underline">View plans</a></p>
       </div>
     )
   }

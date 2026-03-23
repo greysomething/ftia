@@ -142,10 +142,8 @@ export default async function MembershipPlansPage() {
                         ? `/membership-account/membership-checkout?level=${level.id}`
                         : `/register?level=${level.id}`
                     }
-                    className={`w-full text-center py-2.5 rounded-md font-medium transition-colors block ${
-                      isPopular
-                        ? 'bg-accent text-white hover:bg-accent-dark'
-                        : 'bg-primary text-white hover:bg-primary-light'
+                    className={`w-full text-center py-2.5 rounded-md font-semibold transition-all duration-200 block hover:brightness-110 hover:shadow-md !text-white hover:!text-white ${
+                      isPopular ? 'bg-accent' : 'bg-primary'
                     }`}
                   >
                     Get Started

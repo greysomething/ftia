@@ -63,7 +63,7 @@ export function MobileMenu({ user }: { user: User | null }) {
                     Login
                   </Link>
                   <Link
-                    href="/membership-account/membership-levels"
+                    href="/membership-plans"
                     onClick={() => setOpen(false)}
                     className="px-6 py-3 text-accent font-semibold block"
                   >

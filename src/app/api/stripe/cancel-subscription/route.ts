@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getActiveStripeKeys } from '@/lib/stripe-settings'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -9,8 +10,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const stripeKey = process.env.STRIPE_SECRET_KEY
-  if (!stripeKey) {
+  const { secretKey } = await getActiveStripeKeys()
+  if (!secretKey) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }
 
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
   }
 
   const Stripe = (await import('stripe')).default
-  const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' as any })
+  const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any })
 
   // Cancel at period end (user retains access until billing period ends)
   await stripe.subscriptions.update(membership.stripe_subscription_id, {
