@@ -5,7 +5,7 @@ import { getCrewMemberBySlug } from '@/lib/queries'
 import { getUser, isMember } from '@/lib/auth'
 import { MemberGate } from '@/components/MemberGate'
 import { createClient } from '@/lib/supabase/server'
-import { parsePhpSerialized, formatDate } from '@/lib/utils'
+import { parsePhpSerialized, formatDate, formatPhone } from '@/lib/utils'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 
 const PHASE_COLORS: Record<string, string> = {
@@ -45,7 +45,7 @@ export default async function CrewMemberPage({ params }: Props) {
 
   // Parse contact info
   const emails = parsePhpSerialized(person.emails)
-  const phones = parsePhpSerialized(person.phones)
+  const phones = parsePhpSerialized(person.phones).map(formatPhone)
 
   // Get productions this person is in
   const supabase = await createClient()

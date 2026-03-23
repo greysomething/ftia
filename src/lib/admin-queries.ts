@@ -150,22 +150,45 @@ export async function getProductionStatusOptions() {
 
 // ─── Companies ────────────────────────────────────────────────────────────────
 
-export async function getAdminCompanies({ page = 1, q }: { page?: number; q?: string } = {}) {
+export type CompanySortField = 'id' | 'title' | 'visibility' | 'wp_updated_at'
+
+export async function getAdminCompanies({
+  page = 1, q, visibility, sort = 'title', dir = 'asc',
+}: {
+  page?: number; q?: string; visibility?: string; sort?: CompanySortField; dir?: SortDir
+} = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
 
   let query = supabase
     .from('companies')
-    .select('id, title, slug, visibility, wp_updated_at', { count: 'exact' })
-    .order('title', { ascending: true })
+    .select('id, title, slug, visibility, addresses, phones, wp_updated_at', { count: 'exact' })
+    .order(sort, { ascending: dir === 'asc' })
     .range(from, to)
 
   if (q) query = query.ilike('title', `%${q}%`)
+  if (visibility) query = query.eq('visibility', visibility)
 
   const { data, count, error } = await query
   if (error) throw error
   return { companies: data ?? [], total: count ?? 0, perPage: PER_PAGE }
+}
+
+export async function getAdminCompanyCounts() {
+  const supabase = createAdminClient()
+  const [
+    { count: allCount },
+    { count: publishCount },
+    { count: draftCount },
+    { count: trashCount },
+  ] = await Promise.all([
+    supabase.from('companies').select('*', { count: 'exact', head: true }),
+    supabase.from('companies').select('*', { count: 'exact', head: true }).eq('visibility', 'publish'),
+    supabase.from('companies').select('*', { count: 'exact', head: true }).eq('visibility', 'draft'),
+    supabase.from('companies').select('*', { count: 'exact', head: true }).eq('visibility', 'trash'),
+  ])
+  return { all: allCount ?? 0, publish: publishCount ?? 0, draft: draftCount ?? 0, trash: trashCount ?? 0 }
 }
 
 export async function getAdminCompanyById(id: number) {
@@ -181,22 +204,45 @@ export async function getAdminCompanyById(id: number) {
 
 // ─── Crew ─────────────────────────────────────────────────────────────────────
 
-export async function getAdminCrew({ page = 1, q }: { page?: number; q?: string } = {}) {
+export type CrewSortField = 'id' | 'name' | 'visibility' | 'wp_updated_at'
+
+export async function getAdminCrew({
+  page = 1, q, visibility, sort = 'name', dir = 'asc',
+}: {
+  page?: number; q?: string; visibility?: string; sort?: CrewSortField; dir?: SortDir
+} = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
 
   let query = supabase
     .from('crew_members')
-    .select('id, name, slug, visibility, wp_updated_at', { count: 'exact' })
-    .order('name', { ascending: true })
+    .select('id, name, slug, visibility, wp_updated_at, production_crew_roles(role_name)', { count: 'exact' })
+    .order(sort, { ascending: dir === 'asc' })
     .range(from, to)
 
   if (q) query = query.ilike('name', `%${q}%`)
+  if (visibility) query = query.eq('visibility', visibility)
 
   const { data, count, error } = await query
   if (error) throw error
   return { crew: data ?? [], total: count ?? 0, perPage: PER_PAGE }
+}
+
+export async function getAdminCrewCounts() {
+  const supabase = createAdminClient()
+  const [
+    { count: allCount },
+    { count: publishCount },
+    { count: draftCount },
+    { count: trashCount },
+  ] = await Promise.all([
+    supabase.from('crew_members').select('*', { count: 'exact', head: true }),
+    supabase.from('crew_members').select('*', { count: 'exact', head: true }).eq('visibility', 'publish'),
+    supabase.from('crew_members').select('*', { count: 'exact', head: true }).eq('visibility', 'draft'),
+    supabase.from('crew_members').select('*', { count: 'exact', head: true }).eq('visibility', 'trash'),
+  ])
+  return { all: allCount ?? 0, publish: publishCount ?? 0, draft: draftCount ?? 0, trash: trashCount ?? 0 }
 }
 
 export async function getAdminCrewById(id: number) {

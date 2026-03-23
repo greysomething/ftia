@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getProductionBySlug, getProductionSlugs } from '@/lib/queries'
 import { getUser, isMember } from '@/lib/auth'
-import { formatProductionDate, formatLocation, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, maskEmail, maskPhone, parsePhpSerialized } from '@/lib/utils'
+import { formatProductionDate, formatLocation, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, formatPhone, maskEmail, maskPhone, parsePhpSerialized } from '@/lib/utils'
 import { MemberGate } from '@/components/MemberGate'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { TrendingSearches } from '@/components/TrendingSearches'
@@ -295,7 +295,7 @@ export default async function ProductionPage({ params }: Props) {
                           {member ? (
                             (() => {
                               const addresses = parsePhpSerialized(company.addresses)
-                              const phones = parsePhpSerialized(company.phones)
+                              const phones = parsePhpSerialized(company.phones).map(formatPhone)
                               const emails = parsePhpSerialized(company.emails)
                               const websites = parsePhpSerialized(company.websites)
                               return (

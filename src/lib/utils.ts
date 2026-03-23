@@ -48,6 +48,25 @@ export function slugify(str: string): string {
     .replace(/^-|-$/g, '')
 }
 
+/**
+ * Format a phone number into a consistent readable format.
+ * Handles: "3105551234", "+13105551234", "(310) 555-1234", "310-555-1234", "310.555.1234"
+ * Returns: "(310) 555-1234" for US numbers, original string for international/non-standard
+ */
+export function formatPhone(phone: string): string {
+  if (!phone) return ''
+  const cleaned = phone.replace(/[^\d+]/g, '')
+  // US 10-digit or 11-digit with leading 1
+  const usMatch = cleaned.match(/^(?:\+?1)?(\d{3})(\d{3})(\d{4})$/)
+  if (usMatch) return `(${usMatch[1]}) ${usMatch[2]}-${usMatch[3]}`
+  // 7-digit local
+  const localMatch = cleaned.match(/^(\d{3})(\d{4})$/)
+  if (localMatch) return `${localMatch[1]}-${localMatch[2]}`
+  // If it already looks formatted (has parens, dashes, spaces), return as-is
+  if (/[\(\)\-\s]/.test(phone) && /\d/.test(phone)) return phone.trim()
+  return phone.trim()
+}
+
 /** Mask contact info for non-members */
 export function maskEmail(email: string): string {
   const [local, domain] = email.split('@')

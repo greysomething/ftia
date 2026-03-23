@@ -9,6 +9,7 @@ import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
 import type { ProductionPhase } from '@/types/database'
 
 export const metadata: Metadata = { title: 'Productions' }
+export const dynamic = 'force-dynamic'
 
 const VALID_SORT_FIELDS: ProductionSortField[] = [
   'id', 'title', 'computed_status', 'visibility',

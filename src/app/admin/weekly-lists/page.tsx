@@ -84,13 +84,21 @@ export default async function AdminWeeklyListsPage() {
                     </span>
                   </td>
                   <td className="text-right">
-                    <Link
-                      href={`/productions/week/${w.monday}`}
-                      target="_blank"
-                      className="text-xs btn-outline py-1 px-2"
-                    >
-                      View List
-                    </Link>
+                    <div className="flex items-center justify-end gap-2">
+                      <Link
+                        href={`/admin/weekly-lists/${w.monday}`}
+                        className="text-xs btn-primary py-1 px-2"
+                      >
+                        Edit
+                      </Link>
+                      <Link
+                        href={`/productions/week/${w.monday}`}
+                        target="_blank"
+                        className="text-xs btn-outline py-1 px-2"
+                      >
+                        View
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               )

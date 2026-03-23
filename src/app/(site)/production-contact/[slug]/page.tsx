@@ -5,7 +5,7 @@ import { getCompanyBySlug } from '@/lib/queries'
 import { getUser, isMember } from '@/lib/auth'
 import { MemberGate } from '@/components/MemberGate'
 import { createClient } from '@/lib/supabase/server'
-import { parsePhpSerialized, formatDate } from '@/lib/utils'
+import { parsePhpSerialized, formatDate, formatPhone } from '@/lib/utils'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import type { ProductionPhase } from '@/types/database'
 
@@ -45,8 +45,8 @@ export default async function CompanyPage({ params }: Props) {
 
   // Parse PHP serialized contact fields
   const addresses = parsePhpSerialized(company.addresses)
-  const phones = parsePhpSerialized(company.phones)
-  const faxes = parsePhpSerialized(company.faxes)
+  const phones = parsePhpSerialized(company.phones).map(formatPhone)
+  const faxes = parsePhpSerialized(company.faxes).map(formatPhone)
   const emails = parsePhpSerialized(company.emails)
 
   // Get linked productions with more data
