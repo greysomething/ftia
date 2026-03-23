@@ -7,15 +7,16 @@ export function SupplementButton({ weekMonday, currentCount }: { weekMonday: str
   const [result, setResult] = useState<{ message: string; added: number } | null>(null)
 
   async function handleSupplement() {
-    const target = 40
+    // Randomize target between 40-50 each time
+    const target = 40 + Math.floor(Math.random() * 11)
     const needed = Math.max(0, target - currentCount)
 
-    if (needed === 0) {
-      setResult({ message: `List already has ${currentCount} productions (target: ${target}).`, added: 0 })
+    if (currentCount >= 40) {
+      setResult({ message: `List already has ${currentCount} productions (meets 40+ minimum).`, added: 0 })
       return
     }
 
-    if (!confirm(`Add up to ${needed} supplemental productions to reach the ${target} target?\n\nThis will find published productions from older weekly lists whose filming dates are still 30+ days in the future.`)) {
+    if (!confirm(`Add up to ${needed} supplemental productions to reach ${target}?\n\nThis will find published productions from older weekly lists whose filming dates are still 30+ days in the future.`)) {
       return
     }
 

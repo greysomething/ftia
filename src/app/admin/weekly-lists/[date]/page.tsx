@@ -156,12 +156,12 @@ export default async function AdminWeekDetailPage({ params }: Props) {
       <div className="admin-card mb-6">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-gray-700">List Progress</span>
-          <span className="text-sm text-gray-500">{totalCount} / 40 target</span>
+          <span className="text-sm text-gray-500">{totalCount} / 40+ target</span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2.5">
           <div
             className={`h-2.5 rounded-full transition-all ${totalCount >= 40 ? 'bg-green-500' : totalCount >= 20 ? 'bg-yellow-500' : 'bg-red-400'}`}
-            style={{ width: `${Math.min(100, (totalCount / 40) * 100)}%` }}
+            style={{ width: `${Math.min(100, (totalCount / 45) * 100)}%` }}
           />
         </div>
       </div>
