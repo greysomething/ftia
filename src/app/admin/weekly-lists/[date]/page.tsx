@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getProductionsForWeek } from '@/lib/queries'
 import { createAdminClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
 import { RemoveFromWeekButton } from './RemoveButton'
@@ -27,9 +26,8 @@ export default async function AdminWeekDetailPage({ params }: Props) {
     month: 'long', day: 'numeric', year: 'numeric',
   })
 
-  const productions = await getProductionsForWeek(date)
-
-  // Get all week entries with IDs for this week (for removal)
+  // Query directly from production_week_entries via admin client
+  // This ensures consistency with the index page counts
   const supabase = createAdminClient()
   const { data: entries } = await supabase
     .from('production_week_entries')
@@ -37,8 +35,21 @@ export default async function AdminWeekDetailPage({ params }: Props) {
     .eq('week_monday', date)
 
   const entryByProductionId: Record<number, number> = {}
+  const productionIds: number[] = []
   for (const e of entries ?? []) {
     entryByProductionId[e.production_id] = e.id
+    productionIds.push(e.production_id)
+  }
+
+  // Fetch the actual production data for these IDs
+  let productions: any[] = []
+  if (productionIds.length > 0) {
+    const { data } = await supabase
+      .from('productions')
+      .select('id, title, slug, visibility, computed_status, wp_updated_at')
+      .in('id', productionIds)
+      .order('title')
+    productions = data ?? []
   }
 
   return (

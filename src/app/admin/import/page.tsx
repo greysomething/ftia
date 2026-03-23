@@ -27,6 +27,48 @@ const IMPORT_ITEMS: ImportItem[] = [
   { type: 'memberships', label: 'Memberships', description: 'Membership records from WP' },
 ]
 
+function CleanPhpDataButton() {
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  async function handleClean() {
+    if (!confirm('This will clean all PHP serialized data from company addresses, phones, faxes, emails and crew contact fields. Continue?')) return
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await fetch('/api/admin/clean-php-data', { method: 'POST' })
+      const data = await res.json()
+      setResult(data.message ?? JSON.stringify(data))
+    } catch (err: any) {
+      setResult('Error: ' + (err.message ?? 'Unknown'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="admin-card mb-6 border-orange-200 bg-orange-50">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-orange-800">🧹 Clean PHP Serialized Data</h3>
+          <p className="text-sm text-orange-700 mt-1">
+            Strips PHP serialized formatting from all company/crew contact fields (addresses, phones, faxes, emails)
+            and reformats phone numbers to (xxx) xxx-xxxx.
+          </p>
+        </div>
+        <button onClick={handleClean} disabled={loading} className="btn-primary whitespace-nowrap ml-4">
+          {loading ? 'Cleaning…' : 'Run Cleanup'}
+        </button>
+      </div>
+      {result && (
+        <div className="mt-3 p-3 bg-white border border-orange-200 rounded text-sm text-orange-800">
+          {result}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminImportPage() {
   const [statuses, setStatuses] = useState<Record<ImportType, Status>>({} as any)
   const [outputs, setOutputs] = useState<Record<ImportType, string>>({} as any)
@@ -115,6 +157,9 @@ export default function AdminImportPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Database Cleanup */}
+      <CleanPhpDataButton />
 
       {/* Output panel */}
       {expandedOutput && outputs[expandedOutput] && (

@@ -4,6 +4,7 @@ import { useActionState, useState, useCallback } from 'react'
 import { saveCrew } from '@/app/admin/crew/actions'
 import Link from 'next/link'
 import { ImageScanner } from '@/components/admin/ImageScanner'
+import { parsePhpSerialized, formatPhone } from '@/lib/utils'
 
 interface CrewFormProps {
   crew?: Record<string, any> | null
@@ -22,8 +23,8 @@ export function CrewForm({ crew }: CrewFormProps) {
     return crew?.[key] ?? ''
   }
 
-  const firstEmail = scannedData?.email ?? (Array.isArray(crew?.emails) ? crew.emails[0] ?? '' : '')
-  const firstPhone = scannedData?.phone ?? (Array.isArray(crew?.phones) ? crew.phones[0] ?? '' : '')
+  const firstEmail = scannedData?.email ?? parsePhpSerialized(crew?.emails)[0] ?? ''
+  const firstPhone = scannedData?.phone ?? formatPhone(parsePhpSerialized(crew?.phones)[0] ?? '')
 
   return (
     <form action={action} className="space-y-6 max-w-2xl" key={scannedData ? 'scanned' : 'default'}>

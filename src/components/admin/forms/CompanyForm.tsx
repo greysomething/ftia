@@ -4,6 +4,7 @@ import { useActionState, useState, useCallback } from 'react'
 import { saveCompany } from '@/app/admin/companies/actions'
 import Link from 'next/link'
 import { ImageScanner } from '@/components/admin/ImageScanner'
+import { parsePhpSerialized, formatPhone } from '@/lib/utils'
 
 interface CompanyFormProps {
   company?: Record<string, any> | null
@@ -22,10 +23,11 @@ export function CompanyForm({ company }: CompanyFormProps) {
     return company?.[key] ?? ''
   }
 
-  const firstAddress = scannedData?.address ?? (Array.isArray(company?.addresses) ? company.addresses[0] ?? '' : '')
-  const firstPhone = scannedData?.phone ?? (Array.isArray(company?.phones) ? company.phones[0] ?? '' : '')
-  const firstFax = scannedData?.fax ?? (Array.isArray(company?.faxes) ? company.faxes[0] ?? '' : '')
-  const firstEmail = scannedData?.email ?? (Array.isArray(company?.emails) ? company.emails[0] ?? '' : '')
+  // Parse PHP serialized data from DB arrays and take the first clean value
+  const firstAddress = scannedData?.address ?? parsePhpSerialized(company?.addresses)[0] ?? ''
+  const firstPhone = scannedData?.phone ?? formatPhone(parsePhpSerialized(company?.phones)[0] ?? '')
+  const firstFax = scannedData?.fax ?? formatPhone(parsePhpSerialized(company?.faxes)[0] ?? '')
+  const firstEmail = scannedData?.email ?? parsePhpSerialized(company?.emails)[0] ?? ''
 
   const contentDefault = (() => {
     if (scannedData?.staff?.length) {

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getAdminDnwNoticeById } from '@/lib/admin-queries'
 import { DnwNoticeForm } from '@/components/admin/forms/DnwNoticeForm'
+import { StatusBar } from '@/components/admin/StatusBar'
 
 export const metadata: Metadata = { title: 'Edit Notice' }
 
@@ -14,7 +15,12 @@ export default async function EditDnwNoticePage({ params }: Props) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Edit Do Not Work Notice</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-4">Edit Do Not Work Notice</h1>
+      <StatusBar
+        visibility={(notice as any).visibility ?? (notice as any).status}
+        updatedAt={(notice as any).updated_at}
+        type="notice"
+      />
       <DnwNoticeForm notice={notice} />
     </div>
   )
