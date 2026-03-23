@@ -21,33 +21,51 @@ export default async function AdminWeekDetailPage({ params }: Props) {
   const mondayDate = new Date(date + 'T00:00:00')
   const sundayDate = new Date(mondayDate)
   sundayDate.setDate(mondayDate.getDate() + 6)
+  const nextMonday = new Date(mondayDate)
+  nextMonday.setDate(mondayDate.getDate() + 7)
 
   const fmt = (d: Date) => d.toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',
   })
 
-  // Query directly from production_week_entries via admin client
-  // This ensures consistency with the index page counts
   const supabase = createAdminClient()
-  const { data: entries } = await supabase
+
+  // Try production_week_entries table first
+  const { data: entries, error: entriesError } = await (supabase as any)
     .from('production_week_entries')
     .select('id, production_id')
     .eq('week_monday', date)
 
   const entryByProductionId: Record<number, number> = {}
   const productionIds: number[] = []
-  for (const e of entries ?? []) {
-    entryByProductionId[e.production_id] = e.id
-    productionIds.push(e.production_id)
+
+  if (!entriesError && entries && entries.length > 0) {
+    for (const e of entries) {
+      entryByProductionId[e.production_id] = e.id
+      productionIds.push(e.production_id)
+    }
   }
 
-  // Fetch the actual production data for these IDs
   let productions: any[] = []
+  let usingFallback = false
+
   if (productionIds.length > 0) {
+    // Fetch productions from the week_entries table
     const { data } = await supabase
       .from('productions')
       .select('id, title, slug, visibility, computed_status, wp_updated_at')
       .in('id', productionIds)
+      .order('title')
+    productions = data ?? []
+  } else {
+    // Fallback: use wp_updated_at date range (same logic as getProductionWeeks index)
+    usingFallback = true
+    const { data } = await supabase
+      .from('productions')
+      .select('id, title, slug, visibility, computed_status, wp_updated_at')
+      .eq('visibility', 'publish')
+      .gte('wp_updated_at', mondayDate.toISOString())
+      .lt('wp_updated_at', nextMonday.toISOString())
       .order('title')
     productions = data ?? []
   }
@@ -77,6 +95,13 @@ export default async function AdminWeekDetailPage({ params }: Props) {
           View Public Page
         </Link>
       </div>
+
+      {usingFallback && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 mb-6 text-sm text-yellow-800">
+          <strong>Note:</strong> This week&apos;s list is based on production update dates (legacy data).
+          Use &ldquo;Snapshot This Week&rdquo; on the Weekly Lists page to create explicit entries.
+        </div>
+      )}
 
       {/* Add production */}
       <div className="admin-card mb-6">
@@ -120,12 +145,14 @@ export default async function AdminWeekDetailPage({ params }: Props) {
                   {formatDate(p.wp_updated_at)}
                 </td>
                 <td className="text-right">
-                  {entryByProductionId[p.id] && (
+                  {entryByProductionId[p.id] ? (
                     <RemoveFromWeekButton
                       entryId={entryByProductionId[p.id]}
                       weekMonday={date}
                     />
-                  )}
+                  ) : usingFallback ? (
+                    <span className="text-xs text-gray-400">Legacy</span>
+                  ) : null}
                 </td>
               </tr>
             ))}
