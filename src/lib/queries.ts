@@ -154,15 +154,33 @@ export async function getProductions({
 export async function getProductionWeeks() {
   const supabase = await createClient()
 
-  // Try the week entries table first
-  const { data: weekEntries, error: weekError } = await (supabase as any)
-    .from('production_week_entries')
-    .select('week_monday, production_id') as { data: any[] | null; error: any }
+  // Paginate through all production_week_entries (Supabase default limit is 1000)
+  const allEntries: Array<{ week_monday: string; production_id: number }> = []
+  const PAGE_SIZE = 1000
+  let page = 0
+  let hasMore = true
 
-  if (!weekError && weekEntries && weekEntries.length > 0) {
+  while (hasMore) {
+    const from = page * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+    const { data, error } = await (supabase as any)
+      .from('production_week_entries')
+      .select('week_monday, production_id')
+      .range(from, to) as { data: any[] | null; error: any }
+
+    if (error || !data || data.length === 0) {
+      hasMore = false
+    } else {
+      allEntries.push(...data)
+      hasMore = data.length === PAGE_SIZE
+      page++
+    }
+  }
+
+  if (allEntries.length > 0) {
     // Group by week_monday and count unique productions
     const weekMap = new Map<string, Set<number>>()
-    for (const entry of weekEntries) {
+    for (const entry of allEntries) {
       const mondayStr = typeof entry.week_monday === 'string'
         ? entry.week_monday
         : new Date(entry.week_monday).toISOString().split('T')[0]
