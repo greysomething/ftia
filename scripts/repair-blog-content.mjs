@@ -22,8 +22,14 @@ const MYSQL_SOCKET = process.env.MYSQL_SOCKET ??
   '/Users/greysomething/Library/Application Support/Local/run/2W0rfPpDJ/mysql/mysqld.sock'
 const MYSQL_DB = 'local'
 
-const SUPABASE_URL = 'https://ynwdhnlnawemmxjrtgyy.supabase.co'
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlud2RobmxuYXdlbW14anJ0Z3l5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzIxMTI3MiwiZXhwIjoyMDg4Nzg3MjcyfQ.ukhyOJUIH_Y6IHJVpXnsqNMvX_o4FojGcOfY-HKrzko'
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.')
+  console.error('Copy them from .env.local or set them before running this script.')
+  process.exit(1)
+}
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
 
