@@ -38,7 +38,7 @@ export async function Header() {
               Companies
             </Link>
             <Link href="/production-role" className="text-white/90 hover:text-accent transition-colors">
-              Crew
+              People
             </Link>
             <Link href="/blog" className="text-white/90 hover:text-accent transition-colors">
               News

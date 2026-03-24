@@ -47,7 +47,7 @@ const NAV_ITEMS = [
   },
   {
     href: '/admin/crew',
-    label: 'Crew',
+    label: 'People',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

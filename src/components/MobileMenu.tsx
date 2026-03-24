@@ -29,7 +29,7 @@ export function MobileMenu({ user }: { user: User | null }) {
             {[
               ['Productions', '/productions'],
               ['Companies', '/production-contact'],
-              ['Crew', '/production-role'],
+              ['People', '/production-role'],
               ['News', '/blog'],
               ['About', '/what-is-production-list'],
             ].map(([label, href]) => (
