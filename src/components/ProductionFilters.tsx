@@ -11,9 +11,9 @@ interface FilterProps {
 }
 
 const QUICK_STATUSES = [
-  { label: 'In Development', slug: 'in-development' },
+  { label: 'Development', slug: 'development' },
   { label: 'Pre-Production', slug: 'pre-production' },
-  { label: 'In Production', slug: 'in-production' },
+  { label: 'Production', slug: 'production' },
   { label: 'Post-Production', slug: 'post-production' },
 ]
 

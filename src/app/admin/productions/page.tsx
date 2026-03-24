@@ -34,6 +34,7 @@ function SortHeader({
   currentSort,
   currentDir,
   q,
+  status,
   className,
 }: {
   label: string
@@ -41,12 +42,14 @@ function SortHeader({
   currentSort: ProductionSortField
   currentDir: SortDir
   q: string
+  status: string
   className?: string
 }) {
   const isActive = currentSort === field
   const nextDir = isActive && currentDir === 'desc' ? 'asc' : 'desc'
   const params = new URLSearchParams()
   if (q) params.set('q', q)
+  if (status) params.set('status', status)
   params.set('sort', field)
   params.set('dir', nextDir)
 
@@ -159,13 +162,13 @@ export default async function AdminProductionsPage({ searchParams }: Props) {
         <table className="admin-table">
           <thead>
             <tr>
-              <SortHeader label="ID" field="id" currentSort={sort} currentDir={dir} q={q} className="w-16" />
-              <SortHeader label="Title" field="title" currentSort={sort} currentDir={dir} q={q} />
-              <SortHeader label="Status" field="computed_status" currentSort={sort} currentDir={dir} q={q} />
-              <SortHeader label="Visibility" field="visibility" currentSort={sort} currentDir={dir} q={q} />
-              <SortHeader label="Start Date" field="production_date_start" currentSort={sort} currentDir={dir} q={q} />
-              <SortHeader label="Updated" field="wp_updated_at" currentSort={sort} currentDir={dir} q={q} />
-              <SortHeader label="Added" field="created_at" currentSort={sort} currentDir={dir} q={q} />
+              <SortHeader label="ID" field="id" currentSort={sort} currentDir={dir} q={q} status={status} className="w-16" />
+              <SortHeader label="Title" field="title" currentSort={sort} currentDir={dir} q={q} status={status} />
+              <SortHeader label="Status" field="computed_status" currentSort={sort} currentDir={dir} q={q} status={status} />
+              <SortHeader label="Visibility" field="visibility" currentSort={sort} currentDir={dir} q={q} status={status} />
+              <SortHeader label="Start Date" field="production_date_start" currentSort={sort} currentDir={dir} q={q} status={status} />
+              <SortHeader label="Updated" field="wp_updated_at" currentSort={sort} currentDir={dir} q={q} status={status} />
+              <SortHeader label="Added" field="created_at" currentSort={sort} currentDir={dir} q={q} status={status} />
               <th className="text-right">Actions</th>
             </tr>
           </thead>

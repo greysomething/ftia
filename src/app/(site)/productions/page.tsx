@@ -90,7 +90,7 @@ export default async function ProductionsPage({ searchParams }: Props) {
 
   // Stats for the header
   const weeklyAdditions = weeks.length > 0 ? weeks[0].count : 0
-  const activeLocationCount = locationOptions.length
+  const activeLocationCount = weeklyStats?.totalLocations ?? locationOptions.length
 
   return (
     <div>

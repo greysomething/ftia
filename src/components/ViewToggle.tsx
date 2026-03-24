@@ -5,15 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 export function ViewToggle() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const view = searchParams.get('view') ?? 'browse'
+  const view = searchParams.get('view') ?? 'weekly'
 
   function setView(v: string) {
     const params = new URLSearchParams(searchParams.toString())
-    if (v === 'browse') {
-      params.delete('view')
-    } else {
-      params.set('view', v)
-    }
+    params.set('view', v)
     params.delete('page')
     router.push(`/productions?${params.toString()}`)
   }
@@ -51,7 +47,7 @@ export function ViewToggle() {
   return (
     <div className="inline-flex items-center bg-white/10 backdrop-blur-sm rounded-lg p-0.5 border border-white/20">
       {modes.map((mode) => {
-        const isActive = view === mode.key || (view !== 'cards' && view !== 'weekly' && mode.key === 'browse')
+        const isActive = view === mode.key
         return (
           <button
             key={mode.key}
