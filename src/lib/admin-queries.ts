@@ -471,34 +471,45 @@ export async function getAdminMembershipPlanById(id: number) {
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
-export async function getAdminUsers({ page = 1, q }: { page?: number; q?: string } = {}) {
+export type UserSortField = 'display_name' | 'created_at' | 'role'
+
+export async function getAdminUsers({
+  page = 1, q, role, membership, sort = 'created_at', dir = 'desc',
+}: {
+  page?: number; q?: string; role?: string; membership?: string
+  sort?: UserSortField; dir?: SortDir
+} = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
 
-  // First try with membership join — falls back to without if FK not set up
   let query = supabase
     .from('user_profiles')
     .select(`
-      id, first_name, last_name, display_name, role, wp_role, created_at
+      id, first_name, last_name, display_name, role, wp_role,
+      organization_name, country, stripe_customer_id, created_at
     `, { count: 'exact' })
-    .order('created_at', { ascending: false })
+    .order(sort, { ascending: dir === 'asc' })
     .range(from, to)
 
   if (q) {
-    query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%`)
+    query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,organization_name.ilike.%${q}%`)
+  }
+  if (role) {
+    query = query.eq('role', role)
   }
 
   const { data, count, error } = await query
   if (error) throw error
 
-  // Try to fetch memberships separately if the relationship exists
   const users = data ?? []
+
+  // Fetch memberships for these users
   if (users.length > 0) {
     const userIds = users.map((u: any) => u.id)
     const { data: memberships } = await supabase
       .from('user_memberships')
-      .select('user_id, status, enddate, membership_levels(name)')
+      .select('user_id, status, enddate, stripe_subscription_id, level_id, membership_levels(name)')
       .in('user_id', userIds)
 
     if (memberships && memberships.length > 0) {
@@ -514,7 +525,49 @@ export async function getAdminUsers({ page = 1, q }: { page?: number; q?: string
     }
   }
 
-  return { users, total: count ?? 0, perPage: PER_PAGE }
+  // Post-filter by membership status if requested (can't do this in SQL easily with separate tables)
+  let filtered = users
+  if (membership === 'active') {
+    filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'active'))
+  } else if (membership === 'cancelled') {
+    filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'cancelled'))
+  } else if (membership === 'expired') {
+    filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'expired'))
+  } else if (membership === 'none') {
+    filtered = users.filter((u: any) => !u.user_memberships || u.user_memberships.length === 0)
+  }
+
+  return { users: filtered, total: count ?? 0, perPage: PER_PAGE }
+}
+
+export async function getAdminUserCounts() {
+  const supabase = createAdminClient()
+  const [
+    { count: totalCount },
+    { count: adminCount },
+    { count: memberCount },
+  ] = await Promise.all([
+    supabase.from('user_profiles').select('*', { count: 'exact', head: true }),
+    supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('role', 'admin'),
+    supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('role', 'member'),
+  ])
+
+  // Membership counts
+  const { data: mems } = await supabase.from('user_memberships').select('status')
+  const memCounts = { active: 0, cancelled: 0, expired: 0 }
+  for (const m of mems ?? []) {
+    if (m.status in memCounts) (memCounts as any)[m.status]++
+  }
+
+  return {
+    total: totalCount ?? 0,
+    admins: adminCount ?? 0,
+    members: memberCount ?? 0,
+    activeMemberships: memCounts.active,
+    cancelledMemberships: memCounts.cancelled,
+    expiredMemberships: memCounts.expired,
+    noMembership: (totalCount ?? 0) - (mems?.length ?? 0),
+  }
 }
 
 export async function getAdminUserById(id: string) {
