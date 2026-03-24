@@ -16,7 +16,7 @@ export function SupplementButton({ weekMonday, currentCount }: { weekMonday: str
       return
     }
 
-    if (!confirm(`Add up to ${needed} supplemental productions to reach ${target}?\n\nThis will find published productions from older weekly lists whose filming dates are still 30+ days in the future.`)) {
+    if (!confirm(`Add up to ${needed} supplemental productions to reach ${target}?\n\nThis will find published productions from older weekly lists, prioritizing those with future filming dates and recycling from the oldest lists first.`)) {
       return
     }
 

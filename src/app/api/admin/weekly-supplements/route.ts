@@ -49,37 +49,39 @@ export async function POST(req: NextRequest) {
 
   const slotsToFill = targetCount - currentCount
 
-  // 2. Calculate the 30-day cutoff
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() + 30)
-  const cutoffStr = cutoffDate.toISOString().split('T')[0]
-
-  // 3. Find eligible productions:
+  // 2. Find eligible productions:
   //    - Published
-  //    - production_date_start >= 30 days from now
   //    - NOT already in this week's list
-  //    - Appeared in at least one previous weekly list
+  //    - Prioritize by: filming date still in future > no date set > older dates
   //
-  // Strategy: fetch all week entries for eligible productions,
-  // then sort by their OLDEST week appearance (prioritize recycling old ones)
+  // We fetch all published productions and score them for relevance.
+  // Supabase has a 1000 row default, so paginate.
 
-  const { data: eligibleProductions } = await supabase
-    .from('productions')
-    .select('id, production_date_start')
-    .eq('visibility', 'publish')
-    .gte('production_date_start', cutoffStr)
-    .not('production_date_start', 'is', null)
+  const allEligible: Array<{ id: number; production_date_start: string | null; production_date_end: string | null }> = []
+  let ePage = 0
+  while (true) {
+    const from = ePage * 1000
+    const { data } = await supabase
+      .from('productions')
+      .select('id, production_date_start, production_date_end')
+      .eq('visibility', 'publish')
+      .range(from, from + 999)
+    if (!data || data.length === 0) break
+    allEligible.push(...data)
+    if (data.length < 1000) break
+    ePage++
+  }
 
-  if (!eligibleProductions || eligibleProductions.length === 0) {
+  if (allEligible.length === 0) {
     return NextResponse.json({
       ok: true,
       added: 0,
-      message: 'No eligible productions found with filming dates 30+ days in the future.',
+      message: 'No eligible published productions found.',
     })
   }
 
   // Filter out ones already in this week
-  const candidates = eligibleProductions.filter(p => !existingIds.has(p.id))
+  const candidates = allEligible.filter(p => !existingIds.has(p.id))
 
   if (candidates.length === 0) {
     return NextResponse.json({
@@ -108,13 +110,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 5. Sort candidates: oldest weekly list appearance first, then by production_date_start
-  //    Productions with NO previous week entries come last (they've never been listed)
+  // 5. Sort candidates with multi-tier priority:
+  //    Tier 1: Productions with filming dates still in the future (most relevant)
+  //    Tier 2: Productions with no date set (could still be active)
+  //    Tier 3: Productions with past dates (least relevant)
+  //    Within each tier: oldest weekly list appearance first (recycle from earliest weeks)
+  const today = new Date().toISOString().split('T')[0]
+
+  function getTier(p: { production_date_start: string | null; production_date_end: string | null }): number {
+    const endDate = p.production_date_end ?? p.production_date_start
+    if (endDate && endDate >= today) return 1  // Still in the future
+    if (!p.production_date_start && !p.production_date_end) return 2  // No date
+    return 3  // Past date
+  }
+
   const sorted = candidates.sort((a, b) => {
+    // Primary: tier (future dates first)
+    const tierDiff = getTier(a) - getTier(b)
+    if (tierDiff !== 0) return tierDiff
+    // Secondary: oldest weekly list appearance first
     const aWeek = oldestWeekMap[a.id] ?? '9999-99-99'
     const bWeek = oldestWeekMap[b.id] ?? '9999-99-99'
     if (aWeek !== bWeek) return aWeek.localeCompare(bWeek)
-    // Secondary sort: nearest filming date first
+    // Tertiary: nearest filming date first
     return (a.production_date_start ?? '').localeCompare(b.production_date_start ?? '')
   })
 
