@@ -56,11 +56,11 @@ export default async function CompanyPage({ params }: Props) {
   const supabase = await createClient()
   const { data: linkedProductions } = await supabase
     .from('production_company_links')
-    .select('role_label, productions(id,title,slug,computed_status,production_date_start,production_type_links(production_types(name,slug)))')
+    .select('inline_name, productions(id,title,slug,computed_status,production_date_start,production_type_links(production_types(name,slug)))')
     .eq('company_id', company.id)
-    .limit(50)
+    .limit(200)
 
-  const productions = linkedProductions?.map((l: any) => ({ ...l.productions, role_label: l.role_label })).filter(Boolean) ?? []
+  const productions = linkedProductions?.map((l: any) => l.productions).filter(Boolean) ?? []
 
   // Quick stats
   const hasContactInfo = addresses.length > 0 || phones.length > 0 || emails.length > 0
