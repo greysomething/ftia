@@ -65,6 +65,7 @@ export function EmailPopup({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const [settings, setSettings] = useState<PopupSettings | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submittedData, setSubmittedData] = useState<{ name: string; email: string; role: string; country: string } | null>(null)
   const [error, setError] = useState('')
   const hasTriggered = useRef(false)
 
@@ -171,6 +172,7 @@ export function EmailPopup({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
       }
 
       setSubmitted(true)
+      setSubmittedData(data)
       // Set dismiss cookie so popup doesn't show again
       const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString()
       document.cookie = `${DISMISS_COOKIE}=1; expires=${expires}; path=/`
@@ -224,9 +226,9 @@ export function EmailPopup({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
                 Choose how you&apos;d like to get started
               </p>
 
-              {/* Option 1: Free Profile */}
+              {/* Option 1: Free Profile — pass popup data to pre-fill register form */}
               <a
-                href="/register?plan=free"
+                href={`/register?plan=free${submittedData ? `&name=${encodeURIComponent(submittedData.name)}&email=${encodeURIComponent(submittedData.email)}&role=${encodeURIComponent(submittedData.role)}&country=${encodeURIComponent(submittedData.country)}` : ''}`}
                 className="block w-full border-2 border-gray-200 rounded-lg p-4 mb-3 hover:border-accent hover:bg-accent/5 transition-all group !text-inherit"
               >
                 <div className="flex items-center gap-3">

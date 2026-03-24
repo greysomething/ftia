@@ -7,13 +7,20 @@ export const metadata: Metadata = {
 }
 
 interface Props {
-  searchParams: Promise<{ plan?: string; level?: string }>
+  searchParams: Promise<{ plan?: string; level?: string; name?: string; email?: string; role?: string; country?: string }>
 }
 
 export default async function RegisterPage({ searchParams }: Props) {
   const params = await searchParams
   const isFree = params.plan === 'free'
   const levelId = params.level
+  // Pre-fill data from popup
+  const prefill = {
+    name: params.name ?? '',
+    email: params.email ?? '',
+    role: params.role ?? '',
+    country: params.country ?? '',
+  }
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center py-12 px-4">
@@ -36,7 +43,7 @@ export default async function RegisterPage({ searchParams }: Props) {
               </div>
             )}
           </div>
-          <RegisterForm plan={isFree ? 'free' : undefined} levelId={levelId} />
+          <RegisterForm plan={isFree ? 'free' : undefined} levelId={levelId} prefill={prefill} />
           <div className="mt-6 text-center text-sm text-gray-500">
             Already a member?{' '}
             <a href="/login" className="text-primary hover:underline font-medium">Sign In</a>

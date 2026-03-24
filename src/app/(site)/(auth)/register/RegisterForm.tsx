@@ -34,19 +34,27 @@ const INDUSTRY_ROLES = [
 interface RegisterFormProps {
   plan?: 'free'
   levelId?: string
+  prefill?: { name?: string; email?: string; role?: string; country?: string }
 }
 
-export function RegisterForm({ plan, levelId }: RegisterFormProps) {
+export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
   const isFree = plan === 'free'
-  const [step, setStep] = useState<'account' | 'profile'>('account')
+  // Split prefilled full name into first/last
+  const nameParts = (prefill?.name ?? '').trim().split(/\s+/)
+  const prefillFirst = nameParts[0] ?? ''
+  const prefillLast = nameParts.slice(1).join(' ')
+
+  // If coming from popup with pre-filled data, skip to profile step for free plans
+  const hasPopupData = !!(prefill?.name && prefill?.email)
+  const [step, setStep] = useState<'account' | 'profile'>(hasPopupData && isFree ? 'account' : 'account')
   const [form, setForm] = useState({
-    email: '',
+    email: prefill?.email ?? '',
     password: '',
-    firstName: '',
-    lastName: '',
+    firstName: prefillFirst,
+    lastName: prefillLast,
     organizationName: '',
-    organizationType: '',
-    country: '',
+    organizationType: prefill?.role ?? '',
+    country: prefill?.country ?? '',
     bio: '',
     linkedin: '',
     website: '',
