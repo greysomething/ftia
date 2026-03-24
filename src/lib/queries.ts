@@ -42,11 +42,21 @@ export async function getProductions({
       .eq('slug', typeSlug)
       .single()
     if (typeData) {
-      const { data: links } = await supabase
-        .from('production_type_links')
-        .select('production_id')
-        .eq('type_id', typeData.id)
-      productionIds = links?.map(l => l.production_id) ?? []
+      // Paginate to avoid 1000 row limit
+      const allLinks: number[] = []
+      let tPage = 0
+      while (true) {
+        const { data: links } = await supabase
+          .from('production_type_links')
+          .select('production_id')
+          .eq('type_id', typeData.id)
+          .range(tPage * 1000, tPage * 1000 + 999)
+        if (!links || links.length === 0) break
+        allLinks.push(...links.map(l => l.production_id))
+        if (links.length < 1000) break
+        tPage++
+      }
+      productionIds = allLinks
     } else {
       productionIds = []
     }
@@ -59,11 +69,21 @@ export async function getProductions({
       .eq('slug', statusSlug)
       .single()
     if (statusData) {
-      const { data: links } = await supabase
-        .from('production_status_links')
-        .select('production_id')
-        .eq('status_id', statusData.id)
-      const statusIds = new Set(links?.map(l => l.production_id) ?? [])
+      // Paginate to avoid 1000 row limit
+      const allStatusLinks: number[] = []
+      let sPage = 0
+      while (true) {
+        const { data: links } = await supabase
+          .from('production_status_links')
+          .select('production_id')
+          .eq('status_id', statusData.id)
+          .range(sPage * 1000, sPage * 1000 + 999)
+        if (!links || links.length === 0) break
+        allStatusLinks.push(...links.map(l => l.production_id))
+        if (links.length < 1000) break
+        sPage++
+      }
+      const statusIds = new Set(allStatusLinks)
       if (productionIds !== null) {
         productionIds = productionIds.filter(id => statusIds.has(id))
       } else {
@@ -76,15 +96,23 @@ export async function getProductions({
 
   if (locationFilter) {
     // locationFilter can be "Los Angeles, CA" or "United States" or "Canada" etc.
-    let locQuery = supabase.from('production_locations').select('production_id')
-    // Check if it's a country filter or city filter
-    if (['United States', 'Canada', 'United Kingdom', 'France', 'Germany', 'Australia', 'Mexico'].includes(locationFilter)) {
-      locQuery = locQuery.or(`country.eq.${locationFilter},location.ilike.%${locationFilter}%`)
-    } else {
-      locQuery = locQuery.or(`location.eq.${locationFilter},location.ilike.${locationFilter}%`)
+    // Paginate to avoid 1000 row limit
+    const allLocLinks: number[] = []
+    let lPage = 0
+    while (true) {
+      let locQuery = supabase.from('production_locations').select('production_id')
+      if (['United States', 'Canada', 'United Kingdom', 'France', 'Germany', 'Australia', 'Mexico'].includes(locationFilter)) {
+        locQuery = locQuery.or(`country.eq.${locationFilter},location.ilike.%${locationFilter}%`)
+      } else {
+        locQuery = locQuery.or(`location.eq.${locationFilter},location.ilike.${locationFilter}%`)
+      }
+      const { data: locLinks } = await locQuery.range(lPage * 1000, lPage * 1000 + 999)
+      if (!locLinks || locLinks.length === 0) break
+      allLocLinks.push(...locLinks.map(l => l.production_id))
+      if (locLinks.length < 1000) break
+      lPage++
     }
-    const { data: locLinks } = await locQuery
-    const locIds = new Set(locLinks?.map(l => l.production_id) ?? [])
+    const locIds = new Set(allLocLinks)
     if (productionIds !== null) {
       productionIds = productionIds.filter(id => locIds.has(id))
     } else {
@@ -294,11 +322,21 @@ export async function getProductionsForWeek(mondayDate: string) {
 export async function getLocationFilterOptions() {
   const supabase = await createClient()
 
-  const { data: locations } = await supabase
-    .from('production_locations')
-    .select('location, city, stage, country')
+  // Paginate to avoid 1000 row limit
+  const locations: any[] = []
+  let locPage = 0
+  while (true) {
+    const { data } = await supabase
+      .from('production_locations')
+      .select('location, city, stage, country')
+      .range(locPage * 1000, locPage * 1000 + 999)
+    if (!data || data.length === 0) break
+    locations.push(...data)
+    if (data.length < 1000) break
+    locPage++
+  }
 
-  if (!locations?.length) return []
+  if (!locations.length) return []
 
   // Count by normalized location key
   const counts = new Map<string, { label: string; value: string; count: number }>()
