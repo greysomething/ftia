@@ -4,6 +4,7 @@ import { useActionState, useState, useCallback } from 'react'
 import { saveCompany } from '@/app/admin/companies/actions'
 import Link from 'next/link'
 import { ImageScanner } from '@/components/admin/ImageScanner'
+import { AIResearchButton } from '@/components/admin/AIResearchButton'
 import { parsePhpSerialized, formatPhone } from '@/lib/utils'
 
 interface CompanyFormProps {
@@ -18,6 +19,22 @@ export function CompanyForm({ company }: CompanyFormProps) {
     setScannedData(data)
   }, [])
 
+  const handleAIResult = useCallback((data: any) => {
+    // Merge AI research data with existing, only filling nulls
+    setScannedData((prev: any) => ({
+      ...(prev ?? {}),
+      address: data.address ?? prev?.address ?? undefined,
+      phone: data.phone ?? prev?.phone ?? undefined,
+      fax: data.fax ?? prev?.fax ?? undefined,
+      email: data.email ?? prev?.email ?? undefined,
+      linkedin: data.linkedin ?? prev?.linkedin ?? undefined,
+      twitter: data.twitter ?? prev?.twitter ?? undefined,
+      website: data.website ?? prev?.website ?? undefined,
+      content: data.description ?? prev?.content ?? undefined,
+      staff: data.key_staff?.map((s: any) => ({ name: s.name, position: s.position })) ?? prev?.staff ?? undefined,
+    }))
+  }, [])
+
   const v = (key: string) => {
     if (scannedData?.[key] != null) return String(scannedData[key])
     return company?.[key] ?? ''
@@ -28,6 +45,9 @@ export function CompanyForm({ company }: CompanyFormProps) {
   const firstPhone = scannedData?.phone ?? formatPhone(parsePhpSerialized(company?.phones)[0] ?? '')
   const firstFax = scannedData?.fax ?? formatPhone(parsePhpSerialized(company?.faxes)[0] ?? '')
   const firstEmail = scannedData?.email ?? parsePhpSerialized(company?.emails)[0] ?? ''
+  const linkedinVal = scannedData?.linkedin ?? company?.linkedin ?? ''
+  const twitterVal = scannedData?.twitter ?? company?.twitter ?? ''
+  const websiteVal = scannedData?.website ?? company?.website ?? ''
 
   const contentDefault = (() => {
     if (scannedData?.staff?.length) {
@@ -38,8 +58,10 @@ export function CompanyForm({ company }: CompanyFormProps) {
     return scannedData?.content ?? company?.content ?? ''
   })()
 
+  const currentName = v('title') || company?.title || ''
+
   return (
-    <form action={action} className="space-y-6 max-w-2xl" key={scannedData ? 'scanned' : 'default'}>
+    <form action={action} className="space-y-6 max-w-2xl" key={scannedData ? JSON.stringify(scannedData).substring(0, 50) : 'default'}>
       {company && <input type="hidden" name="id" value={company.id} />}
 
       {state?.error && (
@@ -48,9 +70,33 @@ export function CompanyForm({ company }: CompanyFormProps) {
         </div>
       )}
 
-      {!company && (
-        <ImageScanner type="company" onScanComplete={handleScan} />
-      )}
+      {/* AI Tools — available in both create and edit modes */}
+      <div className="admin-card space-y-3">
+        <h2 className="font-semibold text-gray-700 flex items-center gap-2">
+          <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+          AI Tools
+        </h2>
+        <div className="flex flex-wrap gap-3">
+          <AIResearchButton
+            type="company"
+            name={currentName}
+            existingData={{
+              address: firstAddress || null,
+              phone: firstPhone || null,
+              email: firstEmail || null,
+              linkedin: linkedinVal || null,
+              twitter: twitterVal || null,
+            }}
+            onResult={handleAIResult}
+          />
+          <ImageScanner type="company" onScanComplete={handleScan} />
+        </div>
+        <p className="text-xs text-gray-400">
+          Use AI Research to auto-fill missing contact details, or scan a screenshot to extract data.
+        </p>
+      </div>
 
       <div className="admin-card space-y-4">
         <h2 className="font-semibold text-gray-700">Basic Info</h2>
@@ -93,21 +139,27 @@ export function CompanyForm({ company }: CompanyFormProps) {
           <input name="email" type="email" defaultValue={firstEmail} className="form-input" />
         </div>
         <div>
-          <label className="form-label">LinkedIn URL</label>
-          <input name="linkedin" defaultValue={v('linkedin')} className="form-input" placeholder="https://linkedin.com/company/…" />
+          <label className="form-label">Website</label>
+          <input name="website" defaultValue={websiteVal} className="form-input" placeholder="https://…" />
         </div>
-        <div>
-          <label className="form-label">Twitter / X Handle</label>
-          <input name="twitter" defaultValue={v('twitter')} className="form-input" placeholder="@handle" />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="form-label">LinkedIn URL</label>
+            <input name="linkedin" defaultValue={linkedinVal} className="form-input" placeholder="https://linkedin.com/company/…" />
+          </div>
+          <div>
+            <label className="form-label">Twitter / X Handle</label>
+            <input name="twitter" defaultValue={twitterVal} className="form-input" placeholder="@handle" />
+          </div>
         </div>
       </div>
 
       <div className="admin-card space-y-4">
-        <h2 className="font-semibold text-gray-700">Notes</h2>
+        <h2 className="font-semibold text-gray-700">About / Notes</h2>
         <textarea name="content" rows={5} defaultValue={contentDefault} className="form-textarea" />
         {scannedData?.staff?.length > 0 && (
           <p className="text-xs text-[#3ea8c8]">
-            ↑ AI extracted {scannedData.staff.length} staff member(s) from your screenshot
+            AI extracted {scannedData.staff.length} staff member(s)
           </p>
         )}
       </div>
