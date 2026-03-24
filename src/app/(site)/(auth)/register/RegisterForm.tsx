@@ -39,14 +39,12 @@ interface RegisterFormProps {
 
 export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
   const isFree = plan === 'free'
-  // Split prefilled full name into first/last
   const nameParts = (prefill?.name ?? '').trim().split(/\s+/)
   const prefillFirst = nameParts[0] ?? ''
   const prefillLast = nameParts.slice(1).join(' ')
 
-  // If coming from popup with pre-filled data, skip to profile step for free plans
-  const hasPopupData = !!(prefill?.name && prefill?.email)
-  const [step, setStep] = useState<'account' | 'profile'>(hasPopupData && isFree ? 'account' : 'account')
+  // Step 1 = profile info, Step 2 = password & create account
+  const [step, setStep] = useState<'profile' | 'account'>('profile')
   const [form, setForm] = useState({
     email: prefill?.email ?? '',
     password: '',
@@ -72,14 +70,21 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
     setLoading(true)
     setError(null)
 
-    // For free plan step 1, move to profile step
-    if (isFree && step === 'account') {
-      if (!form.email || !form.password || !form.firstName) {
+    // Step 1 (profile) → validate and move to step 2
+    if (isFree && step === 'profile') {
+      if (!form.firstName || !form.email) {
         setError('Please fill in all required fields.')
         setLoading(false)
         return
       }
-      setStep('profile')
+      setStep('account')
+      setLoading(false)
+      return
+    }
+
+    // Step 2 (account) or single-step for paid → create account
+    if (!form.password || form.password.length < 8) {
+      setError('Password must be at least 8 characters.')
       setLoading(false)
       return
     }
@@ -103,7 +108,6 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
       return
     }
 
-    // Update profile with additional fields
     if (data.user) {
       await (supabase.from as any)('user_profiles').upsert({
         id: data.user.id,
@@ -119,7 +123,6 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
       })
     }
 
-    // Redirect based on plan type
     if (isFree) {
       router.push('/welcome')
     } else if (levelId) {
@@ -139,19 +142,23 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
       {isFree && (
         <div className="flex items-center gap-2 mb-2">
           <div className="flex items-center gap-1.5 flex-1">
-            <div className="w-6 h-6 rounded-full bg-accent text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</div>
-            <div className={`flex-1 h-1 rounded-full ${step === 'profile' ? 'bg-accent' : 'bg-gray-200'}`} />
+            <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+              step === 'profile' ? 'bg-accent text-white' : 'bg-accent text-white'
+            }`}>1</div>
+            <div className={`flex-1 h-1 rounded-full ${step === 'account' ? 'bg-accent' : 'bg-gray-200'}`} />
           </div>
           <div className="flex items-center gap-1.5 flex-1">
-            <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${step === 'profile' ? 'bg-accent text-white' : 'bg-gray-200 text-gray-500'}`}>2</div>
+            <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+              step === 'account' ? 'bg-accent text-white' : 'bg-gray-200 text-gray-500'
+            }`}>2</div>
             <div className="flex-1 h-1 rounded-full bg-gray-200" />
           </div>
         </div>
       )}
 
-      {step === 'account' ? (
+      {step === 'profile' ? (
         <>
-          {/* Account fields */}
+          {/* Step 1: Profile info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="form-label">First Name <span className="text-red-400">*</span></label>
@@ -181,33 +188,27 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
             />
           </div>
 
-          <div>
-            <label className="form-label">Password <span className="text-red-400">*</span></label>
-            <input
-              type="password" required className="form-input" minLength={8}
-              value={form.password} onChange={(e) => update('password', e.target.value)}
-              autoComplete="new-password"
-            />
-            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
-          </div>
-
-          {!isFree && (
+          {isFree && (
             <>
+              <div>
+                <label className="form-label">Industry Role <span className="text-red-400">*</span></label>
+                <select
+                  required className="form-input"
+                  value={form.organizationType} onChange={(e) => update('organizationType', e.target.value)}
+                >
+                  <option value="" disabled>Select your role…</option>
+                  {INDUSTRY_ROLES.map((role) => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="form-label">Organization / Company</label>
                 <input
                   type="text" className="form-input"
                   value={form.organizationName} onChange={(e) => update('organizationName', e.target.value)}
-                  placeholder="Optional"
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Your Role / Job Title</label>
-                <input
-                  type="text" className="form-input"
-                  value={form.organizationType} onChange={(e) => update('organizationType', e.target.value)}
-                  placeholder="e.g. Producer, Director, Writer"
+                  placeholder="Production company, studio, agency…"
                 />
               </div>
 
@@ -227,105 +228,126 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
             </>
           )}
 
+          {!isFree && (
+            <>
+              <div>
+                <label className="form-label">Organization / Company</label>
+                <input
+                  type="text" className="form-input"
+                  value={form.organizationName} onChange={(e) => update('organizationName', e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div>
+                <label className="form-label">Your Role / Job Title</label>
+                <input
+                  type="text" className="form-input"
+                  value={form.organizationType} onChange={(e) => update('organizationType', e.target.value)}
+                  placeholder="e.g. Producer, Director, Writer"
+                />
+              </div>
+              <div>
+                <label className="form-label">Country</label>
+                <select className="form-input" value={form.country} onChange={(e) => update('country', e.target.value)}>
+                  <option value="">Select country</option>
+                  <option value="US">United States</option>
+                  <option value="CA">Canada</option>
+                  <option value="GB">United Kingdom</option>
+                  <option value="AU">Australia</option>
+                  <option value="NZ">New Zealand</option>
+                  <option value="IE">Ireland</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </>
+          )}
+
           <button type="submit" disabled={loading} className="btn-primary w-full justify-center">
-            {loading ? 'Please wait…' : isFree ? 'Continue — Set Up Profile →' : 'Create Account'}
+            {loading ? 'Please wait…' : isFree ? 'Continue — Set Password →' : 'Continue →'}
           </button>
         </>
       ) : (
         <>
-          {/* Profile step (free plan only) */}
+          {/* Step 2: Password & create account */}
           <div className="text-center mb-2">
-            <h3 className="font-semibold text-gray-900">Set Up Your Profile</h3>
-            <p className="text-xs text-gray-500">Help others in the industry find and connect with you</p>
+            <h3 className="font-semibold text-gray-900">Almost Done!</h3>
+            <p className="text-xs text-gray-500">Set a password to secure your account</p>
+          </div>
+
+          {/* Show summary of what they entered */}
+          <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Name</span>
+              <span className="font-medium text-gray-800">{form.firstName} {form.lastName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Email</span>
+              <span className="font-medium text-gray-800">{form.email}</span>
+            </div>
+            {form.organizationType && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Role</span>
+                <span className="font-medium text-gray-800">{form.organizationType}</span>
+              </div>
+            )}
           </div>
 
           <div>
-            <label className="form-label">Industry Role <span className="text-red-400">*</span></label>
-            <select
-              required className="form-input"
-              value={form.organizationType} onChange={(e) => update('organizationType', e.target.value)}
-            >
-              <option value="" disabled>Select your role…</option>
-              {INDUSTRY_ROLES.map((role) => (
-                <option key={role} value={role}>{role}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="form-label">Organization / Company</label>
+            <label className="form-label">Password <span className="text-red-400">*</span></label>
             <input
-              type="text" className="form-input"
-              value={form.organizationName} onChange={(e) => update('organizationName', e.target.value)}
-              placeholder="Production company, studio, agency…"
+              type="password" required className="form-input" minLength={8}
+              value={form.password} onChange={(e) => update('password', e.target.value)}
+              autoComplete="new-password"
+              autoFocus
             />
+            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
           </div>
 
-          <div>
-            <label className="form-label">Short Bio</label>
-            <textarea
-              className="form-textarea"
-              rows={2}
-              value={form.bio} onChange={(e) => update('bio', e.target.value)}
-              placeholder="Brief description of your work in the industry"
-            />
-          </div>
+          {isFree && (
+            <>
+              <div>
+                <label className="form-label">Short Bio <span className="text-gray-400 font-normal">(optional)</span></label>
+                <textarea
+                  className="form-textarea"
+                  rows={2}
+                  value={form.bio} onChange={(e) => update('bio', e.target.value)}
+                  placeholder="Brief description of your work in the industry"
+                />
+              </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="form-label">LinkedIn</label>
-              <input
-                type="url" className="form-input"
-                value={form.linkedin} onChange={(e) => update('linkedin', e.target.value)}
-                placeholder="linkedin.com/in/…"
-              />
-            </div>
-            <div>
-              <label className="form-label">Website</label>
-              <input
-                type="url" className="form-input"
-                value={form.website} onChange={(e) => update('website', e.target.value)}
-                placeholder="yoursite.com"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="form-label">Country</label>
-            <select className="form-input" value={form.country} onChange={(e) => update('country', e.target.value)}>
-              <option value="">Select country</option>
-              <option value="US">United States</option>
-              <option value="CA">Canada</option>
-              <option value="GB">United Kingdom</option>
-              <option value="AU">Australia</option>
-              <option value="NZ">New Zealand</option>
-              <option value="IE">Ireland</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="form-label">LinkedIn <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <input
+                    type="url" className="form-input"
+                    value={form.linkedin} onChange={(e) => update('linkedin', e.target.value)}
+                    placeholder="linkedin.com/in/…"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Website <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <input
+                    type="url" className="form-input"
+                    value={form.website} onChange={(e) => update('website', e.target.value)}
+                    placeholder="yoursite.com"
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => setStep('account')}
+              onClick={() => { setStep('profile'); setError(null) }}
               className="btn-outline flex-shrink-0"
             >
               ← Back
             </button>
             <button type="submit" disabled={loading} className="btn-accent w-full justify-center">
-              {loading ? 'Creating your profile…' : 'Create My Free Profile'}
+              {loading ? 'Creating your account…' : 'Create My Free Profile'}
             </button>
           </div>
-
-          <p className="text-center">
-            <button
-              type="submit"
-              disabled={loading}
-              className="text-xs text-gray-400 hover:text-gray-600 transition-colors bg-transparent border-none cursor-pointer"
-            >
-              Skip for now — I&apos;ll complete my profile later
-            </button>
-          </p>
         </>
       )}
     </form>
