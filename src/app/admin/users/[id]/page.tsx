@@ -89,14 +89,52 @@ export default async function AdminUserDetailPage({ params }: Props) {
           <div className="space-y-3">
             {user.user_memberships?.map((m: any) => (
               <div key={m.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-100">
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">{m.membership_levels?.name ?? 'Unknown Plan'}</p>
                   <p className="text-xs text-gray-400">
+                    {m.startdate && <>Started: {formatDate(m.startdate)} • </>}
                     Expires: {m.enddate ? formatDate(m.enddate) : 'Never'} •{' '}
                     <span className={`${m.status === 'active' ? 'text-green-600' : 'text-gray-400'}`}>
                       {m.status}
                     </span>
                   </p>
+                  {(m.stripe_subscription_id || m.stripe_customer_id) && (
+                    <div className="mt-1 space-y-0.5">
+                      {m.stripe_customer_id && (
+                        <p className="text-xs text-gray-400">
+                          <span className="text-gray-500 font-medium">Stripe Customer:</span>{' '}
+                          <a
+                            href={`https://dashboard.stripe.com/customers/${m.stripe_customer_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono text-blue-500 hover:underline"
+                          >
+                            {m.stripe_customer_id}
+                          </a>
+                        </p>
+                      )}
+                      {m.stripe_subscription_id && (
+                        <p className="text-xs text-gray-400">
+                          <span className="text-gray-500 font-medium">Stripe Subscription:</span>{' '}
+                          <a
+                            href={`https://dashboard.stripe.com/subscriptions/${m.stripe_subscription_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono text-blue-500 hover:underline"
+                          >
+                            {m.stripe_subscription_id}
+                          </a>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {m.card_type && m.card_last4 && (
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      <span className="text-gray-500 font-medium">Card:</span>{' '}
+                      {m.card_type} ending in {m.card_last4}
+                      {m.card_exp_month && m.card_exp_year && ` (exp ${m.card_exp_month}/${m.card_exp_year})`}
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   {m.status !== 'active' && (
