@@ -2,11 +2,12 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getCompanyBySlug } from '@/lib/queries'
-import { getUser, isMember } from '@/lib/auth'
+import { getUser, isMember, isAdmin } from '@/lib/auth'
 import { MemberGate } from '@/components/MemberGate'
 import { createClient } from '@/lib/supabase/server'
 import { parsePhpSerialized, formatDate, formatPhone } from '@/lib/utils'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
+import { EditSuggestButton } from '@/components/EditSuggestButton'
 import type { ProductionPhase } from '@/types/database'
 
 const PHASE_COLORS: Record<string, string> = {
@@ -37,7 +38,9 @@ export default async function CompanyPage({ params }: Props) {
   if (!company) notFound()
 
   const user = await getUser()
-  const member = user ? await isMember(user.id) : false
+  const [member, admin] = user
+    ? await Promise.all([isMember(user.id), isAdmin(user.id)])
+    : [false, false]
 
   const c = company as any
   const categories = c.company_category_links ?? []
@@ -86,7 +89,17 @@ export default async function CompanyPage({ params }: Props) {
                   </svg>
                 </div>
                 <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{company.title}</h1>
+                  <div className="flex items-start gap-3">
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{company.title}</h1>
+                    <EditSuggestButton
+                      editUrl={`/admin/companies/${company.id}/edit`}
+                      entityType="company"
+                      entityTitle={company.title}
+                      entityId={company.id}
+                      isAdmin={admin}
+                      isLoggedIn={!!user}
+                    />
+                  </div>
                   <div className="flex flex-wrap items-center gap-2 mt-1">
                     {categories.map((cat: any) => (
                       <Link

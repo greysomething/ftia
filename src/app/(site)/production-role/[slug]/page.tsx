@@ -2,11 +2,12 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getCrewMemberBySlug } from '@/lib/queries'
-import { getUser, isMember } from '@/lib/auth'
+import { getUser, isMember, isAdmin } from '@/lib/auth'
 import { MemberGate } from '@/components/MemberGate'
 import { createClient } from '@/lib/supabase/server'
 import { parsePhpSerialized, formatDate, formatPhone } from '@/lib/utils'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
+import { EditSuggestButton } from '@/components/EditSuggestButton'
 
 const PHASE_COLORS: Record<string, string> = {
   'in-pre-production': 'bg-blue-100 text-blue-800',
@@ -37,7 +38,9 @@ export default async function CrewMemberPage({ params }: Props) {
   if (!person) notFound()
 
   const user = await getUser()
-  const member = user ? await isMember(user.id) : false
+  const [member, admin] = user
+    ? await Promise.all([isMember(user.id), isAdmin(user.id)])
+    : [false, false]
 
   const p = person as any
   const categories = p.crew_category_links ?? []
@@ -88,7 +91,17 @@ export default async function CrewMemberPage({ params }: Props) {
                 {person.name.split(' ').map((n: string) => n.charAt(0)).slice(0, 2).join('')}
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{person.name}</h1>
+                <div className="flex items-start gap-3">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{person.name}</h1>
+                  <EditSuggestButton
+                    editUrl={`/admin/crew/${person.id}/edit`}
+                    entityType="crew"
+                    entityTitle={person.name}
+                    entityId={person.id}
+                    isAdmin={admin}
+                    isLoggedIn={!!user}
+                  />
+                </div>
                 <div className="flex flex-wrap items-center gap-2 mt-1.5">
                   {categories.map((cat: any) => (
                     <Link

@@ -2,11 +2,12 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getProductionBySlug, getProductionSlugs } from '@/lib/queries'
-import { getUser, isMember } from '@/lib/auth'
+import { getUser, isMember, isAdmin } from '@/lib/auth'
 import { formatProductionDate, formatLocation, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, formatPhone, maskEmail, maskPhone, parsePhpSerialized } from '@/lib/utils'
 import { MemberGate } from '@/components/MemberGate'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { TrendingSearches } from '@/components/TrendingSearches'
+import { EditSuggestButton } from '@/components/EditSuggestButton'
 import type { ProductionPhase } from '@/types/database'
 
 interface Props {
@@ -53,7 +54,9 @@ export default async function ProductionPage({ params }: Props) {
   if (!prod) notFound()
 
   const user = await getUser()
-  const member = user ? await isMember(user.id) : false
+  const [member, admin] = user
+    ? await Promise.all([isMember(user.id), isAdmin(user.id)])
+    : [false, false]
 
   const production = prod as any
   const types = production.production_type_links ?? []
@@ -133,9 +136,19 @@ export default async function ProductionPage({ params }: Props) {
                 {/* Title & Status */}
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-5">
                   <div className="flex-1">
-                    <h1 className="text-2xl sm:text-3xl font-bold text-primary leading-tight">
-                      {production.title}
-                    </h1>
+                    <div className="flex items-start gap-3">
+                      <h1 className="text-2xl sm:text-3xl font-bold text-primary leading-tight">
+                        {production.title}
+                      </h1>
+                      <EditSuggestButton
+                        editUrl={`/admin/productions/${production.id}/edit`}
+                        entityType="production"
+                        entityTitle={production.title}
+                        entityId={production.id}
+                        isAdmin={admin}
+                        isLoggedIn={!!user}
+                      />
+                    </div>
                     <div className="flex flex-wrap items-center gap-2.5 mt-2.5">
                       <span className={`production-status-badge ${PHASE_COLORS[phase]}`}>
                         {PHASE_LABELS[phase]}
