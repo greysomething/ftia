@@ -32,8 +32,9 @@ export async function getProductions({
   const from = (page - 1) * perPage
   const to = from + perPage - 1
 
-  // If filtering by type or status, we need to find matching production IDs first
-  let productionIds: number[] | null = null
+  // Look up type/status IDs if filtering
+  let typeId: number | null = null
+  let statusId: number | null = null
 
   if (typeSlug) {
     const { data: typeData } = await supabase
@@ -42,23 +43,9 @@ export async function getProductions({
       .eq('slug', typeSlug)
       .single()
     if (typeData) {
-      // Paginate to avoid 1000 row limit
-      const allLinks: number[] = []
-      let tPage = 0
-      while (true) {
-        const { data: links } = await supabase
-          .from('production_type_links')
-          .select('production_id')
-          .eq('type_id', typeData.id)
-          .range(tPage * 1000, tPage * 1000 + 999)
-        if (!links || links.length === 0) break
-        allLinks.push(...links.map(l => l.production_id))
-        if (links.length < 1000) break
-        tPage++
-      }
-      productionIds = allLinks
+      typeId = typeData.id
     } else {
-      productionIds = []
+      return { productions: [], total: 0, page, perPage }
     }
   }
 
@@ -69,34 +56,16 @@ export async function getProductions({
       .eq('slug', statusSlug)
       .single()
     if (statusData) {
-      // Paginate to avoid 1000 row limit
-      const allStatusLinks: number[] = []
-      let sPage = 0
-      while (true) {
-        const { data: links } = await supabase
-          .from('production_status_links')
-          .select('production_id')
-          .eq('status_id', statusData.id)
-          .range(sPage * 1000, sPage * 1000 + 999)
-        if (!links || links.length === 0) break
-        allStatusLinks.push(...links.map(l => l.production_id))
-        if (links.length < 1000) break
-        sPage++
-      }
-      const statusIds = new Set(allStatusLinks)
-      if (productionIds !== null) {
-        productionIds = productionIds.filter(id => statusIds.has(id))
-      } else {
-        productionIds = [...statusIds]
-      }
-    } else if (productionIds === null) {
-      productionIds = []
+      statusId = statusData.id
+    } else {
+      return { productions: [], total: 0, page, perPage }
     }
   }
 
+  // For location filtering, we still need to collect IDs (no direct join filter possible)
+  // but locations are typically fewer than types/statuses
+  let locationIds: number[] | null = null
   if (locationFilter) {
-    // locationFilter can be "Los Angeles, CA" or "United States" or "Canada" etc.
-    // Paginate to avoid 1000 row limit
     const allLocLinks: number[] = []
     let lPage = 0
     while (true) {
@@ -112,13 +81,20 @@ export async function getProductions({
       if (locLinks.length < 1000) break
       lPage++
     }
-    const locIds = new Set(allLocLinks)
-    if (productionIds !== null) {
-      productionIds = productionIds.filter(id => locIds.has(id))
-    } else {
-      productionIds = [...locIds]
+    locationIds = allLocLinks
+    if (locationIds.length === 0) {
+      return { productions: [], total: 0, page, perPage }
     }
   }
+
+  // Build select with !inner joins for type/status filtering
+  // !inner makes it an INNER JOIN so only matching productions are returned
+  const typeJoin = typeId
+    ? 'production_type_links!inner(is_primary, type_id, production_types(id,name,slug))'
+    : 'production_type_links(is_primary, production_types(id,name,slug))'
+  const statusJoin = statusId
+    ? 'production_status_links!inner(is_primary, status_id, production_statuses(id,name,slug))'
+    : 'production_status_links(is_primary, production_statuses(id,name,slug))'
 
   let query = supabase
     .from('productions')
@@ -126,8 +102,8 @@ export async function getProductions({
       `
       id, title, slug, excerpt, computed_status,
       production_date_start, wp_updated_at,
-      production_type_links(is_primary, production_types(id,name,slug)),
-      production_status_links(is_primary, production_statuses(id,name,slug)),
+      ${typeJoin},
+      ${statusJoin},
       production_locations(location, city, stage, country, sort_order),
       media(storage_path, original_url, alt_text)
     `,
@@ -135,15 +111,23 @@ export async function getProductions({
     )
     .eq('visibility', 'publish')
 
+  // Apply type filter via inner join
+  if (typeId) {
+    query = query.eq('production_type_links.type_id', typeId)
+  }
+
+  // Apply status filter via inner join
+  if (statusId) {
+    query = query.eq('production_status_links.status_id', statusId)
+  }
+
   if (search) {
     query = query.ilike('title', `%${search}%`)
   }
 
-  if (productionIds !== null) {
-    if (productionIds.length === 0) {
-      return { productions: [], total: 0, page, perPage }
-    }
-    query = query.in('id', productionIds)
+  // Apply location filter (still uses .in() but location sets are typically small)
+  if (locationIds !== null) {
+    query = query.in('id', locationIds)
   }
 
   // Apply sorting
