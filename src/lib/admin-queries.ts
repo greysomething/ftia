@@ -487,7 +487,7 @@ export async function getAdminUsers({
     .from('user_profiles')
     .select(`
       id, first_name, last_name, display_name, role, wp_role,
-      organization_name, country, stripe_customer_id, created_at
+      organization_name, country, created_at
     `, { count: 'exact' })
     .order(sort, { ascending: dir === 'asc' })
     .range(from, to)

@@ -189,7 +189,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
             ) : users.map((u: any) => {
               const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.display_name || 'Unknown'
               const mem = u.user_memberships?.[0]
-              const hasStripe = !!u.stripe_customer_id
+              const hasStripe = !!u.user_memberships?.some((m: any) => m.stripe_subscription_id)
 
               return (
                 <tr key={u.id}>

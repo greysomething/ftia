@@ -60,22 +60,24 @@ export async function POST() {
   }
   console.log(`[Stripe Sync] Pre-loaded ${emailToUserId.size} auth users`)
 
-  // 3. Pre-load stripe_customer_id → user_id from profiles
+  // 3. Pre-load stripe_customer_id → user_id from profiles (if column exists)
   const customerToUserId = new Map<string, string>()
-  let profPage = 0
-  while (true) {
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('id, stripe_customer_id')
-      .not('stripe_customer_id', 'is', null)
-      .range(profPage * 1000, profPage * 1000 + 999)
-    if (!data || data.length === 0) break
-    for (const p of data) {
-      if (p.stripe_customer_id) customerToUserId.set(p.stripe_customer_id, p.id)
+  try {
+    let profPage = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, stripe_customer_id')
+        .not('stripe_customer_id', 'is', null)
+        .range(profPage * 1000, profPage * 1000 + 999)
+      if (error || !data || data.length === 0) break
+      for (const p of data as any[]) {
+        if (p.stripe_customer_id) customerToUserId.set(p.stripe_customer_id, p.id)
+      }
+      if (data.length < 1000) break
+      profPage++
     }
-    if (data.length < 1000) break
-    profPage++
-  }
+  } catch { /* stripe_customer_id column may not exist yet */ }
 
   // 4. Fetch ALL subscriptions from Stripe
   const allSubs: any[] = []
@@ -189,12 +191,14 @@ export async function POST() {
 
       if (!userId) { stats.skipped++; continue }
 
-      // Update profile with stripe_customer_id
+      // Update profile (stripe_customer_id if column exists, display_name always)
       await supabase.from('user_profiles').upsert({
         id: userId,
-        stripe_customer_id: customer.id,
         display_name: customer.name || email.split('@')[0],
-      }, { onConflict: 'id' })
+      }, { onConflict: 'id' }).then(() => {
+        // Try to set stripe_customer_id separately (column may not exist)
+        return supabase.from('user_profiles').update({ stripe_customer_id: customer.id } as any).eq('id', userId)
+      }).catch(() => {})
       customerToUserId.set(customer.id, userId)
 
       // Upsert membership
