@@ -1,13 +1,15 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Suspense } from 'react'
-import { getProductions, getProductionWeeks, getLocationFilterOptions } from '@/lib/queries'
+import { getProductions, getProductionWeeks, getWeeklyStats, getLocationFilterOptions } from '@/lib/queries'
 import { getUser, isMember } from '@/lib/auth'
 import { formatProductionDate, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, cn } from '@/lib/utils'
 import { ProductionCard } from '@/components/ProductionCard'
 import { ProductionFilters } from '@/components/ProductionFilters'
 import { ViewToggle } from '@/components/ViewToggle'
 import { TrendingSearches } from '@/components/TrendingSearches'
+import { WeeklyArchive } from '@/components/WeeklyArchive'
+import { WeeklyReportPDF } from '@/components/WeeklyReportPDF'
 import { createClient } from '@/lib/supabase/server'
 import type { ProductionPhase } from '@/types/database'
 
@@ -38,7 +40,7 @@ const PHASE_BADGE_STYLES: Record<ProductionPhase, string> = {
 export default async function ProductionsPage({ searchParams }: Props) {
   const params = await searchParams
   const page = parseInt(params.page ?? '1', 10)
-  const view = params.view ?? 'browse'
+  const view = params.view ?? 'weekly'
   const user = await getUser()
   const member = user ? await isMember(user.id) : false
 
@@ -59,8 +61,15 @@ export default async function ProductionsPage({ searchParams }: Props) {
   let currentPerPage = 20
   let weeks: { monday: string; count: number }[] = []
 
+  let weeklyStats: Awaited<ReturnType<typeof getWeeklyStats>> | null = null
+
   if (isWeekly) {
     weeks = await getProductionWeeks()
+    // Compute stats for current week if we have data
+    if (weeks.length > 0) {
+      const prevMonday = weeks.length > 1 ? weeks[1].monday : weeks[0].monday
+      weeklyStats = await getWeeklyStats(weeks[0].monday, prevMonday)
+    }
   }
 
   if (isBrowse) {
@@ -165,124 +174,245 @@ export default async function ProductionsPage({ searchParams }: Props) {
         )}
 
         {isWeekly ? (
-          /* ===== WEEKLY VIEW ===== */
+          /* ===== WEEKLY VIEW — Crown Jewel ===== */
           <div className="flex flex-col lg:flex-row gap-8">
-            {/* Main Weekly Content */}
             <div className="flex-1">
-              {/* This Week Spotlight */}
-              {weeks.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-[#3ea8c8] p-6 mb-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                      <span className="inline-block bg-[#3ea8c8] text-white text-xs font-bold px-2.5 py-0.5 rounded-full mb-2 uppercase tracking-wider">
-                        This Week
-                      </span>
-                      <h2 className="text-xl font-bold text-[#1a2332]">
-                        Current Production List
-                      </h2>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Published {formatWeekDate(weeks[0].monday)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-[#1a2332]">{weeks[0].count}</div>
-                        <div className="text-xs text-gray-400 uppercase tracking-wider">Projects</div>
+              {weeks.length > 0 && weeklyStats && (() => {
+                const currentWeek = weeks[0]
+                const mondayDate = new Date(currentWeek.monday + 'T00:00:00')
+                const sundayDate = new Date(mondayDate)
+                sundayDate.setDate(mondayDate.getDate() + 6)
+                const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+
+                // Phase bar segments
+                const phaseEntries = Object.entries(weeklyStats.phases)
+                const phaseColors: Record<string, string> = {
+                  'in-pre-production': '#2563eb',
+                  'in-production': '#16a34a',
+                  'in-post-production': '#9333ea',
+                  'completed': '#9ca3af',
+                }
+                const phaseLabels: Record<string, string> = {
+                  'in-pre-production': 'Pre-Production',
+                  'in-production': 'In Production',
+                  'in-post-production': 'Post-Production',
+                  'completed': 'Completed',
+                }
+
+                // Week deltas for archive
+                const weekDeltas = weeks.map((w, i) => ({
+                  ...w,
+                  delta: i < weeks.length - 1 ? w.count - weeks[i + 1].count : 0,
+                }))
+
+                return (
+                  <>
+                    {/* ── Hero Card ── */}
+                    <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden mb-6">
+                      <div className="bg-gradient-to-r from-[#1a2332] to-[#243a52] px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="bg-[#3ea8c8] text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              Current Week
+                            </span>
+                          </div>
+                          <h2 className="text-xl font-bold text-white">
+                            Weekly Production Report
+                          </h2>
+                          <p className="text-white/50 text-sm mt-0.5">
+                            {fmtDate(mondayDate)} &mdash; {fmtDate(sundayDate)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <WeeklyReportPDF weekMonday={currentWeek.monday} projectCount={currentWeek.count} />
+                          <Link
+                            href={`/productions/week/${currentWeek.monday}`}
+                            className="inline-flex items-center gap-2 bg-[#3ea8c8] text-white font-medium text-sm px-5 py-2.5 rounded-lg hover:bg-[#2d8ba8] transition-colors whitespace-nowrap"
+                          >
+                            View Full Report
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </Link>
+                        </div>
                       </div>
-                      <Link
-                        href={`/productions/week/${weeks[0].monday}`}
-                        className="inline-flex items-center gap-2 bg-[#1a2332] text-white font-medium text-sm px-5 py-2.5 rounded-lg hover:bg-[#243244] transition-colors"
-                      >
-                        View List
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </Link>
+
+                      <div className="p-6">
+                        {/* Phase breakdown bar */}
+                        {weeklyStats.currentCount > 0 && (
+                          <div className="mb-6">
+                            <div className="flex rounded-full overflow-hidden h-3 bg-gray-100">
+                              {phaseEntries.map(([phase, count]) => {
+                                const pct = (count / weeklyStats.currentCount) * 100
+                                if (pct === 0) return null
+                                return (
+                                  <div
+                                    key={phase}
+                                    className="transition-all"
+                                    style={{ width: `${pct}%`, backgroundColor: phaseColors[phase] ?? '#9ca3af' }}
+                                    title={`${phaseLabels[phase] ?? phase}: ${count} (${Math.round(pct)}%)`}
+                                  />
+                                )
+                              })}
+                            </div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                              {phaseEntries.map(([phase, count]) => (
+                                <div key={phase} className="flex items-center gap-1.5 text-xs text-gray-500">
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: phaseColors[phase] ?? '#9ca3af' }} />
+                                  {phaseLabels[phase] ?? phase} ({count})
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Stats mini-cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="bg-gray-50 rounded-xl p-4 text-center">
+                            <div className="text-3xl font-bold text-[#1a2332]">{weeklyStats.currentCount}</div>
+                            <div className="text-xs text-gray-400 mt-1 uppercase tracking-wider">Projects</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-4 text-center">
+                            <div className={`text-3xl font-bold ${weeklyStats.delta >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                              {weeklyStats.delta >= 0 ? '+' : ''}{weeklyStats.delta}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1 uppercase tracking-wider">vs Last Week</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-4 text-center">
+                            <div className="text-3xl font-bold text-[#1a2332]">{weeklyStats.totalCompanies}</div>
+                            <div className="text-xs text-gray-400 mt-1 uppercase tracking-wider">Companies</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-4 text-center">
+                            <div className="text-3xl font-bold text-[#1a2332]">{weeklyStats.totalCrew}</div>
+                            <div className="text-xs text-gray-400 mt-1 uppercase tracking-wider">Crew Contacts</div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+
+                    {/* ── Trends & Insights Row ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                      {/* Type Distribution */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                        <h3 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Type Distribution</h3>
+                        <div className="space-y-2.5">
+                          {weeklyStats.topTypes.map(([type, count]) => (
+                            <div key={type} className="flex items-center justify-between">
+                              <span className="text-sm text-gray-700 truncate mr-2">{type}</span>
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-[#3ea8c8]"
+                                    style={{ width: `${(count / weeklyStats.currentCount) * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-semibold text-gray-500 w-6 text-right">{count}</span>
+                              </div>
+                            </div>
+                          ))}
+                          {weeklyStats.topTypes.length === 0 && (
+                            <p className="text-xs text-gray-400">No type data available</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Filming Locations */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                        <h3 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Top Filming Locations</h3>
+                        <div className="space-y-2.5">
+                          {weeklyStats.topLocations.map(([loc, count]) => (
+                            <div key={loc} className="flex items-center justify-between">
+                              <span className="text-sm text-gray-700 truncate mr-2">{loc}</span>
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-green-500"
+                                    style={{ width: `${(count / weeklyStats.currentCount) * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-semibold text-gray-500 w-6 text-right">{count}</span>
+                              </div>
+                            </div>
+                          ))}
+                          {weeklyStats.topLocations.length === 0 && (
+                            <p className="text-xs text-gray-400">No location data available</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Industry Contacts */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                        <h3 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Industry Contacts</h3>
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+                              </svg>
+                            </div>
+                            <div>
+                              <div className="text-2xl font-bold text-[#1a2332]">{weeklyStats.totalCompanies}</div>
+                              <div className="text-xs text-gray-400">Production Companies</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
+                              <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <div className="text-2xl font-bold text-[#1a2332]">{weeklyStats.totalCrew}</div>
+                              <div className="text-xs text-gray-400">Crew & Cast Contacts</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center">
+                              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <div className="text-2xl font-bold text-[#1a2332]">{weeklyStats.totalLocations}</div>
+                              <div className="text-xs text-gray-400">Filming Locations</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Archive ── */}
+                    <WeeklyArchive weeks={weekDeltas.slice(1)} />
+                  </>
+                )
+              })()}
+
+              {weeks.length === 0 && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-16 text-center">
+                  <p className="text-gray-500 font-medium">No weekly lists published yet.</p>
                 </div>
               )}
-
-              {/* Archives */}
-              <div className="mb-4">
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Archive</h2>
-              </div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="divide-y divide-gray-100">
-                  {weeks.slice(1).map((week) => (
-                    <div key={week.monday} className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors group">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-[#1a2332]/5 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-bold text-[#1a2332]">{week.count}</span>
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-800 text-sm">
-                            Week of {formatWeekDate(week.monday)}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            {week.count} production{week.count !== 1 ? 's' : ''} listed
-                          </div>
-                        </div>
-                      </div>
-                      <Link
-                        href={`/productions/week/${week.monday}`}
-                        className="text-sm font-medium text-[#3ea8c8] hover:text-[#2d8ba8] transition-colors opacity-70 group-hover:opacity-100 inline-flex items-center gap-1"
-                      >
-                        View
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
 
             {/* Sidebar */}
             <aside className="lg:w-72 flex-shrink-0 space-y-4">
-              {/* Quick Stats */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Quick Stats</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Total Weeks</span>
-                    <span className="text-sm font-bold text-[#1a2332]">{weeks.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Total Productions</span>
-                    <span className="text-sm font-bold text-[#1a2332]">
-                      {weeks.reduce((sum, w) => sum + w.count, 0).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Trending Searches */}
               <Suspense fallback={
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Trending</h3>
                   <div className="animate-pulse space-y-2">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-4 bg-gray-100 rounded w-3/4" />
-                    ))}
+                    {[1, 2, 3].map((i) => <div key={i} className="h-4 bg-gray-100 rounded w-3/4" />)}
                   </div>
                 </div>
               }>
                 <TrendingSearches />
               </Suspense>
 
-              {/* Membership CTA */}
               {!member && (
                 <div className="bg-gradient-to-br from-[#1a2332] to-[#243244] rounded-xl p-5 text-white">
                   <h3 className="font-bold text-sm mb-2">Unlock Full Access</h3>
                   <p className="text-white/70 text-xs mb-4 leading-relaxed">
                     Get contact details, crew lists, and weekly email alerts for new productions.
                   </p>
-                  <a
-                    href="/membership-plans"
-                    className="block text-center text-sm font-medium bg-[#3ea8c8] text-white px-4 py-2 rounded-lg hover:bg-[#2d8ba8] transition-colors"
-                  >
+                  <a href="/membership-plans" className="block text-center text-sm font-medium bg-[#3ea8c8] text-white px-4 py-2 rounded-lg hover:bg-[#2d8ba8] transition-colors">
                     View Plans
                   </a>
                 </div>

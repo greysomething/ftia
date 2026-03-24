@@ -356,6 +356,64 @@ export async function getLocationFilterOptions() {
     .sort((a, b) => b.count - a.count)
 }
 
+/**
+ * Compute stats for a given week's productions: phase breakdown, type/location distribution,
+ * company/crew counts, and week-over-week delta.
+ */
+export async function getWeeklyStats(currentMonday: string, previousMonday: string) {
+  const [currentProductions, previousProductions] = await Promise.all([
+    getProductionsForWeek(currentMonday),
+    getProductionsForWeek(previousMonday),
+  ])
+
+  // Phase breakdown
+  const phases: Record<string, number> = {}
+  for (const p of currentProductions) {
+    const phase = (p as any).computed_status || 'in-pre-production'
+    phases[phase] = (phases[phase] || 0) + 1
+  }
+
+  // Type breakdown
+  const types: Record<string, number> = {}
+  for (const p of currentProductions) {
+    const typeLinks = (p as any).production_type_links ?? []
+    const primaryType = typeLinks.find((l: any) => l.is_primary)?.production_types?.name
+      ?? typeLinks[0]?.production_types?.name ?? 'Unknown'
+    types[primaryType] = (types[primaryType] || 0) + 1
+  }
+  const topTypes = Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 5)
+
+  // Location breakdown
+  const locations: Record<string, number> = {}
+  for (const p of currentProductions) {
+    for (const loc of (p as any).production_locations ?? []) {
+      const city = loc.city || loc.location || 'Unknown'
+      if (city && city !== 'Unknown') locations[city] = (locations[city] || 0) + 1
+    }
+  }
+  const topLocations = Object.entries(locations).sort((a, b) => b[1] - a[1]).slice(0, 5)
+
+  // Company & crew counts
+  let totalCompanies = 0
+  let totalCrew = 0
+  for (const p of currentProductions) {
+    totalCompanies += ((p as any).production_company_links ?? []).length
+    totalCrew += ((p as any).production_crew_roles ?? []).length
+  }
+
+  return {
+    currentCount: currentProductions.length,
+    previousCount: previousProductions.length,
+    delta: currentProductions.length - previousProductions.length,
+    phases,
+    topTypes,
+    topLocations,
+    totalCompanies,
+    totalCrew,
+    totalLocations: Object.keys(locations).length,
+  }
+}
+
 export async function getProductionBySlug(slug: string) {
   const supabase = await createClient()
 
