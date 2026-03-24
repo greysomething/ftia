@@ -6,7 +6,7 @@ import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate } from '@/lib/utils'
 import { StripeSyncButton } from './StripeSyncButton'
 
-export const metadata: Metadata = { title: 'Users' }
+export const metadata: Metadata = { title: 'User Management' }
 export const dynamic = 'force-dynamic'
 
 const VALID_SORT: UserSortField[] = ['display_name', 'created_at', 'role']
@@ -76,49 +76,136 @@ export default async function AdminUsersPage({ searchParams }: Props) {
 
   function buildHref(overrides: Record<string, string>) {
     const p = new URLSearchParams({ ...extraParams, ...overrides })
-    // Remove empty values
     for (const [k, v] of p.entries()) { if (!v) p.delete(k) }
     const qs = p.toString()
     return `/admin/users${qs ? `?${qs}` : ''}`
   }
+
+  const fmtMoney = (n: number) => n >= 1000
+    ? `$${(n / 1000).toFixed(1)}k`
+    : `$${n.toFixed(0)}`
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
           <p className="text-sm text-gray-500 mt-1">
             {counts.total.toLocaleString()} users &middot;{' '}
-            {counts.activeMemberships} active members
+            {counts.activeMemberships} active subscribers &middot;{' '}
+            {counts.totalMemberships > 0 ? `${fmtMoney(counts.mrr)}/mo MRR` : 'Sync to see revenue'}
           </p>
         </div>
         <StripeSyncButton />
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <Link href={buildHref({ role: '', membership: '' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow">
-          <div className="text-2xl font-bold text-gray-900">{counts.total.toLocaleString()}</div>
-          <div className="text-xs text-gray-500">Total Users</div>
+      {/* Revenue + Membership Dashboard */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {/* MRR */}
+        <div className="admin-card py-4 px-5 border-l-4 border-l-green-500">
+          <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Monthly Revenue</div>
+          <div className="text-2xl font-bold text-green-600">{fmtMoney(counts.mrr)}</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">MRR from active subscriptions</div>
+        </div>
+        {/* ARR */}
+        <div className="admin-card py-4 px-5 border-l-4 border-l-blue-500">
+          <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Annual Revenue</div>
+          <div className="text-2xl font-bold text-blue-600">{fmtMoney(counts.arr)}</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">Projected annual run rate</div>
+        </div>
+        {/* Active */}
+        <Link href={buildHref({ role: '', membership: 'active' })} className="admin-card py-4 px-5 border-l-4 border-l-emerald-500 hover:shadow-md transition-shadow">
+          <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Active Subscribers</div>
+          <div className="text-2xl font-bold text-emerald-600">{counts.activeMemberships}</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">
+            {counts.total > 0
+              ? `${((counts.activeMemberships / counts.total) * 100).toFixed(1)}% conversion rate`
+              : 'of total users'}
+          </div>
         </Link>
-        <Link href={buildHref({ role: 'admin', membership: '' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow">
-          <div className="text-2xl font-bold text-purple-600">{counts.admins}</div>
-          <div className="text-xs text-gray-500">Admins</div>
-        </Link>
-        <Link href={buildHref({ role: '', membership: 'active' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow">
-          <div className="text-2xl font-bold text-green-600">{counts.activeMemberships}</div>
-          <div className="text-xs text-gray-500">Active Members</div>
-        </Link>
-        <Link href={buildHref({ role: '', membership: 'cancelled' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow">
+        {/* Churn */}
+        <Link href={buildHref({ role: '', membership: 'cancelled' })} className="admin-card py-4 px-5 border-l-4 border-l-amber-500 hover:shadow-md transition-shadow">
+          <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Cancelled</div>
           <div className="text-2xl font-bold text-amber-600">{counts.cancelledMemberships}</div>
-          <div className="text-xs text-gray-500">Cancelled</div>
-        </Link>
-        <Link href={buildHref({ role: '', membership: 'none' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow">
-          <div className="text-2xl font-bold text-gray-400">{counts.noMembership.toLocaleString()}</div>
-          <div className="text-xs text-gray-500">No Membership</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">
+            {counts.totalMemberships > 0
+              ? `${((counts.cancelledMemberships / counts.totalMemberships) * 100).toFixed(0)}% churn rate`
+              : 'total cancelled'}
+          </div>
         </Link>
       </div>
+
+      {/* User counts row */}
+      <div className="grid grid-cols-3 md:grid-cols-5 gap-3 mb-6">
+        <Link href={buildHref({ role: '', membership: '' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow text-center">
+          <div className="text-xl font-bold text-gray-900">{counts.total.toLocaleString()}</div>
+          <div className="text-[11px] text-gray-500">Total Users</div>
+        </Link>
+        <Link href={buildHref({ role: 'admin' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow text-center">
+          <div className="text-xl font-bold text-purple-600">{counts.admins}</div>
+          <div className="text-[11px] text-gray-500">Admins</div>
+        </Link>
+        <Link href={buildHref({ membership: 'expired' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow text-center">
+          <div className="text-xl font-bold text-red-500">{counts.expiredMemberships}</div>
+          <div className="text-[11px] text-gray-500">Expired</div>
+        </Link>
+        <Link href={buildHref({ membership: 'none' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow text-center">
+          <div className="text-xl font-bold text-gray-400">{counts.noMembership.toLocaleString()}</div>
+          <div className="text-[11px] text-gray-500">No Membership</div>
+        </Link>
+        <div className="admin-card py-3 px-4 text-center">
+          <div className="text-xl font-bold text-gray-900">{counts.totalMemberships}</div>
+          <div className="text-[11px] text-gray-500">Total Memberships</div>
+        </div>
+      </div>
+
+      {/* Plan breakdown (only if memberships exist) */}
+      {counts.planStats.length > 0 && (
+        <div className="admin-card mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Revenue by Plan</h3>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {counts.planStats.map(plan => (
+              <div key={plan.name} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3">
+                <div>
+                  <div className="text-sm font-medium text-gray-800">{plan.name}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {plan.active} active / {plan.total} total
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-green-600">{fmtMoney(plan.mrr)}/mo</div>
+                  {plan.active > 0 && (
+                    <div className="w-16 h-1.5 rounded-full bg-gray-200 mt-1.5 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-green-500"
+                        style={{ width: `${counts.mrr > 0 ? (plan.mrr / counts.mrr) * 100 : 0}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* No memberships CTA */}
+      {counts.totalMemberships === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-5 py-4 mb-6 flex items-start gap-3">
+          <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <p className="text-sm font-medium text-amber-800">No membership data synced yet</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Click <strong>&ldquo;Sync Memberships from Stripe&rdquo;</strong> above to import all
+              active, cancelled, and trialing subscriptions from your Stripe account.
+              This will create user accounts and membership records automatically.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Role tabs */}
       <div className="flex gap-1 mb-4 border-b border-gray-200">

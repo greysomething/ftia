@@ -552,12 +552,40 @@ export async function getAdminUserCounts() {
     supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('role', 'member'),
   ])
 
-  // Membership counts
-  const { data: mems } = await supabase.from('user_memberships').select('status')
-  const memCounts = { active: 0, cancelled: 0, expired: 0 }
+  // Membership counts with revenue calculation
+  const { data: mems } = await supabase
+    .from('user_memberships')
+    .select('status, level_id, membership_levels(name, billing_amount, cycle_period)')
+
+  const memCounts = { active: 0, cancelled: 0, expired: 0, pending: 0 }
+  let mrr = 0 // Monthly Recurring Revenue
+  const planBreakdown: Record<string, { name: string; active: number; total: number; mrr: number }> = {}
+
   for (const m of mems ?? []) {
     if (m.status in memCounts) (memCounts as any)[m.status]++
+
+    const level = (m as any).membership_levels
+    const planName = level?.name ?? 'Unknown'
+    if (!planBreakdown[planName]) {
+      planBreakdown[planName] = { name: planName, active: 0, total: 0, mrr: 0 }
+    }
+    planBreakdown[planName].total++
+
+    if (m.status === 'active') {
+      planBreakdown[planName].active++
+      const amount = parseFloat(level?.billing_amount ?? 0)
+      const period = level?.cycle_period
+      let monthly = 0
+      if (period === 'Month') monthly = amount
+      else if (period === 'Year') monthly = amount / 12
+      else if (period === 'Week') monthly = amount * 4.33
+      else if (period === 'Day') monthly = amount * 30
+      mrr += monthly
+      planBreakdown[planName].mrr += monthly
+    }
   }
+
+  const planStats = Object.values(planBreakdown).sort((a, b) => b.active - a.active)
 
   return {
     total: totalCount ?? 0,
@@ -566,7 +594,12 @@ export async function getAdminUserCounts() {
     activeMemberships: memCounts.active,
     cancelledMemberships: memCounts.cancelled,
     expiredMemberships: memCounts.expired,
+    pendingMemberships: memCounts.pending,
     noMembership: (totalCount ?? 0) - (mems?.length ?? 0),
+    totalMemberships: mems?.length ?? 0,
+    mrr,
+    arr: mrr * 12,
+    planStats,
   }
 }
 
