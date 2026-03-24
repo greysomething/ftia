@@ -209,21 +209,7 @@ export async function POST() {
         ? new Date(sub.start_date * 1000).toISOString()
         : new Date(sub.created * 1000).toISOString()
 
-      // For canceled subs, check if there's already an active one — don't overwrite
-      if (membershipStatus === 'cancelled' || membershipStatus === 'expired') {
-        const { data: existingMem } = await supabase
-          .from('user_memberships')
-          .select('status')
-          .eq('user_id', userId)
-          .single()
-        if (existingMem?.status === 'active') {
-          // Don't overwrite active with cancelled
-          stats.synced++
-          continue
-        }
-      }
-
-      await supabase.from('user_memberships').upsert({
+      const membershipRow = {
         user_id: userId,
         level_id: levelId,
         status: membershipStatus,
@@ -234,7 +220,34 @@ export async function POST() {
         billing_first_name: customer.name?.split(' ')[0] ?? '',
         billing_last_name: customer.name?.split(' ').slice(1).join(' ') ?? '',
         billing_email: email,
-      }, { onConflict: 'user_id' })
+      }
+
+      // Check if membership already exists for this user
+      const { data: existingMem } = await supabase
+        .from('user_memberships')
+        .select('id, status')
+        .eq('user_id', userId)
+        .single()
+
+      if (existingMem) {
+        // Don't overwrite active with cancelled
+        if (existingMem.status === 'active' && (membershipStatus === 'cancelled' || membershipStatus === 'expired')) {
+          stats.synced++
+          continue
+        }
+        // Update existing
+        await supabase.from('user_memberships')
+          .update(membershipRow)
+          .eq('id', existingMem.id)
+      } else {
+        // Insert new
+        const { error: insertErr } = await supabase.from('user_memberships').insert(membershipRow)
+        if (insertErr) {
+          stats.errors.push(`${email}: ${insertErr.message}`)
+          stats.skipped++
+          continue
+        }
+      }
 
       stats.synced++
     } catch (err: any) {

@@ -46,15 +46,24 @@ export async function POST(req: NextRequest) {
         periodEnd = new Date((sub as any).current_period_end * 1000).toISOString()
       }
 
-      // Upsert membership
-      await supabase.from('user_memberships').upsert({
+      // Insert or update membership
+      const { data: existingMem } = await supabase
+        .from('user_memberships').select('id').eq('user_id', userId).single()
+
+      const memRow = {
         user_id: userId,
         level_id: parseInt(levelId, 10),
-        status: 'active',
+        status: 'active' as const,
         stripe_subscription_id: subscriptionId as string ?? null,
         enddate: periodEnd,
         startdate: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
+      }
+
+      if (existingMem) {
+        await supabase.from('user_memberships').update(memRow).eq('id', existingMem.id)
+      } else {
+        await supabase.from('user_memberships').insert(memRow)
+      }
 
       // Record order
       await supabase.from('membership_orders').insert({
