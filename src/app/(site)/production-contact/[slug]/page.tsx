@@ -62,6 +62,53 @@ export default async function CompanyPage({ params }: Props) {
 
   const productions = linkedProductions?.map((l: any) => l.productions).filter(Boolean) ?? []
 
+  // Derive staff from crew who worked on this company's productions
+  // (company_staff table is empty from migration — this is the live alternative)
+  const productionIds = productions.map((p: any) => p.id)
+  let derivedStaff: Array<{ crew_id: number; name: string; slug: string; role: string; emails: any; phones: any }> = []
+
+  if (productionIds.length > 0 && staff.length === 0) {
+    // Fetch crew roles for this company's productions (paginate for large companies)
+    const batchSize = 50
+    const allCrewRoles: any[] = []
+    for (let i = 0; i < productionIds.length; i += batchSize) {
+      const batch = productionIds.slice(i, i + batchSize)
+      const { data: roles } = await supabase
+        .from('production_crew_roles')
+        .select('crew_id, role_name, inline_name, crew_members(id, name, slug, emails, phones)')
+        .in('production_id', batch)
+        .not('crew_id', 'is', null)
+      if (roles) allCrewRoles.push(...roles)
+    }
+
+    // Deduplicate by crew_id and pick their most common role
+    const crewMap = new Map<number, { crew_id: number; name: string; slug: string; role: string; emails: any; phones: any; count: number }>()
+    for (const r of allCrewRoles) {
+      const person = r.crew_members
+      if (!person) continue
+      const existing = crewMap.get(person.id)
+      if (existing) {
+        existing.count++
+        // Keep the role from the entry with the most appearances
+      } else {
+        crewMap.set(person.id, {
+          crew_id: person.id,
+          name: person.name,
+          slug: person.slug,
+          role: r.role_name || '',
+          emails: person.emails,
+          phones: person.phones,
+          count: 1,
+        })
+      }
+    }
+
+    derivedStaff = Array.from(crewMap.values()).sort((a, b) => b.count - a.count)
+  }
+
+  // Use derived staff if company_staff is empty
+  const effectiveStaff = staff.length > 0 ? staff : derivedStaff
+
   // Quick stats
   const hasContactInfo = addresses.length > 0 || phones.length > 0 || emails.length > 0
   const primaryCategory = categories.find((cat: any) => cat.is_primary)?.company_categories ?? categories[0]?.company_categories
@@ -142,7 +189,7 @@ export default async function CompanyPage({ params }: Props) {
                 </svg>
               </div>
               <div>
-                <div className="text-lg font-bold">{staff.length}</div>
+                <div className="text-lg font-bold">{effectiveStaff.length}</div>
                 <div className="text-xs text-white/50 uppercase tracking-wider">Staff</div>
               </div>
             </div>
@@ -320,8 +367,8 @@ export default async function CompanyPage({ params }: Props) {
               </div>
             </div>
 
-            {/* Key Staff */}
-            {staff.length > 0 && (
+            {/* Key Staff / Associated Crew */}
+            {effectiveStaff.length > 0 && (
               <div className="white-bg overflow-hidden">
                 <div className="h-1 bg-[#1a2332]" />
                 <div className="p-6">
@@ -329,39 +376,43 @@ export default async function CompanyPage({ params }: Props) {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    Key Staff ({staff.length})
+                    {staff.length > 0 ? 'Key Staff' : 'Associated Cast & Crew'} ({effectiveStaff.length})
                     {!member && <span className="text-xs font-normal text-gray-400 ml-2">— Contact info for members</span>}
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {staff.map((s: any) => {
-                      const person = s.crew_members
-                      const staffEmails = member ? parsePhpSerialized(person.emails) : []
+                    {effectiveStaff.map((s: any) => {
+                      // Handle both company_staff format and derived staff format
+                      const person = s.crew_members ?? s
+                      const personName = person.name ?? ''
+                      const personSlug = person.slug ?? ''
+                      const personEmails = member ? parsePhpSerialized(person.emails) : []
+                      const role = s.position ?? s.role ?? ''
                       return (
-                        <div key={s.id} className="border border-gray-200 rounded-lg p-3.5 hover:border-gray-300 transition-colors group">
+                        <div key={s.id ?? s.crew_id} className="border border-gray-200 rounded-lg p-3.5 hover:border-gray-300 transition-colors group">
                           <div className="flex items-start gap-3">
                             <div className="w-9 h-9 rounded-full bg-[#1a2332]/10 flex items-center justify-center flex-shrink-0">
-                              <span className="text-sm font-bold text-[#1a2332]">{person.name.charAt(0)}</span>
+                              <span className="text-sm font-bold text-[#1a2332]">{personName.charAt(0)}</span>
                             </div>
                             <div className="flex-1 min-w-0">
-                              {member ? (
+                              {member && personSlug ? (
                                 <Link
-                                  href={`/production-role/${person.slug}`}
+                                  href={`/production-role/${personSlug}`}
                                   className="font-semibold text-[#1a2332] hover:text-[#3ea8c8] transition-colors text-sm inline-flex items-center gap-1"
                                 >
-                                  {person.name}
+                                  {personName}
                                   <svg className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                   </svg>
                                 </Link>
                               ) : (
-                                <span className="font-semibold text-gray-800 text-sm">{person.name}</span>
+                                <span className="font-semibold text-gray-800 text-sm">{personName}</span>
                               )}
-                              {s.position && (
-                                <p className="text-xs text-gray-500 mt-0.5">{s.position}</p>
+                              {role && (
+                                <p className="text-xs text-gray-500 mt-0.5">{role}</p>
                               )}
-                              {staffEmails.length > 0 && (
+                              {personEmails.length > 0 && (
                                 <p className="text-xs text-gray-400 mt-1 truncate">
-                                  <a href={`mailto:${staffEmails[0]}`} className="hover:text-primary transition-colors">{staffEmails[0]}</a>
+                                  <a href={`mailto:${personEmails[0]}`} className="hover:text-primary transition-colors">{personEmails[0]}</a>
                                 </p>
                               )}
                             </div>
@@ -465,7 +516,7 @@ export default async function CompanyPage({ params }: Props) {
                 </div>
                 <div>
                   <dt className="text-xs text-gray-500 uppercase tracking-wider">Staff Listed</dt>
-                  <dd className="mt-0.5 font-medium text-gray-800">{staff.length}</dd>
+                  <dd className="mt-0.5 font-medium text-gray-800">{effectiveStaff.length}</dd>
                 </div>
                 {company.wp_updated_at && (
                   <div>
