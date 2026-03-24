@@ -26,7 +26,7 @@ const STATUS_BADGES: Record<string, string> = {
 
 export default async function AdminSubscriptionsPage({ searchParams }: Props) {
   const params = await searchParams
-  const page = parseInt(params.page ?? '1', 10)
+  const page = parseInt(params.page || '1', 10) || 1
   const q = params.q ?? ''
   const statusFilter = params.status ?? ''
   const tab = params.tab ?? 'subscriptions'

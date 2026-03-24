@@ -67,7 +67,7 @@ function SortHeader({
 
 export default async function AdminProductionsPage({ searchParams }: Props) {
   const params = await searchParams
-  const page = parseInt(params.page ?? '1', 10)
+  const page = parseInt(params.page || '1', 10) || 1
   const q = params.q ?? ''
   const status = params.status ?? ''
   const sort = (VALID_SORT_FIELDS.includes(params.sort as ProductionSortField)

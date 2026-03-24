@@ -55,7 +55,7 @@ function SortHeader({ label, field, currentSort, currentDir, basePath, extraPara
 
 export default async function AdminUsersPage({ searchParams }: Props) {
   const params = await searchParams
-  const page = parseInt(params.page ?? '1', 10)
+  const page = parseInt(params.page || '1', 10) || 1
   const q = params.q ?? ''
   const role = params.role ?? ''
   const membership = params.membership ?? ''
