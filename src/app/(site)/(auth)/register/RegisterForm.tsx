@@ -4,6 +4,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+// NOTE: Registration now goes through /api/auth/register which creates the
+// user server-side via the admin client, upserts the profile, sends a branded
+// welcome email via Resend, and adds the user to the newsletter audience.
+// After the API call succeeds we sign in client-side so the session cookie is set.
+
 const INDUSTRY_ROLES = [
   'Actor / Talent',
   'Art Department',
@@ -89,38 +94,44 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
       return
     }
 
-    const supabase = createClient()
-    const { data, error: authError } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        data: {
-          full_name: `${form.firstName} ${form.lastName}`.trim(),
-          first_name: form.firstName,
-          last_name: form.lastName,
-        },
-      },
+    // Call server-side registration API (creates user, upserts profile,
+    // sends welcome email, adds to Resend audience)
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: form.email,
+        password: form.password,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        organizationName: form.organizationName,
+        organizationType: form.organizationType,
+        country: form.country,
+        bio: form.bio,
+        linkedin: form.linkedin,
+        website: form.website,
+      }),
     })
 
-    if (authError) {
-      setError(authError.message)
+    const result = await res.json()
+
+    if (!res.ok || result.error) {
+      setError(result.error ?? 'Registration failed. Please try again.')
       setLoading(false)
       return
     }
 
-    if (data.user) {
-      await (supabase.from as any)('user_profiles').upsert({
-        id: data.user.id,
-        first_name: form.firstName,
-        last_name: form.lastName,
-        display_name: `${form.firstName} ${form.lastName}`.trim(),
-        organization_name: form.organizationName,
-        organization_type: form.organizationType,
-        country: form.country,
-        description: form.bio,
-        linkedin: form.linkedin,
-        website: form.website,
-      })
+    // Sign in client-side so the session cookie is set
+    const supabase = createClient()
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: form.email,
+      password: form.password,
+    })
+
+    if (signInError) {
+      // User was created but auto-sign-in failed — send them to login
+      router.push('/login?registered=true')
+      return
     }
 
     if (isFree) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { sendEmail } from '@/lib/send-email'
+import { getTemplate } from '@/lib/email-templates'
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY
-const EMAIL_FROM = process.env.EMAIL_FROM ?? 'noreply@productionlist.com'
 const CONTACT_TO = process.env.CONTACT_EMAIL ?? 'info@productionlist.com'
 
 export async function POST(req: NextRequest) {
@@ -19,23 +19,47 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (RESEND_API_KEY) {
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: EMAIL_FROM,
-          to: CONTACT_TO,
-          reply_to: email,
-          subject: `[Contact Form] ${subject} — from ${name}`,
-          text: `Name: ${name}\nEmail: ${email}\nSubject: ${subject}\n\n${message}`,
-        }),
+    // 1. Send the contact form message to the team
+    const teamResult = await sendEmail({
+      to: CONTACT_TO,
+      subject: `[Contact Form] ${subject} — from ${name}`,
+      html: `<p><strong>Name:</strong> ${name}</p>
+             <p><strong>Email:</strong> ${email}</p>
+             <p><strong>Subject:</strong> ${subject}</p>
+             <hr/>
+             <p>${message.replace(/\n/g, '<br/>')}</p>`,
+      replyTo: email,
+      templateSlug: 'contact-internal',
+    })
+
+    if (!teamResult.success) {
+      console.error('[contact] Failed to send team email:', teamResult.error)
+      return NextResponse.redirect(
+        new URL('/contact?error=send_failed', req.url),
+        303
+      )
+    }
+
+    // 2. Send a confirmation email back to the submitter
+    const confirmationTemplate = getTemplate('contact-confirmation')
+    if (confirmationTemplate) {
+      const firstName = name.split(/\s+/)[0] ?? name
+      const { subject: confirmSubject, html: confirmHtml } = confirmationTemplate.render({
+        firstName,
+        subject,
       })
-    } else {
-      console.warn('RESEND_API_KEY not configured — contact form email not sent')
+
+      const confirmResult = await sendEmail({
+        to: email,
+        subject: confirmSubject,
+        html: confirmHtml,
+        templateSlug: 'contact-confirmation',
+      })
+
+      if (!confirmResult.success) {
+        // Log but don't fail — the team already received the message
+        console.error('[contact] Failed to send confirmation email:', confirmResult.error)
+      }
     }
 
     return NextResponse.redirect(

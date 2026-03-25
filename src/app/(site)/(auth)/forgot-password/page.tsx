@@ -1,5 +1,15 @@
 'use client'
 
+// PASSWORD RESET: Currently uses Supabase's built-in resetPasswordForEmail()
+// which sends Supabase's default email template. This is intentional because
+// Supabase handles secure token generation and the magic-link flow.
+//
+// To customize the password reset email appearance:
+// 1. Go to Supabase Dashboard > Authentication > Email Templates
+// 2. Edit the "Reset Password" template with branded HTML
+// 3. The 'password-reset' template in src/lib/email-templates.ts is ready
+//    to use if we switch to a fully custom flow in the future.
+
 import type { Metadata } from 'next'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
