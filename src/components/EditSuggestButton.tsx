@@ -89,8 +89,8 @@ export function EditSuggestButton({
         </button>
 
         {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 relative" onClick={e => e.stopPropagation()}>
               {sent ? (
                 <div className="text-center py-6">
                   <svg className="w-12 h-12 text-green-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -118,6 +118,8 @@ export function EditSuggestButton({
                   <textarea
                     value={suggestion}
                     onChange={e => setSuggestion(e.target.value)}
+                    onFocus={e => e.target.select()}
+                    autoFocus
                     placeholder="Describe what should be updated or corrected..."
                     rows={4}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none"
