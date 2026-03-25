@@ -533,6 +533,10 @@ export async function getAdminUsers({
     filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'cancelled'))
   } else if (membership === 'expired') {
     filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'expired'))
+  } else if (membership === 'manual') {
+    filtered = users.filter((u: any) =>
+      u.user_memberships?.some((m: any) => m.status === 'active' && !m.stripe_subscription_id)
+    )
   } else if (membership === 'none') {
     filtered = users.filter((u: any) => !u.user_memberships || u.user_memberships.length === 0)
   }

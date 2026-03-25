@@ -22,6 +22,7 @@ const MEMBERSHIP_FILTERS = [
   { key: 'active', label: 'Active' },
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'expired', label: 'Expired' },
+  { key: 'manual', label: 'Manual' },
   { key: 'none', label: 'No Membership' },
 ] as const
 
@@ -306,15 +307,22 @@ export default async function AdminUsersPage({ searchParams }: Props) {
                   <td>
                     {mem ? (
                       <div>
-                        <span className={`badge text-[11px] ${
-                          mem.status === 'active' ? 'badge-green' :
-                          mem.status === 'cancelled' ? 'badge-yellow' :
-                          'badge-gray'
-                        }`}>
-                          {mem.status}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className={`badge text-[11px] ${
+                            mem.status === 'active' ? 'badge-green' :
+                            mem.status === 'cancelled' ? 'badge-yellow' :
+                            'badge-gray'
+                          }`}>
+                            {mem.status}
+                          </span>
+                          {!hasStripe && mem.status === 'active' && (
+                            <span className="badge text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
+                              Manual
+                            </span>
+                          )}
+                        </div>
                         {mem.membership_levels?.name && (
-                          <span className="block text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">
+                          <span className="block text-[10px] text-gray-400 mt-0.5 truncate max-w-[140px]">
                             {mem.membership_levels.name}
                           </span>
                         )}
