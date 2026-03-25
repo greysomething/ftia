@@ -24,10 +24,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const person = await getCrewMemberBySlug(slug)
   if (!person) return { title: 'Not Found' }
-  const cats = (person as any).crew_category_links?.map((c: any) => c.role_categories.name).join(', ')
+  const p = person as any
+  const cats = p.crew_category_links?.map((c: any) => c.role_categories.name).join(', ')
+  const rolesStr = (p.roles as string[] ?? []).join(', ')
+  const desc = p.content
+    ? p.content.substring(0, 160)
+    : `${person.name}${rolesStr ? ` — ${rolesStr}` : cats ? ` — ${cats}` : ''} in the film and television industry.`
   return {
     title: `${person.name} | Production List`,
-    description: `${person.name}${cats ? ` — ${cats}` : ''} in the film and television industry.`,
+    description: desc,
     alternates: { canonical: `/production-role/${person.slug}` },
   }
 }
@@ -50,6 +55,17 @@ export default async function CrewMemberPage({ params }: Props) {
   const emails = parsePhpSerialized(person.emails)
   const phones = parsePhpSerialized(person.phones).map(formatPhone)
 
+  // New extended fields
+  const bio = p.content as string | null
+  const roles = (p.roles as string[] | null) ?? []
+  const knownFor = (p.known_for as string[] | null) ?? []
+  const website = p.website as string | null
+  const imdb = p.imdb as string | null
+  const instagram = p.instagram as string | null
+  const location = p.location as string | null
+  const rep = p.representation as { agency?: string | null; agent?: string | null; manager?: string | null } | null
+  const hasRep = rep && (rep.agency || rep.agent || rep.manager)
+
   // Get productions this person is in
   const supabase = await createClient()
   const { data: roleLinks, count: productionCount } = await supabase
@@ -59,7 +75,8 @@ export default async function CrewMemberPage({ params }: Props) {
     .limit(50)
 
   const primaryRole = categories.find((c: any) => c.is_primary)?.role_categories ?? categories[0]?.role_categories
-  const hasContactInfo = emails.length > 0 || phones.length > 0 || person.linkedin || person.twitter
+  const hasContactInfo = emails.length > 0 || phones.length > 0 || person.linkedin || person.twitter || website || instagram
+  const hasSocials = person.linkedin || person.twitter || instagram || website || imdb
 
   const breadcrumbs = [
     { label: 'Cast & Crew', href: '/production-role' },
@@ -76,6 +93,10 @@ export default async function CrewMemberPage({ params }: Props) {
     existing.push(rl.productions)
     productionsByRole.set(role, existing)
   }
+
+  // Combine categories + roles for display
+  const categoryNames = categories.map((c: any) => c.role_categories?.name).filter(Boolean)
+  const allRoles = roles.length > 0 ? roles : categoryNames
 
   return (
     <>
@@ -102,17 +123,37 @@ export default async function CrewMemberPage({ params }: Props) {
                     isLoggedIn={!!user}
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  {categories.map((cat: any) => (
-                    <Link
-                      key={cat.role_categories.id}
-                      href={`/production-role?role=${cat.role_categories.slug}`}
-                      className="text-xs font-medium bg-white/10 text-white/80 px-2.5 py-0.5 rounded-full hover:bg-white/20 transition-colors"
-                    >
-                      {cat.role_categories.name}
-                    </Link>
-                  ))}
-                </div>
+                {/* Roles tags */}
+                {allRoles.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    {allRoles.map((role: string, i: number) => {
+                      const matchingCat = categories.find((c: any) => c.role_categories?.name === role)
+                      return matchingCat ? (
+                        <Link
+                          key={i}
+                          href={`/production-role?role=${matchingCat.role_categories.slug}`}
+                          className="text-xs font-medium bg-white/10 text-white/80 px-2.5 py-0.5 rounded-full hover:bg-white/20 transition-colors"
+                        >
+                          {role}
+                        </Link>
+                      ) : (
+                        <span key={i} className="text-xs font-medium bg-white/10 text-white/80 px-2.5 py-0.5 rounded-full">
+                          {role}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+                {/* Location under name */}
+                {location && (
+                  <p className="text-xs text-white/50 mt-1.5 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    {location}
+                  </p>
+                )}
               </div>
             </div>
             {person.wp_updated_at && (
@@ -188,6 +229,23 @@ export default async function CrewMemberPage({ params }: Props) {
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Main Column */}
           <div className="flex-1 min-w-0 space-y-6">
+
+            {/* Bio / About */}
+            {bio && (
+              <div className="white-bg overflow-hidden">
+                <div className="h-1 bg-[#3ea8c8]" />
+                <div className="p-6">
+                  <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    About
+                  </h2>
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{bio}</p>
+                </div>
+              </div>
+            )}
+
             {/* Contact Information */}
             <div className="white-bg overflow-hidden">
               <div className="h-1 bg-[#3ea8c8]" />
@@ -232,16 +290,31 @@ export default async function CrewMemberPage({ params }: Props) {
                         </div>
                       </div>
                     )}
-                    {(person.linkedin || person.twitter) && (
-                      <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg sm:col-span-2">
-                        <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center flex-shrink-0">
-                          <svg className="w-4 h-4 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    {website && (
+                      <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
                           </svg>
                         </div>
                         <div>
-                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Social Profiles</div>
-                          <div className="flex items-center gap-4 mt-1">
+                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Website</div>
+                          <a href={website} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline mt-0.5 block">
+                            {website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                    {hasSocials && (
+                      <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg sm:col-span-2">
+                        <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Social & Profiles</div>
+                          <div className="flex flex-wrap items-center gap-4 mt-1">
                             {person.linkedin && (
                               <a href={person.linkedin} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-[#0077b5] hover:underline">
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -251,18 +324,35 @@ export default async function CrewMemberPage({ params }: Props) {
                               </a>
                             )}
                             {person.twitter && (
-                              <a href={person.twitter} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-gray-700 hover:underline">
+                              <a href={person.twitter.startsWith('@') ? `https://x.com/${person.twitter.slice(1)}` : person.twitter} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-gray-700 hover:underline">
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                   <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                                 </svg>
                                 X / Twitter
                               </a>
                             )}
+                            {instagram && (
+                              <a href={instagram.startsWith('@') ? `https://instagram.com/${instagram.slice(1)}` : instagram.startsWith('http') ? instagram : `https://instagram.com/${instagram}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-pink-600 hover:underline">
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+                                </svg>
+                                Instagram
+                              </a>
+                            )}
+                            {imdb && (
+                              <a href={imdb} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-amber-700 hover:underline">
+                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M14.31 9.588v.005c-.077-.048-.227-.07-.42-.07v4.815c.27 0 .44-.06.5-.165.062-.104.095-.405.095-.904v-2.19c0-.473-.013-.783-.04-.93-.027-.146-.075-.268-.135-.56zm-3.45-1.66l-.573 3.626c-.06.397-.09.728-.09.992v5.456H8.39V7.928h2.47zm-5.57 0h1.79v10.004h-1.79V7.928zm9.03 0h2.47l-.573 3.626c-.06.397-.09.728-.09.992v5.456h-1.807V7.928z" />
+                                  <rect x="0" y="0" width="24" height="24" rx="4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                                </svg>
+                                IMDb
+                              </a>
+                            )}
                           </div>
                         </div>
                       </div>
                     )}
-                    {!hasContactInfo && (
+                    {!hasContactInfo && !hasSocials && (
                       <div className="sm:col-span-2 p-4 bg-gray-50 rounded-lg text-center">
                         <p className="text-sm text-gray-400">No contact details on file for this professional.</p>
                       </div>
@@ -279,6 +369,63 @@ export default async function CrewMemberPage({ params }: Props) {
                 )}
               </div>
             </div>
+
+            {/* Representation */}
+            {hasRep && (
+              <div className="white-bg overflow-hidden">
+                <div className="h-1 bg-[#1a2332]" />
+                <div className="p-6">
+                  <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Representation
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {rep?.agency && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Agency</div>
+                        <div className="text-sm font-semibold text-gray-800 mt-0.5">{rep.agency}</div>
+                      </div>
+                    )}
+                    {rep?.agent && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</div>
+                        <div className="text-sm text-gray-800 mt-0.5">{rep.agent}</div>
+                      </div>
+                    )}
+                    {rep?.manager && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Manager</div>
+                        <div className="text-sm text-gray-800 mt-0.5">{rep.manager}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Known For */}
+            {knownFor.length > 0 && (
+              <div className="white-bg overflow-hidden">
+                <div className="h-1 bg-[#1a2332]" />
+                <div className="p-6">
+                  <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                    Known For
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {knownFor.map((title: string, i: number) => (
+                      <span key={i} className="inline-flex items-center text-sm bg-blue-50 text-blue-800 px-3 py-1.5 rounded-lg font-medium">
+                        {title}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Company Affiliations */}
             {companyLinks.length > 0 && (
@@ -395,20 +542,31 @@ export default async function CrewMemberPage({ params }: Props) {
                 Quick Facts
               </h3>
               <dl className="space-y-3 text-sm">
-                {categories.length > 0 && (
+                {allRoles.length > 0 && (
                   <div>
                     <dt className="text-xs text-gray-500 uppercase tracking-wider">Role</dt>
                     <dd className="mt-0.5 space-y-0.5">
-                      {categories.map((cat: any) => (
-                        <Link
-                          key={cat.role_categories.id}
-                          href={`/production-role?role=${cat.role_categories.slug}`}
-                          className="block font-medium text-gray-800 hover:text-primary transition-colors"
-                        >
-                          {cat.role_categories.name}
-                        </Link>
-                      ))}
+                      {allRoles.map((role: string, i: number) => {
+                        const matchingCat = categories.find((c: any) => c.role_categories?.name === role)
+                        return matchingCat ? (
+                          <Link
+                            key={i}
+                            href={`/production-role?role=${matchingCat.role_categories.slug}`}
+                            className="block font-medium text-gray-800 hover:text-primary transition-colors"
+                          >
+                            {role}
+                          </Link>
+                        ) : (
+                          <span key={i} className="block font-medium text-gray-800">{role}</span>
+                        )
+                      })}
                     </dd>
+                  </div>
+                )}
+                {location && (
+                  <div>
+                    <dt className="text-xs text-gray-500 uppercase tracking-wider">Location</dt>
+                    <dd className="mt-0.5 font-medium text-gray-800">{location}</dd>
                   </div>
                 )}
                 <div>
@@ -419,6 +577,22 @@ export default async function CrewMemberPage({ params }: Props) {
                   <div>
                     <dt className="text-xs text-gray-500 uppercase tracking-wider">Companies</dt>
                     <dd className="mt-0.5 font-medium text-gray-800">{companyLinks.length}</dd>
+                  </div>
+                )}
+                {hasRep && rep?.agency && (
+                  <div>
+                    <dt className="text-xs text-gray-500 uppercase tracking-wider">Agency</dt>
+                    <dd className="mt-0.5 font-medium text-gray-800">{rep.agency}</dd>
+                  </div>
+                )}
+                {imdb && (
+                  <div>
+                    <dt className="text-xs text-gray-500 uppercase tracking-wider">IMDb</dt>
+                    <dd className="mt-0.5">
+                      <a href={imdb} target="_blank" rel="noopener noreferrer" className="font-medium text-amber-700 hover:underline">
+                        View Profile →
+                      </a>
+                    </dd>
                   </div>
                 )}
                 {person.wp_updated_at && (
