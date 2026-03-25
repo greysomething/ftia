@@ -45,32 +45,43 @@ IMPORTANT:
   - 0.5-0.69 = Moderate (found but may be outdated or uncertain role)
   - Below 0.5 = Low confidence (do not include, skip this person instead)`
 
-const CREW_PROMPT = `You are an expert entertainment industry researcher. Given a person's name who works in film/television, research and provide all available information about them.
+const CREW_PROMPT = `You are an expert entertainment industry researcher. Given a person's name who works in film/television, conduct a THOROUGH research and provide ALL available information about them.
 
 Return ONLY valid JSON with this structure (use null for unknown fields, empty arrays [] if no items):
 {
-  "email": "Professional email if publicly known",
-  "phone": "Contact phone if publicly known",
-  "website": "Personal or professional website URL",
-  "linkedin": "LinkedIn profile URL",
-  "twitter": "Twitter/X handle (with @)",
-  "instagram": "Instagram handle",
-  "imdb": "IMDb name page URL",
+  "email": "Professional or business email address — check their personal website contact page, production company websites, or publicly listed contact info",
+  "phone": "Contact phone number if publicly available — check business listings, personal websites",
+  "website": "Personal website, portfolio site, or production company website URL — search thoroughly, many industry professionals have personal sites",
+  "linkedin": "LinkedIn profile URL (format: https://linkedin.com/in/person-name) — try common URL patterns",
+  "twitter": "Twitter/X handle (with @) — search for their official account",
+  "instagram": "Instagram handle — search for their official account",
+  "imdb": "IMDb name page URL (format: https://www.imdb.com/name/nmXXXXXXX/) — most working professionals have an IMDb page",
   "bio": "Brief 2-3 sentence professional bio — their specialization, career highlights, notable work",
-  "primary_role": "Their primary industry role (e.g. Director, Producer, Cinematographer)",
+  "primary_role": "Their primary industry role (e.g. Director, Producer, Cinematographer, Production Designer)",
   "additional_roles": ["Other roles they perform"],
-  "known_for": ["Notable Film 1", "Notable Series 1"],
-  "companies": ["Company they are associated with or founded"],
+  "known_for": ["Notable Film 1", "Notable Series 1", "Notable Film 2"],
+  "companies": ["Production company they are associated with, work for, or founded"],
   "representation": {
-    "agency": "Talent agency name",
+    "agency": "Talent agency name (e.g. CAA, WME, UTA, ICM, Gersh)",
     "agent": "Agent name if known",
-    "manager": "Manager name if known"
+    "manager": "Manager or management company name if known"
   },
-  "location": "City/region they primarily work from",
-  "awards": ["Notable award 1"]
+  "location": "City/region they primarily work from (e.g. Los Angeles, CA / New York, NY / Atlanta, GA / London, UK)",
+  "awards": ["Notable award 1", "Nomination 1"],
+  "searched_but_not_found": ["list of fields you searched for but could not find, e.g. 'email', 'linkedin', 'website'"]
 }
 
-IMPORTANT: Only include information you are confident about. Use null for anything uncertain. Do NOT fabricate contact details — only include real, publicly available information. For well-known industry professionals, you should know their key credits, primary role, and representation. For less known individuals, provide what you can.`
+IMPORTANT:
+- Be THOROUGH — search exhaustively for personal/business website, LinkedIn profile, Twitter/X, Instagram, and IMDb page. Most working film/TV professionals have at least an IMDb page and often a LinkedIn profile.
+- For LinkedIn, try common URL patterns: linkedin.com/in/firstname-lastname, linkedin.com/in/firstnamelastname
+- For websites, check if they have a personal portfolio site, production company site, or are listed on a company's team page
+- For email, check their personal website contact page, company website, or any publicly listed contact info
+- For representation, check major agency databases and talent listings
+- Only include information you are confident about. Use null for anything uncertain.
+- Do NOT fabricate contact details — only include real, publicly available information.
+- For well-known industry professionals, you should know their key credits, primary role, representation, and IMDb page.
+- Include "searched_but_not_found" array listing fields you actively searched for but could not find (e.g. ["email", "instagram", "website"]) — this helps admins know the AI tried.
+- For known_for, include their most notable/recognizable credits (up to 5-6 titles).`
 
 export async function POST(req: NextRequest) {
   try { await requireAdmin() } catch {

@@ -232,10 +232,18 @@ export interface CrewMember {
   wp_id: number | null
   name: string
   slug: string
+  content: string | null
   emails: string[]
   phones: string[]
+  website: string | null
   linkedin: string | null
   twitter: string | null
+  instagram: string | null
+  imdb: string | null
+  roles: string[]
+  known_for: string[]
+  representation: { agency?: string | null; agent?: string | null; manager?: string | null } | null
+  location: string | null
   visibility: PostVisibility
   wp_author_id: number | null
   wp_created_at: string | null
