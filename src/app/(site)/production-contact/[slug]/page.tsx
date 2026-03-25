@@ -62,8 +62,8 @@ export default async function CompanyPage({ params }: Props) {
 
   const productions = linkedProductions?.map((l: any) => l.productions).filter(Boolean) ?? []
 
-  // Derive staff from crew who worked on this company's productions
-  // (company_staff table is empty from migration — this is the live alternative)
+  // Fallback: derive staff from crew who worked on this company's productions
+  // if no explicit staff associations exist in company_staff table
   const productionIds = productions.map((p: any) => p.id)
   let derivedStaff: Array<{ crew_id: number; name: string; slug: string; role: string; emails: any; phones: any }> = []
 
@@ -376,7 +376,7 @@ export default async function CompanyPage({ params }: Props) {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    {staff.length > 0 ? 'Key Staff' : 'Associated Cast & Crew'} ({effectiveStaff.length})
+                    Key Staff ({effectiveStaff.length})
                     {!member && <span className="text-xs font-normal text-gray-400 ml-2">— Contact info for members</span>}
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

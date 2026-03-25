@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { getAdminCompanyById } from '@/lib/admin-queries'
 import { CompanyForm } from '@/components/admin/forms/CompanyForm'
 import { StatusBar } from '@/components/admin/StatusBar'
+import { CompanyStaffManager } from '@/components/admin/CompanyStaffManager'
 
 export const metadata: Metadata = { title: 'Edit Company' }
 
@@ -13,6 +14,10 @@ export default async function EditCompanyPage({ params }: Props) {
   const company = await getAdminCompanyById(Number(id)).catch(() => null)
   if (!company) notFound()
 
+  const staffData = ((company as any).company_staff ?? []).sort(
+    (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  )
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-4">Edit Company</h1>
@@ -21,7 +26,10 @@ export default async function EditCompanyPage({ params }: Props) {
         updatedAt={(company as any).wp_updated_at ?? (company as any).updated_at}
         type="company"
       />
-      <CompanyForm company={company} />
+      <div className="max-w-2xl space-y-6">
+        <CompanyForm company={company} />
+        <CompanyStaffManager companyId={company.id} initialStaff={staffData} />
+      </div>
     </div>
   )
 }

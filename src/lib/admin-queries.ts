@@ -195,7 +195,7 @@ export async function getAdminCompanyById(id: number) {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('companies')
-    .select('*')
+    .select('*, company_staff(*, crew_members(id, name, slug))')
     .eq('id', id)
     .single()
   if (error) throw error
