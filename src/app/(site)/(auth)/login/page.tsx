@@ -24,6 +24,25 @@ export default async function LoginPage({ searchParams }: Props) {
             </p>
           </div>
 
+          {/* Platform migration notice */}
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-blue-900">Welcome to our upgraded platform</p>
+                <p className="text-sm text-blue-800 mt-1">
+                  If this is your first time logging in, please use{' '}
+                  <a href="/forgot-password" className="font-semibold underline underline-offset-2 hover:text-blue-950">&ldquo;Forgot Password&rdquo;</a>{' '}
+                  to set a new password. Your account and membership details remain unchanged.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {params.message && (
             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
               {params.message}
