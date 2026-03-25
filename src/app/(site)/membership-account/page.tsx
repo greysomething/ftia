@@ -64,29 +64,69 @@ export default async function MembershipAccountPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <h2 className="font-semibold text-gray-700 mb-3">Profile</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="font-semibold text-gray-700">Profile</h2>
+                  <Link
+                    href="/membership-account/edit-profile"
+                    className="text-xs text-primary hover:underline font-medium"
+                  >
+                    Edit Profile
+                  </Link>
+                </div>
                 <dl className="space-y-2 text-sm">
                   <div className="flex gap-2">
-                    <dt className="text-gray-500 w-24">Name:</dt>
+                    <dt className="text-gray-500 w-28 flex-shrink-0">Name:</dt>
                     <dd>{[profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || 'Not set'}</dd>
                   </div>
                   <div className="flex gap-2">
-                    <dt className="text-gray-500 w-24">Email:</dt>
+                    <dt className="text-gray-500 w-28 flex-shrink-0">Email:</dt>
                     <dd>{user.email}</dd>
                   </div>
+                  {(profile?.organization_type || profile?.custommer_job) && (
+                    <div className="flex gap-2">
+                      <dt className="text-gray-500 w-28 flex-shrink-0">Job Title:</dt>
+                      <dd>{profile?.organization_type || profile?.custommer_job}</dd>
+                    </div>
+                  )}
                   {profile?.organization_name && (
                     <div className="flex gap-2">
-                      <dt className="text-gray-500 w-24">Company:</dt>
+                      <dt className="text-gray-500 w-28 flex-shrink-0">Company:</dt>
                       <dd>{profile.organization_name}</dd>
                     </div>
                   )}
-                  {profile?.custommer_job && (
+                  {profile?.country && (
                     <div className="flex gap-2">
-                      <dt className="text-gray-500 w-24">Role:</dt>
-                      <dd>{profile.custommer_job}</dd>
+                      <dt className="text-gray-500 w-28 flex-shrink-0">Country:</dt>
+                      <dd>{profile.country}</dd>
+                    </div>
+                  )}
+                  {profile?.linkedin && (
+                    <div className="flex gap-2">
+                      <dt className="text-gray-500 w-28 flex-shrink-0">LinkedIn:</dt>
+                      <dd>
+                        <a href={profile.linkedin} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                          {profile.linkedin.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, '').replace(/\/$/, '') || 'View'}
+                        </a>
+                      </dd>
+                    </div>
+                  )}
+                  {profile?.website && (
+                    <div className="flex gap-2">
+                      <dt className="text-gray-500 w-28 flex-shrink-0">Website:</dt>
+                      <dd>
+                        <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                          {profile.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                        </a>
+                      </dd>
                     </div>
                   )}
                 </dl>
+                {profile?.description && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <dt className="text-gray-500 text-xs uppercase tracking-wide mb-1">Bio</dt>
+                    <dd className="text-sm text-gray-700">{profile.description}</dd>
+                  </div>
+                )}
               </div>
 
               <div>
