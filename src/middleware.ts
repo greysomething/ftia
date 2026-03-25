@@ -3,6 +3,14 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Skip API routes entirely — webhooks (Stripe) and other API endpoints
+  // must not be processed by auth middleware (avoids 307 redirects)
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -27,8 +35,6 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
-
-  const { pathname } = request.nextUrl
 
   // Redirect logged-in users from home to productions (WordPress Redirection plugin rule)
   if (pathname === '/' && user) {
