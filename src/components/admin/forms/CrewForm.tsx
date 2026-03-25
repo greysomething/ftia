@@ -51,6 +51,10 @@ export function CrewForm({ crew }: CrewFormProps) {
 
   const currentName = v('name') || crew?.name || ''
 
+  const hasRepresentation = scannedData?.representation && (
+    scannedData.representation.agency || scannedData.representation.agent || scannedData.representation.manager
+  )
+
   return (
     <form action={action} className="space-y-6 max-w-2xl" key={scannedData ? JSON.stringify(scannedData).substring(0, 50) : 'default'}>
       {crew && <input type="hidden" name="id" value={crew.id} />}
@@ -136,8 +140,15 @@ export function CrewForm({ crew }: CrewFormProps) {
         </div>
       </div>
 
+      {/* Bio / About */}
+      <div className="admin-card space-y-4">
+        <h2 className="font-semibold text-gray-700">Bio / About</h2>
+        <textarea name="content" rows={4} defaultValue={scannedData?.bio ?? crew?.content ?? ''} className="form-textarea"
+          placeholder="Brief professional biography..." />
+      </div>
+
       {/* AI-discovered data */}
-      {(scannedData?.roles?.length > 0 || scannedData?.bio || scannedData?.known_for?.length > 0 || scannedData?.representation) && (
+      {(scannedData?.roles?.length > 0 || scannedData?.known_for?.length > 0 || hasRepresentation || scannedData?.imdb) && (
         <div className="admin-card space-y-3">
           <h2 className="font-semibold text-gray-700 flex items-center gap-2">
             <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,13 +168,6 @@ export function CrewForm({ crew }: CrewFormProps) {
             </div>
           )}
 
-          {scannedData?.bio && (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Bio</p>
-              <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{scannedData.bio}</p>
-            </div>
-          )}
-
           {scannedData?.known_for?.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Known For</p>
@@ -175,7 +179,7 @@ export function CrewForm({ crew }: CrewFormProps) {
             </div>
           )}
 
-          {scannedData?.representation && (
+          {hasRepresentation && (
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Representation</p>
               <div className="text-sm text-gray-600 space-y-0.5">

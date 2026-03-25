@@ -4,8 +4,6 @@
  * that produces subject + HTML given dynamic variables.
  */
 
-import { createAdminClient } from '@/lib/supabase/server'
-
 export interface EmailTemplate {
   slug: string
   name: string
@@ -190,62 +188,8 @@ export interface ResolvedTemplate {
 }
 
 /**
- * Get a template with any admin overrides applied.
- * Falls back gracefully if the overrides table doesn't exist yet.
- */
-export async function getTemplateWithOverrides(
-  slug: string,
-  vars: Record<string, string> = {}
-): Promise<ResolvedTemplate | null> {
-  const base = getTemplate(slug)
-  if (!base) return null
-
-  // Render the default
-  const defaultRendered = base.render(vars)
-
-  // Try to fetch override
-  let override: TemplateOverride | null = null
-  try {
-    const supabase = createAdminClient()
-    const { data } = await supabase
-      .from('email_template_overrides')
-      .select('*')
-      .eq('slug', slug)
-      .single()
-    override = data as TemplateOverride | null
-  } catch {
-    // Table may not exist yet — use defaults
-  }
-
-  const isCustomized = !!(override?.subject_override || override?.html_override)
-  const isActive = override ? override.is_active : true
-
-  let subject = defaultRendered.subject
-  let html = defaultRendered.html
-
-  if (override?.subject_override) {
-    subject = replaceVars(override.subject_override, vars)
-  }
-  if (override?.html_override) {
-    html = replaceVars(override.html_override, vars)
-  }
-
-  return {
-    slug: base.slug,
-    name: base.name,
-    description: base.description,
-    category: base.category,
-    variables: base.variables,
-    subject,
-    html,
-    isActive,
-    isCustomized,
-  }
-}
-
-/**
  * Simple {{variable}} replacement for override templates.
  */
-function replaceVars(template: string, vars: Record<string, string>): string {
+export function replaceVars(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '')
 }

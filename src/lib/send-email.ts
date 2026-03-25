@@ -5,7 +5,8 @@
 
 import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/server'
-import { getTemplateWithOverrides } from '@/lib/email-templates'
+import { getTemplate, replaceVars } from '@/lib/email-templates'
+import type { TemplateOverride, ResolvedTemplate } from '@/lib/email-templates'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const EMAIL_FROM = process.env.EMAIL_FROM ?? 'noreply@productionlist.com'
@@ -107,6 +108,56 @@ export async function sendTemplateEmail(opts: SendTemplateEmailOptions): Promise
     templateSlug: opts.templateSlug,
     replyTo: opts.replyTo,
   })
+}
+
+// ---- Template resolution with DB overrides ----
+
+async function getTemplateWithOverrides(
+  slug: string,
+  vars: Record<string, string> = {}
+): Promise<ResolvedTemplate | null> {
+  const base = getTemplate(slug)
+  if (!base) return null
+
+  const defaultRendered = base.render(vars)
+
+  let override: TemplateOverride | null = null
+  try {
+    const supabase = createAdminClient()
+    const { data } = await supabase
+      .from('email_template_overrides')
+      .select('*')
+      .eq('slug', slug)
+      .single()
+    override = data as TemplateOverride | null
+  } catch {
+    // Table may not exist yet — use defaults
+  }
+
+  const isCustomized = !!(override?.subject_override || override?.html_override)
+  const isActive = override ? override.is_active : true
+
+  let subject = defaultRendered.subject
+  let html = defaultRendered.html
+
+  if (override?.subject_override) {
+    subject = replaceVars(override.subject_override, vars)
+  }
+  if (override?.html_override) {
+    html = replaceVars(override.html_override, vars)
+  }
+
+  return {
+    slug: base.slug,
+    name: base.name,
+    description: base.description,
+    category: base.category,
+    variables: base.variables,
+    subject,
+    html,
+    isActive,
+    isCustomized,
+  }
 }
 
 // ---- Email logging ----

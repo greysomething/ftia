@@ -18,12 +18,17 @@ export async function saveCrew(prevState: any, formData: FormData) {
   const emailVal = (formData.get('email') as string)?.trim() || null
   const phoneVal = (formData.get('phone') as string)?.trim() || null
 
+  const websiteVal = (formData.get('website') as string)?.trim() || null
+  const contentVal = (formData.get('content') as string)?.trim() || null
+
   const row = {
     name, slug, visibility,
     emails: emailVal ? [emailVal] : [],
     phones: phoneVal ? [phoneVal] : [],
     linkedin: (formData.get('linkedin') as string) || null,
     twitter: (formData.get('twitter') as string) || null,
+    website: websiteVal,
+    content: contentVal,
   }
 
   if (!name) return { error: 'Name is required.' }
