@@ -14,6 +14,22 @@ export async function GET(req: NextRequest) {
 
   const action = req.nextUrl.searchParams.get('action') ?? 'logs'
 
+  if (action === 'template-overrides') {
+    try {
+      const supabase = createAdminClient()
+      const { data, error } = await supabase
+        .from('email_template_overrides')
+        .select('*')
+      if (error) {
+        // Table may not exist yet
+        return NextResponse.json({ overrides: [] })
+      }
+      return NextResponse.json({ overrides: data ?? [] })
+    } catch {
+      return NextResponse.json({ overrides: [] })
+    }
+  }
+
   if (action === 'templates') {
     // Return template metadata (without render functions)
     const templates = emailTemplates.map(({ slug, name, description, category, variables }) => ({
@@ -135,6 +151,81 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json(result)
+  }
+
+  if (body.action === 'save-template') {
+    const { slug, subject, html, isActive } = body
+    if (!slug) {
+      return NextResponse.json({ error: 'slug is required' }, { status: 400 })
+    }
+
+    try {
+      const supabase = createAdminClient()
+      const { error } = await supabase
+        .from('email_template_overrides')
+        .upsert({
+          slug,
+          subject_override: subject || null,
+          html_override: html || null,
+          is_active: isActive ?? true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'slug' })
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true })
+    } catch (err: any) {
+      return NextResponse.json({ error: err?.message ?? 'Failed to save template' }, { status: 500 })
+    }
+  }
+
+  if (body.action === 'toggle-template') {
+    const { slug, isActive } = body
+    if (!slug || typeof isActive !== 'boolean') {
+      return NextResponse.json({ error: 'slug and isActive (boolean) are required' }, { status: 400 })
+    }
+
+    try {
+      const supabase = createAdminClient()
+      // Upsert so it works even if no override row exists yet
+      const { error } = await supabase
+        .from('email_template_overrides')
+        .upsert({
+          slug,
+          is_active: isActive,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'slug' })
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true })
+    } catch (err: any) {
+      return NextResponse.json({ error: err?.message ?? 'Failed to toggle template' }, { status: 500 })
+    }
+  }
+
+  if (body.action === 'reset-template') {
+    const { slug } = body
+    if (!slug) {
+      return NextResponse.json({ error: 'slug is required' }, { status: 400 })
+    }
+
+    try {
+      const supabase = createAdminClient()
+      const { error } = await supabase
+        .from('email_template_overrides')
+        .delete()
+        .eq('slug', slug)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true })
+    } catch (err: any) {
+      return NextResponse.json({ error: err?.message ?? 'Failed to reset template' }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })

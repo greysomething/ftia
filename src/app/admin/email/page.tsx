@@ -64,6 +64,22 @@ async function getRecentEmails() {
 }
 
 /**
+ * Fetch template overrides from Supabase.
+ */
+async function getTemplateOverrides() {
+  try {
+    const supabase = createAdminClient()
+    const { data } = await supabase
+      .from('email_template_overrides')
+      .select('*')
+    return data ?? []
+  } catch {
+    // Table may not exist yet
+    return []
+  }
+}
+
+/**
  * Fetch initial email logs from Supabase.
  */
 async function getEmailLogs() {
@@ -83,10 +99,11 @@ async function getEmailLogs() {
 }
 
 export default async function AdminEmailPage() {
-  const [audiences, recentEmails, { logs, total }] = await Promise.all([
+  const [audiences, recentEmails, { logs, total }, templateOverrides] = await Promise.all([
     getAudienceCounts(),
     getRecentEmails(),
     getEmailLogs(),
+    getTemplateOverrides(),
   ])
 
   // Serialize template info (no render functions) for client
@@ -121,6 +138,7 @@ export default async function AdminEmailPage() {
         templates={templateInfo}
         recentEmails={recentEmails}
         configStatus={configStatus}
+        initialOverrides={templateOverrides}
       />
     </div>
   )

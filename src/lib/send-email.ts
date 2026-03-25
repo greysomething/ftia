@@ -5,6 +5,7 @@
 
 import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/server'
+import { getTemplateWithOverrides } from '@/lib/email-templates'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const EMAIL_FROM = process.env.EMAIL_FROM ?? 'noreply@productionlist.com'
@@ -74,6 +75,38 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
     })
     return { success: false, error: message }
   }
+}
+
+// ---- Template-based email sending ----
+
+export interface SendTemplateEmailOptions {
+  to: string
+  templateSlug: string
+  vars: Record<string, string>
+  replyTo?: string
+}
+
+/**
+ * Send an email using a named template, respecting admin overrides and active/inactive status.
+ */
+export async function sendTemplateEmail(opts: SendTemplateEmailOptions): Promise<SendEmailResult> {
+  const resolved = await getTemplateWithOverrides(opts.templateSlug, opts.vars)
+
+  if (!resolved) {
+    return { success: false, error: `Unknown template: ${opts.templateSlug}` }
+  }
+
+  if (!resolved.isActive) {
+    return { success: false, error: 'Template is inactive' }
+  }
+
+  return sendEmail({
+    to: opts.to,
+    subject: resolved.subject,
+    html: resolved.html,
+    templateSlug: opts.templateSlug,
+    replyTo: opts.replyTo,
+  })
 }
 
 // ---- Email logging ----

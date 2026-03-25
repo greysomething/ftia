@@ -27,6 +27,14 @@ interface TemplateInfo {
   variables: string[]
 }
 
+interface TemplateOverride {
+  slug: string
+  subject_override: string | null
+  html_override: string | null
+  is_active: boolean
+  updated_at: string
+}
+
 interface ResentEmail {
   id: string
   to: string | string[]
@@ -50,6 +58,7 @@ interface Props {
     membersIdPreview: string
     fromAddress: string
   }
+  initialOverrides: TemplateOverride[]
 }
 
 const TAB_LIST = ['Overview', 'Templates', 'Logs'] as const
@@ -81,6 +90,7 @@ export default function EmailAdminClient({
   templates,
   recentEmails,
   configStatus,
+  initialOverrides,
 }: Props) {
   const [tab, setTab] = useState<Tab>('Overview')
   const [audiences, setAudiences] = useState(initialAudiences)
@@ -101,6 +111,19 @@ export default function EmailAdminClient({
 
   // Preview state
   const [previewSlug, setPreviewSlug] = useState<string | null>(null)
+
+  // Template overrides state
+  const [overrides, setOverrides] = useState<Record<string, TemplateOverride>>(
+    () => {
+      const map: Record<string, TemplateOverride> = {}
+      for (const o of initialOverrides) map[o.slug] = o
+      return map
+    }
+  )
+  const [editingSlug, setEditingSlug] = useState<string | null>(null)
+  const [editSubject, setEditSubject] = useState('')
+  const [editHtml, setEditHtml] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
 
   async function refreshAudienceCounts() {
     setAudienceLoading(true)
@@ -154,6 +177,110 @@ export default function EmailAdminClient({
     } finally {
       setTestingSlug(null)
     }
+  }
+
+  async function toggleTemplate(slug: string, isActive: boolean) {
+    // Optimistic update
+    setOverrides((prev) => ({
+      ...prev,
+      [slug]: {
+        ...(prev[slug] ?? { slug, subject_override: null, html_override: null, updated_at: new Date().toISOString() }),
+        is_active: isActive,
+      },
+    }))
+
+    try {
+      const res = await fetch('/api/admin/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle-template', slug, isActive }),
+      })
+      if (!res.ok) {
+        // Revert on failure
+        setOverrides((prev) => ({
+          ...prev,
+          [slug]: {
+            ...prev[slug],
+            is_active: !isActive,
+          },
+        }))
+      }
+    } catch {
+      // Revert on error
+      setOverrides((prev) => ({
+        ...prev,
+        [slug]: {
+          ...prev[slug],
+          is_active: !isActive,
+        },
+      }))
+    }
+  }
+
+  function startEditing(slug: string) {
+    const override = overrides[slug]
+    setEditSubject(override?.subject_override ?? '')
+    setEditHtml(override?.html_override ?? '')
+    setEditingSlug(slug)
+  }
+
+  function cancelEditing() {
+    setEditingSlug(null)
+    setEditSubject('')
+    setEditHtml('')
+  }
+
+  async function saveTemplate(slug: string) {
+    setSavingTemplate(true)
+    try {
+      const isActive = overrides[slug]?.is_active ?? true
+      const res = await fetch('/api/admin/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save-template',
+          slug,
+          subject: editSubject || null,
+          html: editHtml || null,
+          isActive,
+        }),
+      })
+      if (res.ok) {
+        setOverrides((prev) => ({
+          ...prev,
+          [slug]: {
+            slug,
+            subject_override: editSubject || null,
+            html_override: editHtml || null,
+            is_active: isActive,
+            updated_at: new Date().toISOString(),
+          },
+        }))
+        setEditingSlug(null)
+      }
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
+  async function resetTemplate(slug: string) {
+    if (!confirm('Reset this template to default? Any customizations will be removed.')) return
+
+    try {
+      const res = await fetch('/api/admin/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset-template', slug }),
+      })
+      if (res.ok) {
+        setOverrides((prev) => {
+          const next = { ...prev }
+          delete next[slug]
+          return next
+        })
+        if (editingSlug === slug) cancelEditing()
+      }
+    } catch { /* ignore */ }
   }
 
   const totalLogPages = Math.ceil(logTotal / 50)
@@ -316,53 +443,141 @@ export default function EmailAdminClient({
 
           {/* Template cards */}
           <div className="space-y-4">
-            {templates.map((tmpl) => (
-              <div key={tmpl.slug} className="admin-card">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-sm font-semibold text-gray-900">{tmpl.name}</h3>
-                      <span className={`badge ${CATEGORY_COLORS[tmpl.category] ?? 'badge-gray'} text-xs`}>
-                        {tmpl.category}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-500 mb-2">{tmpl.description}</p>
-                    <div className="flex flex-wrap gap-1">
-                      {tmpl.variables.map((v) => (
-                        <span key={v} className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded font-mono">
-                          {`{${v}}`}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => setPreviewSlug(previewSlug === tmpl.slug ? null : tmpl.slug)}
-                      className="btn-outline text-xs px-3 py-1.5"
-                    >
-                      {previewSlug === tmpl.slug ? 'Hide Preview' : 'Preview'}
-                    </button>
-                    <button
-                      onClick={() => sendTestEmail(tmpl.slug)}
-                      disabled={!testEmail || testingSlug === tmpl.slug}
-                      className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
-                    >
-                      {testingSlug === tmpl.slug ? 'Sending...' : 'Send Test'}
-                    </button>
-                  </div>
-                </div>
+            {templates.map((tmpl) => {
+              const override = overrides[tmpl.slug]
+              const isActive = override ? override.is_active : true
+              const isCustomized = !!(override?.subject_override || override?.html_override)
+              const isEditing = editingSlug === tmpl.slug
 
-                {/* Inline preview */}
-                {previewSlug === tmpl.slug && (
-                  <div className="mt-4 border rounded-lg overflow-hidden">
-                    <div className="bg-gray-50 px-3 py-2 border-b text-xs text-gray-500 font-medium">
-                      Email Preview (with sample data)
+              return (
+                <div key={tmpl.slug} className={`admin-card ${!isActive ? 'opacity-60' : ''}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-sm font-semibold text-gray-900">{tmpl.name}</h3>
+                        <span className={`badge ${CATEGORY_COLORS[tmpl.category] ?? 'badge-gray'} text-xs`}>
+                          {tmpl.category}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          isCustomized
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {isCustomized ? 'Customized' : 'Default'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500 mb-2">{tmpl.description}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {tmpl.variables.map((v) => (
+                          <span key={v} className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded font-mono">
+                            {`{{${v}}}`}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                    <TemplatePreview slug={tmpl.slug} />
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      {/* Active/Inactive toggle */}
+                      <button
+                        onClick={() => toggleTemplate(tmpl.slug, !isActive)}
+                        className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                        style={{ backgroundColor: isActive ? '#22c55e' : '#d1d5db' }}
+                        title={isActive ? 'Active — click to deactivate' : 'Inactive — click to activate'}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            isActive ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                      <button
+                        onClick={() => isEditing ? cancelEditing() : startEditing(tmpl.slug)}
+                        className="btn-outline text-xs px-3 py-1.5"
+                      >
+                        {isEditing ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button
+                        onClick={() => setPreviewSlug(previewSlug === tmpl.slug ? null : tmpl.slug)}
+                        className="btn-outline text-xs px-3 py-1.5"
+                      >
+                        {previewSlug === tmpl.slug ? 'Hide Preview' : 'Preview'}
+                      </button>
+                      <button
+                        onClick={() => sendTestEmail(tmpl.slug)}
+                        disabled={!testEmail || testingSlug === tmpl.slug}
+                        className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
+                      >
+                        {testingSlug === tmpl.slug ? 'Sending...' : 'Send Test'}
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Inline editor */}
+                  {isEditing && (
+                    <div className="mt-4 border rounded-lg p-4 bg-gray-50 space-y-3">
+                      <div>
+                        <label className="form-label">Subject Line Override</label>
+                        <input
+                          type="text"
+                          className="form-input w-full"
+                          placeholder="Leave empty to use default subject"
+                          value={editSubject}
+                          onChange={(e) => setEditSubject(e.target.value)}
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                          Use {'{{variableName}}'} for dynamic values. Leave empty to keep the default subject.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="form-label">HTML Body Override</label>
+                        <textarea
+                          className="form-input w-full font-mono text-xs"
+                          rows={12}
+                          placeholder="Leave empty to use default HTML template"
+                          value={editHtml}
+                          onChange={(e) => setEditHtml(e.target.value)}
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                          Use {'{{variableName}}'} for dynamic values. Leave empty to keep the default template.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => saveTemplate(tmpl.slug)}
+                          disabled={savingTemplate}
+                          className="btn-primary text-xs px-4 py-1.5 disabled:opacity-50"
+                        >
+                          {savingTemplate ? 'Saving...' : 'Save Changes'}
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="btn-outline text-xs px-4 py-1.5"
+                        >
+                          Cancel
+                        </button>
+                        {isCustomized && (
+                          <button
+                            onClick={() => resetTemplate(tmpl.slug)}
+                            className="text-xs text-red-600 hover:text-red-800 ml-auto"
+                          >
+                            Reset to Default
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inline preview */}
+                  {previewSlug === tmpl.slug && (
+                    <div className="mt-4 border rounded-lg overflow-hidden">
+                      <div className="bg-gray-50 px-3 py-2 border-b text-xs text-gray-500 font-medium">
+                        Email Preview (with sample data)
+                      </div>
+                      <TemplatePreview slug={tmpl.slug} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </>
       )}
