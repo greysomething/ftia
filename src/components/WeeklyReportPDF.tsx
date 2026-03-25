@@ -5,6 +5,7 @@ import { useState } from 'react'
 interface WeeklyReportPDFProps {
   weekMonday: string
   projectCount: number
+  isMember?: boolean
 }
 
 /* ── helpers ──────────────────────────────────────────────── */
@@ -69,14 +70,36 @@ function allClean(arr: string[] | null | undefined): string[] {
   return out
 }
 
-export function WeeklyReportPDF({ weekMonday, projectCount }: WeeklyReportPDFProps) {
+export function WeeklyReportPDF({ weekMonday, projectCount, isMember = false }: WeeklyReportPDFProps) {
   const [loading, setLoading] = useState(false)
+
+  // Non-members see upgrade prompt instead of download button
+  if (!isMember) {
+    return (
+      <a
+        href="/membership-plans"
+        className="inline-flex items-center gap-2 bg-white/10 text-white/70 font-medium text-sm px-5 py-2.5 rounded-lg hover:bg-white/20 transition-colors whitespace-nowrap border border-white/20"
+        title="Upgrade to download PDF reports"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        PDF Report
+      </a>
+    )
+  }
 
   async function handleExport() {
     setLoading(true)
     try {
       const res = await fetch(`/api/weekly-report-data?date=${weekMonday}`)
-      if (!res.ok) throw new Error('Failed to load data')
+      if (!res.ok) {
+        if (res.status === 403) {
+          alert('An active membership is required to download PDF reports.')
+          return
+        }
+        throw new Error('Failed to load data')
+      }
       const { productions, stats } = await res.json()
 
       const { jsPDF } = await import('jspdf')

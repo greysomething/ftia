@@ -224,7 +224,7 @@ export default async function ProductionsPage({ searchParams }: Props) {
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <WeeklyReportPDF weekMonday={currentWeek.monday} projectCount={currentWeek.count} />
+                          <WeeklyReportPDF weekMonday={currentWeek.monday} projectCount={currentWeek.count} isMember={member} />
                           <Link
                             href={`/productions/week/${currentWeek.monday}`}
                             className="inline-flex items-center gap-2 bg-[#3ea8c8] text-white font-medium text-sm px-5 py-2.5 rounded-lg hover:bg-[#2d8ba8] transition-colors whitespace-nowrap"
