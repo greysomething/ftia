@@ -76,7 +76,7 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
     setError(null)
 
     // Step 1 (profile) → validate and move to step 2
-    if (isFree && step === 'profile') {
+    if (step === 'profile') {
       if (!form.firstName || !form.email) {
         setError('Please fill in all required fields.')
         setLoading(false)
@@ -149,23 +149,21 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">{error}</div>
       )}
 
-      {/* Step indicator for free plan */}
-      {isFree && (
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex items-center gap-1.5 flex-1">
-            <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
-              step === 'profile' ? 'bg-accent text-white' : 'bg-accent text-white'
-            }`}>1</div>
-            <div className={`flex-1 h-1 rounded-full ${step === 'account' ? 'bg-accent' : 'bg-gray-200'}`} />
-          </div>
-          <div className="flex items-center gap-1.5 flex-1">
-            <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
-              step === 'account' ? 'bg-accent text-white' : 'bg-gray-200 text-gray-500'
-            }`}>2</div>
-            <div className="flex-1 h-1 rounded-full bg-gray-200" />
-          </div>
+      {/* Step indicator */}
+      <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-1.5 flex-1">
+          <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+            step === 'profile' ? 'bg-accent text-white' : 'bg-accent text-white'
+          }`}>1</div>
+          <div className={`flex-1 h-1 rounded-full ${step === 'account' ? 'bg-accent' : 'bg-gray-200'}`} />
         </div>
-      )}
+        <div className="flex items-center gap-1.5 flex-1">
+          <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+            step === 'account' ? 'bg-accent text-white' : 'bg-gray-200 text-gray-500'
+          }`}>2</div>
+          <div className="flex-1 h-1 rounded-full bg-gray-200" />
+        </div>
+      </div>
 
       {step === 'profile' ? (
         <>
@@ -356,7 +354,7 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
               ← Back
             </button>
             <button type="submit" disabled={loading} className="btn-accent w-full justify-center">
-              {loading ? 'Creating your account…' : 'Create My Free Profile'}
+              {loading ? 'Creating your account…' : isFree ? 'Create My Free Profile' : 'Create Account & Continue →'}
             </button>
           </div>
         </>
