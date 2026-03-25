@@ -14,7 +14,7 @@ const VALID_SORT: UserSortField[] = ['display_name', 'created_at', 'role']
 const ROLE_TABS = [
   { key: '', label: 'All Users' },
   { key: 'admin', label: 'Admins' },
-  { key: 'member', label: 'Members' },
+  { key: 'active-members', label: 'Members' },
 ] as const
 
 const MEMBERSHIP_FILTERS = [
@@ -212,7 +212,9 @@ export default async function AdminUsersPage({ searchParams }: Props) {
       <div className="flex gap-1 mb-4 border-b border-gray-200">
         {ROLE_TABS.map(tab => {
           const isActive = role === tab.key
-          const count = tab.key === '' ? counts.total : tab.key === 'admin' ? counts.admins : counts.members
+          const count = tab.key === '' ? counts.total
+            : tab.key === 'admin' ? counts.admins
+            : counts.activeMemberships // 'active-members' = users with active memberships
           return (
             <Link key={tab.key} href={buildHref({ role: tab.key, page: '' })}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -290,8 +292,8 @@ export default async function AdminUsersPage({ searchParams }: Props) {
                         <Link href={`/admin/users/${u.id}`} className="font-medium text-primary hover:underline text-sm">
                           {name}
                         </Link>
-                        {u.display_name && u.display_name !== name && (
-                          <span className="block text-[11px] text-gray-400">{u.display_name}</span>
+                        {u.email && (
+                          <span className="block text-[11px] text-gray-400">{u.email}</span>
                         )}
                       </div>
                     </div>

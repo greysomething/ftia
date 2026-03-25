@@ -495,7 +495,8 @@ export async function getAdminUsers({
   if (q) {
     query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,organization_name.ilike.%${q}%`)
   }
-  if (role) {
+  // 'active-members' is a virtual filter — don't pass it as a role query
+  if (role && role !== 'active-members') {
     query = query.eq('role', role)
   }
 
@@ -525,20 +526,52 @@ export async function getAdminUsers({
     }
   }
 
-  // Post-filter by membership status if requested (can't do this in SQL easily with separate tables)
+  // Fetch auth emails for these users (batch via admin API)
+  if (users.length > 0) {
+    try {
+      const userIds = users.map((u: any) => u.id)
+      // Fetch all auth users to build an email map
+      const emailMap = new Map<string, string>()
+      let authPage = 1
+      while (true) {
+        const { data: { users: authUsers } } = await supabase.auth.admin.listUsers({ page: authPage, perPage: 1000 })
+        if (!authUsers || authUsers.length === 0) break
+        for (const au of authUsers) {
+          if (au.email && userIds.includes(au.id)) {
+            emailMap.set(au.id, au.email)
+          }
+        }
+        if (authUsers.length < 1000) break
+        authPage++
+      }
+      for (const u of users as any[]) {
+        u.email = emailMap.get(u.id) ?? null
+      }
+    } catch {
+      // Don't break if email fetch fails
+    }
+  }
+
+  // Post-filter by membership status or role filter
   let filtered = users
+
+  // 'active-members' tab = users with at least one active membership
+  if (role === 'active-members') {
+    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'active'))
+  }
+
   if (membership === 'active') {
-    filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'active'))
+    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'active'))
   } else if (membership === 'cancelled') {
-    filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'cancelled'))
+    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'cancelled'))
   } else if (membership === 'expired') {
-    filtered = users.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'expired'))
+    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'expired'))
   } else if (membership === 'manual') {
-    filtered = users.filter((u: any) =>
+    filtered = filtered.filter((u: any) =>
       u.user_memberships?.some((m: any) => m.status === 'active' && !m.stripe_subscription_id)
     )
   } else if (membership === 'none') {
-    filtered = users.filter((u: any) => !u.user_memberships || u.user_memberships.length === 0)
+    filtered = filtered.filter((u: any) => !u.user_memberships || u.user_memberships.length === 0)
   }
 
   return { users: filtered, total: count ?? 0, perPage: PER_PAGE }
