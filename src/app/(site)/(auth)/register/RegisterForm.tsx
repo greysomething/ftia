@@ -77,11 +77,17 @@ export function RegisterForm({ plan, levelId, prefill }: RegisterFormProps) {
 
     // Step 1 (profile) → validate and move to step 2
     if (step === 'profile') {
-      if (!form.firstName || !form.email) {
-        setError('Please fill in all required fields.')
+      if (!form.firstName.trim()) {
+        setError('First name is required.')
         setLoading(false)
         return
       }
+      if (!form.email.trim()) {
+        setError('Email address is required.')
+        setLoading(false)
+        return
+      }
+      setError(null)
       setStep('account')
       setLoading(false)
       return
