@@ -487,13 +487,13 @@ export async function getAdminUsers({
     .from('user_profiles')
     .select(`
       id, first_name, last_name, display_name, role, wp_role,
-      organization_name, country, created_at
+      organization_name, country, created_at, email
     `, { count: 'exact' })
     .order(sort, { ascending: dir === 'asc' })
     .range(from, to)
 
   if (q) {
-    query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,organization_name.ilike.%${q}%`)
+    query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,organization_name.ilike.%${q}%,email.ilike.%${q}%`)
   }
   // 'active-members' is a virtual filter — don't pass it as a role query
   if (role && role !== 'active-members') {
@@ -526,11 +526,11 @@ export async function getAdminUsers({
     }
   }
 
-  // Fetch auth emails for these users (batch via admin API)
-  if (users.length > 0) {
+  // Fetch auth emails for users missing the email column (fallback for un-backfilled rows)
+  const usersWithoutEmail = users.filter((u: any) => !u.email)
+  if (usersWithoutEmail.length > 0) {
     try {
-      const userIds = users.map((u: any) => u.id)
-      // Fetch all auth users to build an email map
+      const userIds = usersWithoutEmail.map((u: any) => u.id)
       const emailMap = new Map<string, string>()
       let authPage = 1
       while (true) {
@@ -544,7 +544,7 @@ export async function getAdminUsers({
         if (authUsers.length < 1000) break
         authPage++
       }
-      for (const u of users as any[]) {
+      for (const u of usersWithoutEmail as any[]) {
         u.email = emailMap.get(u.id) ?? null
       }
     } catch {

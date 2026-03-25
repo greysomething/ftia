@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
     // 2. Upsert user_profiles row
     const { error: profileError } = await supabase.from('user_profiles').upsert({
       id: userId,
+      email,
       first_name: firstName,
       last_name: lastName ?? '',
       display_name: `${firstName} ${lastName ?? ''}`.trim(),
