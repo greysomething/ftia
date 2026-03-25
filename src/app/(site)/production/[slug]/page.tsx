@@ -624,6 +624,10 @@ export default async function ProductionPage({ params }: Props) {
 /** Categorize crew roles into display groups */
 function categorizeCrew(roleName: string): string {
   const lower = roleName.toLowerCase()
+  // Casting must be checked before Directing since "Casting Director" contains "director"
+  if (['casting', 'extras casting', 'background casting'].some(r => lower.includes(r))) {
+    return 'Casting'
+  }
   if (['director', 'assistant director', '1st ad', '2nd ad', '2nd 2nd ad', 'first assistant director', 'second assistant director'].some(r => lower.includes(r))) {
     return 'Directing'
   }
@@ -647,9 +651,6 @@ function categorizeCrew(roleName: string): string {
   }
   if (['sound', 'mixer', 'boom', 'music', 'composer', 'music supervisor'].some(r => lower.includes(r))) {
     return 'Sound & Music'
-  }
-  if (['casting', 'extras casting', 'background casting'].some(r => lower.includes(r))) {
-    return 'Casting'
   }
   if (['location', 'location manager', 'location scout'].some(r => lower.includes(r))) {
     return 'Locations'
