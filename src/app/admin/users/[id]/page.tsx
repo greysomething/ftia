@@ -23,6 +23,7 @@ const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-blue-100 text-blue-700',
   token: 'bg-purple-100 text-purple-700',
   review: 'bg-orange-100 text-orange-700',
+  suspended: 'bg-red-100 text-red-800 ring-1 ring-red-300',
 }
 
 export default async function AdminUserDetailPage({ params }: Props) {
@@ -43,10 +44,63 @@ export default async function AdminUserDetailPage({ params }: Props) {
 
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.display_name || 'Unknown'
   const activeMembership = user.user_memberships?.find((m: any) => m.status === 'active')
+  const suspendedMembership = user.user_memberships?.find((m: any) => m.status === 'suspended')
   const hasStripe = user.user_memberships?.some((m: any) => m.stripe_subscription_id || m.stripe_customer_id)
+
+  // Fetch dispute-related orders for context
+  let disputeNote: string | null = null
+  if (suspendedMembership) {
+    const { data: disputeOrders } = await supabase
+      .from('membership_orders')
+      .select('notes, status, timestamp')
+      .eq('user_id', user.id)
+      .in('status', ['dispute_opened', 'dispute_lost'])
+      .order('timestamp', { ascending: false })
+      .limit(1)
+    disputeNote = disputeOrders?.[0]?.notes ?? null
+  }
 
   return (
     <div className="max-w-4xl">
+      {/* Dispute Banner */}
+      {suspendedMembership && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-800">Account Suspended — Charge Dispute</h3>
+              <p className="text-sm text-red-700 mt-1">
+                This account has been automatically suspended due to a Stripe charge dispute (chargeback).
+                Access is restricted until the dispute is resolved.
+              </p>
+              {disputeNote && (
+                <p className="text-xs text-red-600 mt-2 font-mono bg-red-100/50 p-2 rounded">
+                  {disputeNote}
+                </p>
+              )}
+              <div className="flex gap-2 mt-3">
+                <a
+                  href={suspendedMembership.stripe_customer_id
+                    ? `https://dashboard.stripe.com/customers/${suspendedMembership.stripe_customer_id}`
+                    : 'https://dashboard.stripe.com/disputes'
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-white border border-red-200 px-3 py-1.5 rounded hover:bg-red-50 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  View in Stripe Dashboard
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <Link href="/admin/users" className="text-sm text-gray-500 hover:text-primary">← Users</Link>
@@ -54,10 +108,18 @@ export default async function AdminUserDetailPage({ params }: Props) {
         <span className={`badge ${user.role === 'admin' ? 'badge-purple' : 'badge-blue'}`}>
           {user.role === 'admin' ? 'Admin' : 'Member'}
         </span>
-        {activeMembership && (
+        {suspendedMembership && (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 ring-1 ring-red-300">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            Suspended — Dispute
+          </span>
+        )}
+        {activeMembership && !suspendedMembership && (
           <span className="badge badge-green">Active Subscription</span>
         )}
-        {!activeMembership && !hasStripe && user.user_memberships?.length === 0 && (
+        {!activeMembership && !suspendedMembership && !hasStripe && user.user_memberships?.length === 0 && (
           <span className="badge badge-gray">Free User</span>
         )}
       </div>

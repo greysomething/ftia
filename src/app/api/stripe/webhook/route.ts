@@ -144,6 +144,101 @@ export async function POST(req: NextRequest) {
       break
     }
 
+    // ---- Dispute handling ----
+    case 'charge.dispute.created': {
+      const dispute = event.data.object
+      const customerId = dispute.customer
+
+      if (!customerId) break
+
+      // Find membership(s) by stripe_customer_id and suspend
+      const { data: memberships } = await supabase
+        .from('user_memberships')
+        .select('id, user_id, level_id, status')
+        .eq('stripe_customer_id', customerId)
+        .eq('status', 'active')
+
+      if (!memberships?.length) break
+
+      for (const mem of memberships) {
+        await supabase
+          .from('user_memberships')
+          .update({
+            status: 'suspended',
+            modified: new Date().toISOString(),
+          })
+          .eq('id', mem.id)
+
+        // Log dispute in membership_orders for audit trail
+        await supabase.from('membership_orders').insert({
+          user_id: mem.user_id,
+          level_id: mem.level_id,
+          status: 'dispute_opened',
+          total: dispute.amount ? -(dispute.amount / 100) : 0,
+          gateway: 'stripe',
+          payment_transaction_id: dispute.payment_intent as string ?? null,
+          notes: `Dispute opened: ${dispute.reason || 'No reason given'}. Dispute ID: ${dispute.id}. Account suspended pending resolution.`,
+        })
+      }
+
+      console.log(`[Stripe Webhook] Dispute created (${dispute.id}) — suspended ${memberships.length} membership(s) for customer ${customerId}`)
+      break
+    }
+
+    case 'charge.dispute.closed': {
+      const dispute = event.data.object
+      const customerId = dispute.customer
+
+      if (!customerId) break
+
+      // Find suspended membership(s) for this customer
+      const { data: memberships } = await supabase
+        .from('user_memberships')
+        .select('id, user_id, level_id, status, enddate')
+        .eq('stripe_customer_id', customerId)
+        .eq('status', 'suspended')
+
+      if (!memberships?.length) break
+
+      const disputeWon = dispute.status === 'won'
+
+      for (const mem of memberships) {
+        if (disputeWon) {
+          // Dispute won — reactivate membership
+          await supabase
+            .from('user_memberships')
+            .update({
+              status: 'active',
+              modified: new Date().toISOString(),
+            })
+            .eq('id', mem.id)
+        }
+        // If lost, keep status as 'suspended' — admin must manually handle
+
+        await supabase.from('membership_orders').insert({
+          user_id: mem.user_id,
+          level_id: mem.level_id,
+          status: disputeWon ? 'dispute_won' : 'dispute_lost',
+          total: dispute.amount ? (disputeWon ? 0 : -(dispute.amount / 100)) : 0,
+          gateway: 'stripe',
+          payment_transaction_id: dispute.payment_intent as string ?? null,
+          notes: disputeWon
+            ? `Dispute won (${dispute.id}). Membership reactivated.`
+            : `Dispute lost (${dispute.id}). Membership remains suspended. Admin action required.`,
+        })
+      }
+
+      console.log(`[Stripe Webhook] Dispute ${dispute.status} (${dispute.id}) for customer ${customerId}`)
+      break
+    }
+
+    case 'charge.dispute.updated': {
+      // Log dispute updates for visibility but don't change status
+      const dispute = event.data.object
+      console.log(`[Stripe Webhook] Dispute updated (${dispute.id}): status=${dispute.status}, reason=${dispute.reason}`)
+      break
+    }
+
     default:
       break
   }

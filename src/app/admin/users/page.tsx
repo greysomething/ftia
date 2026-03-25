@@ -20,6 +20,7 @@ const ROLE_TABS = [
 const MEMBERSHIP_FILTERS = [
   { key: '', label: 'Any' },
   { key: 'active', label: 'Active' },
+  { key: 'suspended', label: 'Suspended' },
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'expired', label: 'Expired' },
   { key: 'manual', label: 'Manual' },
