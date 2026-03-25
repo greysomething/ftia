@@ -1,9 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getAdminCompanyById } from '@/lib/admin-queries'
-import { CompanyForm } from '@/components/admin/forms/CompanyForm'
 import { StatusBar } from '@/components/admin/StatusBar'
-import { CompanyStaffManager } from '@/components/admin/CompanyStaffManager'
+import { CompanyEditClient } from './CompanyEditClient'
 
 export const metadata: Metadata = { title: 'Edit Company' }
 
@@ -26,10 +25,7 @@ export default async function EditCompanyPage({ params }: Props) {
         updatedAt={(company as any).wp_updated_at ?? (company as any).updated_at}
         type="company"
       />
-      <div className="max-w-2xl space-y-6">
-        <CompanyForm company={company} />
-        <CompanyStaffManager companyId={company.id} initialStaff={staffData} />
-      </div>
+      <CompanyEditClient company={company as any} initialStaff={staffData} />
     </div>
   )
 }

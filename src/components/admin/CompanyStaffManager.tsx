@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 interface StaffEntry {
   id: number
@@ -10,12 +10,39 @@ interface StaffEntry {
   crew_members: { id: number; name: string; slug: string }
 }
 
+interface AIStaffSuggestion {
+  name: string
+  position: string | null
+  confidence: number
+}
+
 interface Props {
   companyId: number
   initialStaff: StaffEntry[]
+  aiSuggestedStaff?: AIStaffSuggestion[]
+  onAiStaffProcessed?: () => void
 }
 
-export function CompanyStaffManager({ companyId, initialStaff }: Props) {
+function ConfidenceBadge({ confidence }: { confidence: number }) {
+  const pct = Math.round(confidence * 100)
+  let color = 'bg-green-100 text-green-700 border-green-200'
+  let label = 'High'
+  if (confidence < 0.7) {
+    color = 'bg-amber-100 text-amber-700 border-amber-200'
+    label = 'Medium'
+  } else if (confidence < 0.9) {
+    color = 'bg-blue-100 text-blue-700 border-blue-200'
+    label = 'Good'
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${color}`}
+      title={`AI confidence: ${pct}%`}>
+      {label} {pct}%
+    </span>
+  )
+}
+
+export function CompanyStaffManager({ companyId, initialStaff, aiSuggestedStaff, onAiStaffProcessed }: Props) {
   const [staff, setStaff] = useState<StaffEntry[]>(initialStaff)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
@@ -24,7 +51,16 @@ export function CompanyStaffManager({ companyId, initialStaff }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editPosition, setEditPosition] = useState('')
   const [saving, setSaving] = useState(false)
+  const [aiSuggestions, setAiSuggestions] = useState<AIStaffSuggestion[]>([])
+  const [addingAiStaff, setAddingAiStaff] = useState<string | null>(null)
   const searchTimer = useRef<NodeJS.Timeout | null>(null)
+
+  // When AI suggestions arrive, show them
+  useEffect(() => {
+    if (aiSuggestedStaff && aiSuggestedStaff.length > 0) {
+      setAiSuggestions(aiSuggestedStaff)
+    }
+  }, [aiSuggestedStaff])
 
   async function handleSearch(q: string) {
     setSearchQuery(q)
@@ -36,7 +72,6 @@ export function CompanyStaffManager({ companyId, initialStaff }: Props) {
       try {
         const res = await fetch(`/api/admin/company-staff?q=${encodeURIComponent(q)}`)
         const { results } = await res.json()
-        // Filter out already-added crew
         const existingIds = new Set(staff.map(s => s.crew_id))
         setSearchResults((results ?? []).filter((r: any) => !existingIds.has(r.id)))
       } catch { setSearchResults([]) }
@@ -67,6 +102,67 @@ export function CompanyStaffManager({ companyId, initialStaff }: Props) {
       console.error('Error adding staff:', e)
     }
     setSaving(false)
+  }
+
+  async function addAiStaff(suggestion: AIStaffSuggestion) {
+    setAddingAiStaff(suggestion.name)
+    try {
+      // First search for the person in the database
+      const searchRes = await fetch(`/api/admin/company-staff?q=${encodeURIComponent(suggestion.name)}`)
+      const { results } = await searchRes.json()
+
+      if (results && results.length > 0) {
+        // Find best match (exact or closest)
+        const exactMatch = results.find((r: any) =>
+          r.name.toLowerCase() === suggestion.name.toLowerCase()
+        )
+        const match = exactMatch || results[0]
+
+        // Check if already added
+        if (staff.some(s => s.crew_id === match.id)) {
+          // Already exists, just remove from suggestions
+          setAiSuggestions(prev => prev.filter(s => s.name !== suggestion.name))
+          setAddingAiStaff(null)
+          return
+        }
+
+        // Add to company staff
+        const res = await fetch('/api/admin/company-staff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: companyId,
+            crew_id: match.id,
+            position: suggestion.position || null,
+          }),
+        })
+        const { staff: newEntry } = await res.json()
+        if (newEntry) {
+          setStaff(prev => [...prev, newEntry])
+        }
+      }
+      // Remove from suggestions regardless
+      setAiSuggestions(prev => prev.filter(s => s.name !== suggestion.name))
+    } catch (e) {
+      console.error('Error adding AI staff:', e)
+    }
+    setAddingAiStaff(null)
+  }
+
+  async function addAllAiStaff() {
+    for (const suggestion of aiSuggestions) {
+      await addAiStaff(suggestion)
+    }
+    onAiStaffProcessed?.()
+  }
+
+  function dismissAiSuggestion(name: string) {
+    setAiSuggestions(prev => prev.filter(s => s.name !== name))
+  }
+
+  function dismissAllAiSuggestions() {
+    setAiSuggestions([])
+    onAiStaffProcessed?.()
   }
 
   async function removeStaff(id: number) {
@@ -111,6 +207,76 @@ export function CompanyStaffManager({ companyId, initialStaff }: Props) {
         Key Staff
         <span className="text-xs font-normal text-gray-400">({staff.length})</span>
       </h2>
+
+      {/* AI Suggested Staff */}
+      {aiSuggestions.length > 0 && (
+        <div className="border border-purple-200 bg-purple-50/50 rounded-lg p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              <span className="text-sm font-semibold text-purple-800">
+                AI Found {aiSuggestions.length} Staff Member{aiSuggestions.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={addAllAiStaff}
+                disabled={!!addingAiStaff}
+                className="text-xs font-medium text-purple-700 bg-purple-100 hover:bg-purple-200 px-2.5 py-1 rounded border border-purple-300 transition-colors disabled:opacity-50"
+              >
+                {addingAiStaff ? 'Adding...' : 'Add All'}
+              </button>
+              <button
+                onClick={dismissAllAiSuggestions}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {aiSuggestions.map(s => (
+              <div key={s.name} className="flex items-center justify-between bg-white rounded border border-purple-100 px-3 py-2">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-purple-100 flex items-center justify-center text-xs font-bold text-purple-600 flex-shrink-0">
+                    {s.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium text-gray-900">{s.name}</span>
+                    {s.position && (
+                      <span className="text-xs text-gray-500 ml-2">— {s.position}</span>
+                    )}
+                  </div>
+                  <ConfidenceBadge confidence={s.confidence} />
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => addAiStaff(s)}
+                    disabled={addingAiStaff === s.name}
+                    className="text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1 rounded border border-green-200 transition-colors disabled:opacity-50"
+                  >
+                    {addingAiStaff === s.name ? 'Adding...' : 'Add'}
+                  </button>
+                  <button
+                    onClick={() => dismissAiSuggestion(s.name)}
+                    className="text-xs text-gray-400 hover:text-red-500 px-1 py-1"
+                    title="Dismiss"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-purple-500">
+            Review confidence scores before adding. High = verified, Good = likely accurate, Medium = may need verification.
+          </p>
+        </div>
+      )}
 
       {/* Current staff list */}
       {staff.length > 0 && (
@@ -187,11 +353,11 @@ export function CompanyStaffManager({ companyId, initialStaff }: Props) {
         </div>
       )}
 
-      {staff.length === 0 && (
+      {staff.length === 0 && aiSuggestions.length === 0 && (
         <p className="text-sm text-gray-400 italic">No staff members associated yet.</p>
       )}
 
-      {/* Add staff */}
+      {/* Add staff manually */}
       <div className="border border-dashed border-gray-300 rounded-lg p-3 space-y-3">
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Add Staff Member</p>
         <div className="grid grid-cols-2 gap-3">

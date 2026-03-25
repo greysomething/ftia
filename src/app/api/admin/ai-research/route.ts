@@ -4,32 +4,46 @@ import { requireAdmin } from '@/lib/auth'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const COMPANY_PROMPT = `You are an expert entertainment industry researcher. Given a production company name, research and provide all available information about this company.
+const COMPANY_PROMPT = `You are an expert entertainment industry researcher. Given a production company name, conduct a thorough research and provide ALL available information about this company.
 
 Return ONLY valid JSON with this structure (use null for unknown fields, empty arrays [] if no items):
 {
   "address": "Full street address, city, state/province, zip, country",
-  "phone": "Main phone number",
+  "phone": "Main phone number with area code",
   "fax": "Fax number if known",
-  "email": "General or HR email address",
-  "website": "Company website URL",
-  "linkedin": "LinkedIn company page URL",
-  "twitter": "Twitter/X handle (with @)",
-  "instagram": "Instagram handle",
-  "imdb": "IMDb company page URL",
+  "email": "General contact, info@, or HR email address — check the company website contact page",
+  "website": "Company website URL — search thoroughly, most production companies have websites",
+  "linkedin": "LinkedIn company page URL (format: https://linkedin.com/company/company-name)",
+  "twitter": "Twitter/X handle (with @) — search for official accounts",
+  "instagram": "Instagram handle — search for official accounts",
+  "imdb": "IMDb company page URL (format: https://www.imdb.com/company/coXXXXXXX/)",
   "description": "Brief 2-3 sentence description of the company, what they produce, their notable projects",
   "parent_company": "Parent company name if applicable",
   "key_staff": [
-    { "name": "Person Name", "position": "Title/Role", "email": null, "phone": null }
+    { "name": "Person Name", "position": "Title/Role", "confidence": 0.95, "email": null, "phone": null }
   ],
   "notable_projects": ["Project Name 1", "Project Name 2"],
   "genres": ["Drama", "Comedy"],
   "headquarters_city": "City name",
   "headquarters_country": "Country name",
-  "founded_year": 2005
+  "founded_year": 2005,
+  "searched_but_not_found": ["list of fields you searched for but could not find, e.g. 'email', 'linkedin'"]
 }
 
-IMPORTANT: Only include information you are confident about. Use null for anything uncertain. Do NOT fabricate contact details — only include real, verifiable information. For major studios and well-known companies, you should know their headquarters address, main phone, website, and key executives. For smaller companies, provide what you can.`
+IMPORTANT:
+- Be THOROUGH — search exhaustively for website, LinkedIn, Twitter/X, Instagram, and IMDb pages. Most entertainment companies have at least a website and IMDb page.
+- For LinkedIn, try common URL patterns: linkedin.com/company/company-name, linkedin.com/company/companyname
+- For Twitter/X, try the company's common name and abbreviations
+- Only include information you are confident about. Use null for anything uncertain.
+- Do NOT fabricate contact details — only include real, verifiable information.
+- For major studios and well-known companies, you should know their headquarters address, main phone, website, and key executives.
+- For smaller companies, provide what you can.
+- Include "searched_but_not_found" array listing fields you actively searched for but could not find (e.g. ["email", "instagram"]) — this helps admins know the AI tried.
+- For each key_staff entry, include a "confidence" score from 0.0 to 1.0:
+  - 0.9-1.0 = Very confident (well-known public figure in this role, easily verifiable)
+  - 0.7-0.89 = Confident (found in multiple sources, likely current)
+  - 0.5-0.69 = Moderate (found but may be outdated or uncertain role)
+  - Below 0.5 = Low confidence (do not include, skip this person instead)`
 
 const CREW_PROMPT = `You are an expert entertainment industry researcher. Given a person's name who works in film/television, research and provide all available information about them.
 

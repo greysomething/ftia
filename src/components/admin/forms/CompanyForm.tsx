@@ -7,11 +7,18 @@ import { ImageScanner } from '@/components/admin/ImageScanner'
 import { AIResearchButton } from '@/components/admin/AIResearchButton'
 import { parsePhpSerialized, formatPhone } from '@/lib/utils'
 
-interface CompanyFormProps {
-  company?: Record<string, any> | null
+interface AIStaffResult {
+  name: string
+  position: string | null
+  confidence: number
 }
 
-export function CompanyForm({ company }: CompanyFormProps) {
+interface CompanyFormProps {
+  company?: Record<string, any> | null
+  onStaffFromAI?: (staff: AIStaffResult[]) => void
+}
+
+export function CompanyForm({ company, onStaffFromAI }: CompanyFormProps) {
   const [state, action, pending] = useActionState(saveCompany, null)
   const [scannedData, setScannedData] = useState<any>(null)
 
@@ -31,9 +38,29 @@ export function CompanyForm({ company }: CompanyFormProps) {
       twitter: data.twitter ?? prev?.twitter ?? undefined,
       website: data.website ?? prev?.website ?? undefined,
       content: data.description ?? prev?.content ?? undefined,
-      staff: data.key_staff?.map((s: any) => ({ name: s.name, position: s.position })) ?? prev?.staff ?? undefined,
+      // Track which fields AI searched but didn't find
+      aiSearched: {
+        email: true,
+        linkedin: true,
+        twitter: true,
+        website: true,
+        instagram: true,
+        phone: true,
+        fax: true,
+      },
+      aiNotFound: data.searched_but_not_found ?? [],
     }))
-  }, [])
+
+    // Pass staff to parent for creating as Key Staff records
+    if (data.key_staff?.length > 0 && onStaffFromAI) {
+      const staffWithConfidence = data.key_staff.map((s: any) => ({
+        name: s.name,
+        position: s.position ?? null,
+        confidence: s.confidence ?? 0.7,
+      }))
+      onStaffFromAI(staffWithConfidence)
+    }
+  }, [onStaffFromAI])
 
   const v = (key: string) => {
     if (scannedData?.[key] != null) return String(scannedData[key])
@@ -49,14 +76,8 @@ export function CompanyForm({ company }: CompanyFormProps) {
   const twitterVal = scannedData?.twitter ?? company?.twitter ?? ''
   const websiteVal = scannedData?.website ?? company?.website ?? ''
 
-  const contentDefault = (() => {
-    if (scannedData?.staff?.length) {
-      const staffLines = scannedData.staff.map((s: any) => `${s.name} — ${s.position ?? 'Staff'}`).join('\n')
-      const base = scannedData?.content ?? company?.content ?? ''
-      return base ? `${base}\n\n--- STAFF ---\n${staffLines}` : `--- STAFF ---\n${staffLines}`
-    }
-    return scannedData?.content ?? company?.content ?? ''
-  })()
+  const contentDefault = scannedData?.content ?? company?.content ?? ''
+  const aiSearched = scannedData?.aiSearched ?? {}
 
   const currentName = v('title') || company?.title || ''
 
@@ -135,20 +156,32 @@ export function CompanyForm({ company }: CompanyFormProps) {
           </div>
         </div>
         <div>
-          <label className="form-label">Email</label>
+          <label className="form-label flex items-center gap-2">
+            Email
+            {aiSearched.email && !firstEmail && <NotFoundBadge />}
+          </label>
           <input name="email" type="email" defaultValue={firstEmail} className="form-input" />
         </div>
         <div>
-          <label className="form-label">Website</label>
+          <label className="form-label flex items-center gap-2">
+            Website
+            {aiSearched.website && !websiteVal && <NotFoundBadge />}
+          </label>
           <input name="website" defaultValue={websiteVal} className="form-input" placeholder="https://…" />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="form-label">LinkedIn URL</label>
+            <label className="form-label flex items-center gap-2">
+              LinkedIn URL
+              {aiSearched.linkedin && !linkedinVal && <NotFoundBadge />}
+            </label>
             <input name="linkedin" defaultValue={linkedinVal} className="form-input" placeholder="https://linkedin.com/company/…" />
           </div>
           <div>
-            <label className="form-label">Twitter / X Handle</label>
+            <label className="form-label flex items-center gap-2">
+              Twitter / X Handle
+              {aiSearched.twitter && !twitterVal && <NotFoundBadge />}
+            </label>
             <input name="twitter" defaultValue={twitterVal} className="form-input" placeholder="@handle" />
           </div>
         </div>
@@ -157,11 +190,6 @@ export function CompanyForm({ company }: CompanyFormProps) {
       <div className="admin-card space-y-4">
         <h2 className="font-semibold text-gray-700">About / Notes</h2>
         <textarea name="content" rows={5} defaultValue={contentDefault} className="form-textarea" />
-        {scannedData?.staff?.length > 0 && (
-          <p className="text-xs text-[#3ea8c8]">
-            AI extracted {scannedData.staff.length} staff member(s)
-          </p>
-        )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -171,5 +199,16 @@ export function CompanyForm({ company }: CompanyFormProps) {
         <Link href="/admin/companies" className="btn-outline">Cancel</Link>
       </div>
     </form>
+  )
+}
+
+function NotFoundBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded" title="AI searched but did not find this information">
+      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      Not found
+    </span>
   )
 }
