@@ -770,8 +770,8 @@ function AutomationTab() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [testingCron, setTestingCron] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
+  const [triggeringDigest, setTriggeringDigest] = useState(false)
+  const [digestResult, setDigestResult] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
   useEffect(() => {
     fetch('/api/admin/email?action=digest-settings')
@@ -813,17 +813,25 @@ function AutomationTab() {
     }
   }
 
-  async function testCronNow() {
-    setTestingCron(true)
-    setTestResult(null)
+  async function triggerDigestNow() {
+    if (!confirm('This will send the weekly digest to all subscribers right now. Are you sure?')) return
+    setTriggeringDigest(true)
+    setDigestResult(null)
     try {
-      const res = await fetch('/api/admin/send-weekly-digest?test=', { method: 'POST' })
+      const res = await fetch('/api/cron/weekly-digest?force=1')
       const data = await res.json()
-      setTestResult(data.message || data.error || 'Check your email')
+      if (data.skipped) {
+        setDigestResult({ message: data.reason, type: 'info' })
+      } else if (data.success) {
+        const sent = data.sent ?? data.total ?? 0
+        setDigestResult({ message: `Digest sent successfully to ${sent} recipients.`, type: 'success' })
+      } else {
+        setDigestResult({ message: data.error || 'Something went wrong', type: 'error' })
+      }
     } catch (err: any) {
-      setTestResult(`Error: ${err.message}`)
+      setDigestResult({ message: `Error: ${err.message}`, type: 'error' })
     } finally {
-      setTestingCron(false)
+      setTriggeringDigest(false)
     }
   }
 
@@ -966,6 +974,47 @@ function AutomationTab() {
           </button>
           {saved && (
             <span className="text-sm text-green-600 font-medium">Settings saved successfully</span>
+          )}
+        </div>
+      </div>
+
+      {/* Manual Trigger */}
+      <div className="admin-card mb-6">
+        <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+          <svg className="w-5 h-5 text-[#3ea8c8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Send Digest Now
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Manually trigger the weekly digest. This bypasses the day/time schedule but still checks
+          if the production list is ready and prevents duplicate sends for the same week.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={triggerDigestNow}
+            disabled={triggeringDigest}
+            className="bg-[#1B2A4A] hover:bg-[#243660] text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {triggeringDigest ? (
+              <>
+                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Sending...
+              </>
+            ) : 'Send Digest Now'}
+          </button>
+          {digestResult && (
+            <span className={`text-sm font-medium ${
+              digestResult.type === 'success' ? 'text-green-600' :
+              digestResult.type === 'error' ? 'text-red-600' :
+              'text-amber-600'
+            }`}>
+              {digestResult.message}
+            </span>
           )}
         </div>
       </div>

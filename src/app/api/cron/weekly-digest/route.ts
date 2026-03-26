@@ -34,11 +34,12 @@ function getCurrentWeekMonday(): string {
 }
 
 export async function GET(req: NextRequest) {
-  // Verify cron secret
+  // Verify cron secret (skip for admin-triggered manual sends)
   const authHeader = req.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
+  const isManualTrigger = req.nextUrl.searchParams.get('force') === '1'
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && !isManualTrigger) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -60,34 +61,35 @@ export async function GET(req: NextRequest) {
   }
 
   // 2. Check if it's the right day and at or after the configured hour
+  //    (skip this check for manual triggers)
   const tz = settings.timezone || 'America/New_York'
   const now = new Date()
 
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    weekday: 'long',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false,
-  })
-
-  const parts = formatter.formatToParts(now)
-  const currentDay = DAY_NAMES.indexOf(parts.find(p => p.type === 'weekday')?.value ?? '')
-  const currentHour = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10)
-  const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
-
-  const targetDay = settings.day_of_week
-  const targetHour = settings.send_hour
-
-  // Must be the configured day AND at or after the configured hour.
-  // This lets the cron keep checking every hour after the target time
-  // until the list is ready.
-  if (currentDay !== targetDay || currentHour < targetHour) {
-    return NextResponse.json({
-      skipped: true,
-      reason: `Not the right time. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:00+ ${tz}`,
-      checkedAt: new Date().toISOString(),
+  if (!isManualTrigger) {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      weekday: 'long',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
     })
+
+    const parts = formatter.formatToParts(now)
+    const currentDay = DAY_NAMES.indexOf(parts.find(p => p.type === 'weekday')?.value ?? '')
+    const currentHour = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10)
+    const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
+
+    const targetDay = settings.day_of_week
+    const targetHour = settings.send_hour
+
+    // Must be the configured day AND at or after the configured hour.
+    if (currentDay !== targetDay || currentHour < targetHour) {
+      return NextResponse.json({
+        skipped: true,
+        reason: `Not the right time. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:00+ ${tz}`,
+        checkedAt: new Date().toISOString(),
+      })
+    }
   }
 
   // 3. Check if we already sent this week (prevent duplicate sends)
