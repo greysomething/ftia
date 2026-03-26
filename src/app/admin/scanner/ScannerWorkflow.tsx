@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useActionState } from 'react'
 import { saveProduction } from '@/app/admin/productions/actions'
+import { EntitySearchInput } from '@/components/admin/EntitySearchInput'
 import Link from 'next/link'
 
 interface TypeOption { id: number; name: string; slug: string }
@@ -645,9 +646,19 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                             <input placeholder="Role" value={c.role_name} onChange={e => {
                               const updated = [...crew]; updated[i] = { ...updated[i], role_name: e.target.value }; setCrew(updated)
                             }} className="form-input text-sm" />
-                            <input placeholder="Name" value={c.inline_name} onChange={e => {
-                              const updated = [...crew]; updated[i] = { ...updated[i], inline_name: e.target.value }; setCrew(updated)
-                            }} className="form-input text-sm" />
+                            <EntitySearchInput
+                              type="crew"
+                              value={c.inline_name}
+                              onChange={val => {
+                                const updated = [...crew]; updated[i] = { ...updated[i], inline_name: val }; setCrew(updated)
+                              }}
+                              onSelect={r => {
+                                const updated = [...crew]; updated[i] = { ...updated[i], inline_name: r.title, crew_id: r.id }; setCrew(updated)
+                              }}
+                              isLinked={!!c.crew_id}
+                              placeholder="Name"
+                              className="form-input text-sm"
+                            />
                             <input placeholder="Phone" value={c.inline_phones?.join(', ') || ''} onChange={e => {
                               const updated = [...crew]; updated[i] = { ...updated[i], inline_phones: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCrew(updated)
                             }} className="form-input text-sm" />
@@ -704,9 +715,19 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                       <div key={i} className="space-y-1">
                         <div className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
                           <div className="flex-1 grid grid-cols-3 gap-2">
-                            <input placeholder="Company Name" value={c.inline_name} onChange={e => {
-                              const updated = [...companies]; updated[i] = { ...updated[i], inline_name: e.target.value }; setCompanies(updated)
-                            }} className="form-input text-sm" />
+                            <EntitySearchInput
+                              type="company"
+                              value={c.inline_name}
+                              onChange={val => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_name: val }; setCompanies(updated)
+                              }}
+                              onSelect={r => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_name: r.title, company_id: r.id }; setCompanies(updated)
+                              }}
+                              isLinked={!!c.company_id}
+                              placeholder="Company Name"
+                              className="form-input text-sm"
+                            />
                             <input placeholder="Address" value={c.inline_address || ''} onChange={e => {
                               const updated = [...companies]; updated[i] = { ...updated[i], inline_address: e.target.value }; setCompanies(updated)
                             }} className="form-input text-sm" />
