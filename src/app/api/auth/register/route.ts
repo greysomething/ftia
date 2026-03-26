@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/send-email'
 import { getTemplate } from '@/lib/email-templates'
+import { logActivity } from '@/lib/activity-log'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const RESEND_AUDIENCE_ID = process.env.RESEND_AUDIENCE_ID
@@ -114,6 +115,15 @@ export async function POST(req: NextRequest) {
         console.error('[register] Failed to add contact to Resend audience:', audienceErr)
       }
     }
+
+    // 5. Log registration event
+    void logActivity({
+      userId,
+      email,
+      eventType: 'register',
+      metadata: { country: country ?? '', organizationType: organizationType ?? '' },
+      reqHeaders: req.headers,
+    })
 
     return NextResponse.json({ success: true, userId })
   } catch (err: any) {

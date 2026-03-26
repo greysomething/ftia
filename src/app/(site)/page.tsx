@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
 import { getProductions, getBlogPosts } from '@/lib/queries'
+import { NetworkLogoTicker } from '@/components/NetworkLogoTicker'
 
 export const metadata: Metadata = {
   title: 'Production List | Film & Television Industry Alliance',
@@ -73,35 +74,8 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Member Network Logos */}
-      <section className="py-10 bg-white border-b border-gray-100">
-        <div className="page-wrap">
-          <p className="text-center text-sm font-semibold text-gray-400 uppercase tracking-widest mb-6">
-            Connecting with our member network
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-10 md:gap-14 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-300">
-            {[
-              { name: 'Netflix', src: '/images/logos/netflix.svg', w: 110, h: 30 },
-              { name: 'Disney+', src: '/images/logos/disney.svg', w: 90, h: 48 },
-              { name: 'Max', src: '/images/logos/hbo.svg', w: 70, h: 30 },
-              { name: 'ITV Studios', src: '/images/logos/itv-studios.svg', w: 70, h: 35 },
-              { name: 'Paramount', src: '/images/logos/paramount.svg', w: 120, h: 30 },
-              { name: 'Warner Bros', src: '/images/logos/warner-bros.svg', w: 140, h: 30 },
-              { name: 'Lionsgate', src: '/images/logos/lionsgate.svg', w: 120, h: 30 },
-              { name: 'Sony Pictures', src: '/images/logos/sony-pictures.svg', w: 100, h: 36 },
-            ].map((logo) => (
-              <Image
-                key={logo.name}
-                src={logo.src}
-                alt={logo.name}
-                width={logo.w}
-                height={logo.h}
-                className="h-7 md:h-8 w-auto object-contain"
-              />
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Member Network Logos — scrolling ticker */}
+      <NetworkLogoTicker />
 
       {/* Features */}
       <section className="py-16 bg-white">
@@ -229,13 +203,13 @@ export default async function HomePage() {
               </Link>
             </div>
             <div className="relative">
-              <div className="bg-gradient-to-br from-primary/5 to-accent/10 rounded-2xl p-6 md:p-8">
+              <div>
                 <Image
                   src="/images/current-list-preview.png"
                   alt="Production List weekly preview"
                   width={600}
                   height={400}
-                  className="rounded-lg shadow-lg w-full h-auto"
+                  className="w-full h-auto"
                 />
               </div>
             </div>

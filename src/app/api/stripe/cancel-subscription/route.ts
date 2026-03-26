@@ -31,16 +31,18 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any })
 
   // Cancel at period end (user retains access until billing period ends)
-  await stripe.subscriptions.update(membership.stripe_subscription_id, {
+  const subscription = await stripe.subscriptions.update(membership.stripe_subscription_id, {
     cancel_at_period_end: true,
   })
 
-  // Update local membership status
+  const periodEnd = new Date(subscription.current_period_end * 1000).toISOString()
+
+  // Update local membership status and set end date
   await supabase
     .from('user_memberships')
-    .update({ status: 'cancelled' })
+    .update({ status: 'cancelled', enddate: periodEnd })
     .eq('user_id', user.id)
     .eq('stripe_subscription_id', membership.stripe_subscription_id)
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, periodEnd })
 }

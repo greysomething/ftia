@@ -685,8 +685,9 @@ export async function getBlogPostsByCategory(categorySlug: string, page = 1): Pr
 
   const { data, count } = await supabase
     .from('blog_post_categories')
-    .select('blog_posts(id,title,slug,excerpt,published_at)', { count: 'exact' })
+    .select('blog_posts(id,title,slug,excerpt,content,published_at,media(storage_path,original_url,alt_text),blog_post_categories(blog_categories(id,name,slug)))', { count: 'exact' })
     .eq('category_id', catData.id)
+    .order('published_at', { referencedTable: 'blog_posts', ascending: false })
     .range(from, from + PER_PAGE - 1)
 
   return {

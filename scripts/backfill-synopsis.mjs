@@ -104,10 +104,14 @@ async function run() {
 
     const updates = {}
 
-    // Backfill content from WP if missing in Supabase
-    if ((!prod.content || prod.content.trim() === '') && prod.wp_id && wpContent.has(prod.wp_id)) {
-      updates.content = wpContent.get(prod.wp_id)
-      contentBackfilled++
+    // Backfill content from WP if missing or just empty HTML tags in Supabase
+    const existingText = stripHtml(prod.content || '')
+    if ((!prod.content || prod.content.trim() === '' || existingText.length === 0) && prod.wp_id && wpContent.has(prod.wp_id)) {
+      const wpText = stripHtml(wpContent.get(prod.wp_id))
+      if (wpText.length > 0) {
+        updates.content = wpContent.get(prod.wp_id)
+        contentBackfilled++
+      }
     }
 
     // Generate excerpt from content (use existing or newly backfilled)

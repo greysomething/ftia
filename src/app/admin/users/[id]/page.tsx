@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { getAdminUserById } from '@/lib/admin-queries'
 import { createAdminClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
+import { formatDistanceToNow } from 'date-fns'
 import {
   updateUserRole,
   updateMembershipStatus,
@@ -41,6 +42,14 @@ export default async function AdminUserDetailPage({ params }: Props) {
   // Fetch user's auth email
   const { data: { user: authUser } } = await supabase.auth.admin.getUserById(id)
   const email = authUser?.email ?? null
+
+  // Fetch recent activity
+  const { data: recentActivity } = await supabase
+    .from('activity_log')
+    .select('id, event_type, ip_address, country, city, created_at')
+    .eq('user_id', id)
+    .order('created_at', { ascending: false })
+    .limit(10)
 
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.display_name || 'Unknown'
   const activeMembership = user.user_memberships?.find((m: any) => m.status === 'active')
@@ -453,6 +462,44 @@ export default async function AdminUserDetailPage({ params }: Props) {
               </div>
             </div>
           </div>
+
+          {/* Recent Activity */}
+          {recentActivity && recentActivity.length > 0 && (
+            <div className="admin-card">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-gray-700">Recent Activity</h2>
+                <a href={`/admin/login-log?search=${encodeURIComponent(email || '')}`} className="text-xs text-primary hover:underline">
+                  View All
+                </a>
+              </div>
+              <div className="space-y-2">
+                {recentActivity.map((entry: any) => {
+                  const eventLabels: Record<string, { label: string; color: string }> = {
+                    login: { label: 'Login', color: 'bg-green-100 text-green-800' },
+                    login_failed: { label: 'Failed', color: 'bg-red-100 text-red-800' },
+                    register: { label: 'Register', color: 'bg-blue-100 text-blue-800' },
+                    password_reset: { label: 'Reset', color: 'bg-yellow-100 text-yellow-800' },
+                    pdf_download: { label: 'PDF', color: 'bg-purple-100 text-purple-800' },
+                    profile_update: { label: 'Profile', color: 'bg-indigo-100 text-indigo-800' },
+                  }
+                  const evt = eventLabels[entry.event_type] ?? { label: entry.event_type, color: 'bg-gray-100 text-gray-600' }
+                  const location = [entry.city, entry.country].filter(Boolean).join(', ')
+                  return (
+                    <div key={entry.id} className="flex items-center gap-2 text-xs">
+                      <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${evt.color}`}>
+                        {evt.label}
+                      </span>
+                      <span className="font-mono text-gray-500">{entry.ip_address ?? '—'}</span>
+                      {location && <span className="text-gray-400">{location}</span>}
+                      <span className="ml-auto text-gray-400 whitespace-nowrap" title={new Date(entry.created_at).toLocaleString()}>
+                        {formatDistanceToNow(new Date(entry.created_at), { addSuffix: true })}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

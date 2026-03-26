@@ -16,11 +16,30 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    try {
+      // Route login through server API to capture IP/headers for activity log
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
 
-    if (authError) {
-      setError(authError.message)
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        setError(data.error ?? 'Invalid credentials')
+        setLoading(false)
+        return
+      }
+
+      // Set the session client-side using the tokens from the server
+      const supabase = createClient()
+      await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      })
+    } catch {
+      setError('An unexpected error occurred. Please try again.')
       setLoading(false)
       return
     }
