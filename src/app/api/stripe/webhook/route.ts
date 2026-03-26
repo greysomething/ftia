@@ -41,9 +41,24 @@ export async function POST(req: NextRequest) {
       const subscriptionId = session.subscription
       let periodEnd: string | null = null
 
+      // Extract card details from the payment method used in checkout
+      let cardFields: Record<string, string | null> = {}
+
       if (subscriptionId) {
-        const sub = await stripe.subscriptions.retrieve(subscriptionId as string)
+        const sub = await stripe.subscriptions.retrieve(subscriptionId as string, {
+          expand: ['default_payment_method'],
+        })
         periodEnd = new Date((sub as any).current_period_end * 1000).toISOString()
+
+        const pm = (sub as any).default_payment_method
+        if (pm?.card) {
+          cardFields = {
+            card_type: pm.card.brand ?? null,
+            card_last4: pm.card.last4 ?? null,
+            card_exp_month: String(pm.card.exp_month ?? ''),
+            card_exp_year: String(pm.card.exp_year ?? ''),
+          }
+        }
       }
 
       // Insert or update membership
@@ -57,6 +72,7 @@ export async function POST(req: NextRequest) {
         stripe_subscription_id: subscriptionId as string ?? null,
         enddate: periodEnd,
         startdate: new Date().toISOString(),
+        ...cardFields,
       }
 
       if (existingMem) {
