@@ -15,6 +15,7 @@ IMPORTANT FIELD MAPPING RULES:
 - For dates, always use YYYY-MM-DD format when possible. If only month/year shown, use YYYY-MM-01.
 - For locations, focus on filling "city", "stage" (state/province abbreviation), and "country" fields. Leave "location" blank unless there is a specific place name (e.g. a studio name, venue, or address). Each location is a separate object.
 - For companies, extract ALL contact details: multiple phones, faxes, emails are common.
+- For addresses, format cleanly: spell out abbreviations (Bldg. → Building, Ste. → Suite), use ordinal numbers (Fourth Floor → 4th Floor), no comma before ZIP code (Los Angeles, CA 90064 not Los Angeles, CA, 90064), no trailing periods on abbreviations (Blvd not Blvd.).
 - For crew, extract phone numbers and emails if visible next to their names.
 - For crew roles, use the full role name without abbreviations. For example: "POC" → "Production Coordinator", "UPM" → "Unit Production Manager", "AD" → "Assistant Director", "DP" → "Director of Photography", "EP" → "Executive Producer", "LP" → "Line Producer", "CD" → "Casting Director", "PD" → "Production Designer".
 
