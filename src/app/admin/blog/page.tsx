@@ -53,9 +53,15 @@ export default async function AdminBlogPage({ searchParams }: Props) {
               <tr key={p.id}>
                 <td className="text-gray-400 text-xs w-16">{p.id}</td>
                 <td>
-                  <Link href={`/${p.slug}`} target="_blank" className="font-medium text-primary hover:underline">
-                    {p.title}
-                  </Link>
+                  {p.visibility === 'publish' ? (
+                    <Link href={`/${p.slug}`} target="_blank" className="font-medium text-primary hover:underline">
+                      {p.title}
+                    </Link>
+                  ) : (
+                    <Link href={`/admin/blog/${p.id}/edit`} className="font-medium text-primary hover:underline">
+                      {p.title}
+                    </Link>
+                  )}
                 </td>
                 <td>
                   <span className={`badge ${
