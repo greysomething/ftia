@@ -241,43 +241,57 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // 8. Full send — get all active members + newsletter subscribers
-  // Get active member emails
-  const { data: memberships } = await supabase
-    .from('user_memberships')
-    .select('user_id')
-    .eq('status', 'active')
+  // 8. Full send — get recipients based on send_to_audience setting
+  const { data: digestSettings } = await supabase
+    .from('digest_settings')
+    .select('send_to_audience')
+    .eq('id', 1)
+    .single()
 
-  const memberUserIds = [...new Set((memberships || []).map((m: any) => m.user_id))]
+  const audience = digestSettings?.send_to_audience || 'newsletter'
 
-  // Get user profiles with emails
   const recipientEmails = new Set<string>()
   const emailToName = new Map<string, string>()
 
-  if (memberUserIds.length > 0) {
-    // Batch fetch in chunks of 500
-    for (let i = 0; i < memberUserIds.length; i += 500) {
-      const chunk = memberUserIds.slice(i, i + 500)
-      const { data: profiles } = await supabase
-        .from('user_profiles')
-        .select('user_id, first_name, email')
-        .in('user_id', chunk)
+  // Helper: fetch contacts from a Resend audience
+  const { Resend } = await import('resend')
+  const resend = new Resend(process.env.RESEND_API_KEY)
 
-      for (const p of profiles || []) {
-        if (p.email) {
-          recipientEmails.add(p.email)
-          if (p.first_name) emailToName.set(p.email, p.first_name)
+  const AUDIENCE_IDS: Record<string, string> = {
+    newsletter: '4eaf097c-c05c-4f20-b5c6-064a5e7630fe',
+    active_members: '90a19517-19e0-44ac-90ea-847ef90c97a7',
+    past_members: '429350f9-9dd2-4af9-8089-e6c85c428b54',
+  }
+
+  async function fetchResendAudience(audienceId: string) {
+    try {
+      const { data } = await resend.contacts.list({ audienceId })
+      const contacts = (data as any)?.data ?? data ?? []
+      for (const contact of contacts) {
+        if (contact.email && !contact.unsubscribed) {
+          recipientEmails.add(contact.email)
+          if (contact.firstName) emailToName.set(contact.email, contact.firstName)
         }
       }
+    } catch (err) {
+      console.error(`[send-weekly-digest] Failed to fetch audience ${audienceId}:`, err)
     }
   }
 
-  // Also get newsletter subscribers from Resend audience (if configured)
-  // For now, we send to active members only
+  // Fetch contacts based on selected audience
+  if (audience === 'newsletter' || audience === 'all' || audience === 'all_subscribers') {
+    await fetchResendAudience(AUDIENCE_IDS.newsletter)
+  }
+  if (audience === 'active_members' || audience === 'active_and_past' || audience === 'all') {
+    await fetchResendAudience(AUDIENCE_IDS.active_members)
+  }
+  if (audience === 'past_members' || audience === 'active_and_past' || audience === 'all') {
+    await fetchResendAudience(AUDIENCE_IDS.past_members)
+  }
 
   if (recipientEmails.size === 0) {
     return NextResponse.json(
-      { error: 'No active members found to send digest to.' },
+      { error: `No contacts found in the "${audience}" audience to send digest to.` },
       { status: 400 }
     )
   }

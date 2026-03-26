@@ -747,9 +747,11 @@ const TIMEZONE_OPTIONS = [
 ]
 
 const AUDIENCE_OPTIONS = [
+  { value: 'newsletter', label: 'Newsletter Subscribers (General Audience)' },
   { value: 'active_members', label: 'Active Members Only' },
-  { value: 'all_subscribers', label: 'All Newsletter Subscribers' },
+  { value: 'past_members', label: 'Past Members Only' },
   { value: 'active_and_past', label: 'Active + Past Members' },
+  { value: 'all', label: 'All Audiences (Newsletter + Members)' },
 ]
 
 /**
@@ -787,7 +789,7 @@ function AutomationTab() {
             send_minute: 0,
             timezone: 'America/New_York',
             min_productions: 40,
-            send_to_audience: 'active_members',
+            send_to_audience: 'newsletter',
           })
         }
       })
