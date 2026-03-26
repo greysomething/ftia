@@ -131,9 +131,24 @@ export async function POST(req: NextRequest) {
 
     const blogData = JSON.parse(jsonMatch[0])
 
-    // Optionally save as draft blog post immediately
+    // Save as draft blog post immediately
     const supabase = createAdminClient()
-    const slug = slugify(blogData.title || productionData.title)
+    let slug = slugify(blogData.title || productionData.title)
+
+    // Ensure slug is unique
+    const { data: existingSlug } = await supabase
+      .from('blog_posts').select('id').eq('slug', slug).maybeSingle()
+    if (existingSlug) {
+      let suffix = 2
+      while (true) {
+        const candidate = `${slug}-${suffix}`
+        const { data: collision } = await supabase
+          .from('blog_posts').select('id').eq('slug', candidate).maybeSingle()
+        if (!collision) { slug = candidate; break }
+        suffix++
+        if (suffix > 20) { slug = `${slug}-${Date.now()}`; break }
+      }
+    }
 
     const { data: blogPost, error: insertErr } = await supabase
       .from('blog_posts')

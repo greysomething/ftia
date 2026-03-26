@@ -12,10 +12,33 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
 
   const id = formData.get('id') ? Number(formData.get('id')) : null
   const title = String(formData.get('title') ?? '').trim()
-  const slug = String(formData.get('slug') ?? '').trim() || slugify(title)
+  let slug = String(formData.get('slug') ?? '').trim() || slugify(title)
   const visibility = String(formData.get('visibility') ?? 'draft')
 
   if (!title) return { error: 'Title is required.' }
+
+  // Ensure slug is unique (append -2, -3, etc. if collision)
+  if (!id) {
+    const { data: existingSlug } = await supabase
+      .from('blog_posts')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle()
+    if (existingSlug) {
+      let suffix = 2
+      while (true) {
+        const candidate = `${slug}-${suffix}`
+        const { data: collision } = await supabase
+          .from('blog_posts')
+          .select('id')
+          .eq('slug', candidate)
+          .maybeSingle()
+        if (!collision) { slug = candidate; break }
+        suffix++
+        if (suffix > 20) { slug = `${slug}-${Date.now()}`; break }
+      }
+    }
+  }
 
   const row: Record<string, any> = {
     title, slug, visibility,

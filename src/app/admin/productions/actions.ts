@@ -13,8 +13,31 @@ export async function saveProduction(prevState: any, formData: FormData) {
 
   const id = formData.get('id') ? Number(formData.get('id')) : null
   const title = String(formData.get('title') ?? '').trim()
-  const slug = String(formData.get('slug') ?? '').trim() || slugify(title)
+  let slug = String(formData.get('slug') ?? '').trim() || slugify(title)
   const visibility = String(formData.get('visibility') ?? 'publish')
+
+  // Ensure slug is unique (append -2, -3, etc. if collision)
+  if (!id) {
+    const { data: existingSlug } = await supabase
+      .from('productions')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle()
+    if (existingSlug) {
+      let suffix = 2
+      while (true) {
+        const candidate = `${slug}-${suffix}`
+        const { data: collision } = await supabase
+          .from('productions')
+          .select('id')
+          .eq('slug', candidate)
+          .maybeSingle()
+        if (!collision) { slug = candidate; break }
+        suffix++
+        if (suffix > 20) { slug = `${slug}-${Date.now()}`; break }
+      }
+    }
+  }
   const content = String(formData.get('content') ?? '') || null
   const excerpt = String(formData.get('excerpt') ?? '') || null
   const production_date_start = (formData.get('production_date_start') as string) || null
