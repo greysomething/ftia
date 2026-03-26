@@ -760,7 +760,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                   <select name="visibility" defaultValue="publish" className="form-input">
                     <option value="publish">Published</option>
                     <option value="members_only">Members Only</option>
-                    <option value="private">Private (Draft)</option>
+                    <option value="draft">Draft</option>
                   </select>
                 </div>
                 <div>

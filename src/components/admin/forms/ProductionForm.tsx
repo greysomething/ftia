@@ -52,7 +52,7 @@ interface ProductionFormProps {
 const VISIBILITY_OPTIONS = [
   { value: 'publish', label: 'Published' },
   { value: 'members_only', label: 'Members Only' },
-  { value: 'private', label: 'Private (Draft)' },
+  { value: 'draft', label: 'Draft' },
 ]
 
 const PHASE_OPTIONS = [
