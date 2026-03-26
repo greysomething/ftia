@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
+import { addToActiveMembers, addToPastMembers, moveToPastMember } from '@/lib/resend-audiences'
 
 export const dynamic = 'force-dynamic'
 
@@ -125,6 +126,18 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Add to Active Members audience (fire-and-forget)
+      {
+        const { data: profileForAudience } = await supabase
+          .from('user_profiles')
+          .select('email, first_name, last_name')
+          .eq('id', userId)
+          .single()
+        if (profileForAudience?.email) {
+          void addToActiveMembers(profileForAudience.email, profileForAudience.first_name ?? undefined, profileForAudience.last_name ?? undefined)
+        }
+      }
+
       // Record order (with duplicate check on payment_transaction_id AND
       // a fallback check for same user+amount within 5 minutes to catch
       // cases where payment_intent is null on the checkout session)
@@ -187,6 +200,18 @@ export async function POST(req: NextRequest) {
         .eq('user_id', userId)
         .eq('stripe_subscription_id', subscriptionId)
 
+      // Ensure user stays in Active Members audience (fire-and-forget)
+      {
+        const { data: profileForAudience } = await supabase
+          .from('user_profiles')
+          .select('email, first_name, last_name')
+          .eq('id', userId)
+          .single()
+        if (profileForAudience?.email) {
+          void addToActiveMembers(profileForAudience.email, profileForAudience.first_name ?? undefined, profileForAudience.last_name ?? undefined)
+        }
+      }
+
       // Only record payment for renewals — the initial payment is already
       // recorded by checkout.session.completed. Stripe fires both events
       // for new subscriptions, which was causing duplicate payment records.
@@ -232,6 +257,18 @@ export async function POST(req: NextRequest) {
         .eq('user_id', userId)
         .eq('stripe_subscription_id', sub.id)
 
+      // Move to Past Members audience (fire-and-forget)
+      {
+        const { data: profileForAudience } = await supabase
+          .from('user_profiles')
+          .select('email, first_name, last_name')
+          .eq('id', userId)
+          .single()
+        if (profileForAudience?.email) {
+          void moveToPastMember(profileForAudience.email, profileForAudience.first_name ?? undefined, profileForAudience.last_name ?? undefined)
+        }
+      }
+
       break
     }
 
@@ -249,6 +286,18 @@ export async function POST(req: NextRequest) {
         .update({ status: 'expired' })
         .eq('user_id', userId)
         .eq('stripe_subscription_id', subscriptionId)
+
+      // Move to Past Members audience (fire-and-forget)
+      {
+        const { data: profileForAudience } = await supabase
+          .from('user_profiles')
+          .select('email, first_name, last_name')
+          .eq('id', userId)
+          .single()
+        if (profileForAudience?.email) {
+          void moveToPastMember(profileForAudience.email, profileForAudience.first_name ?? undefined, profileForAudience.last_name ?? undefined)
+        }
+      }
 
       break
     }
@@ -477,6 +526,22 @@ export async function POST(req: NextRequest) {
           ...(updLevelId ? { level_id: updLevelId } : {}),
         })
         .eq('id', membershipForUpdate.id)
+
+      // Update audience based on new status (fire-and-forget)
+      if (membershipForUpdate) {
+        const { data: profileForAudience } = await supabase
+          .from('user_profiles')
+          .select('email, first_name, last_name')
+          .eq('id', membershipForUpdate.user_id)
+          .single()
+        if (profileForAudience?.email) {
+          if (updatedStatus === 'active' || updatedStatus === 'trialing') {
+            void addToActiveMembers(profileForAudience.email, profileForAudience.first_name ?? undefined, profileForAudience.last_name ?? undefined)
+          } else if (updatedStatus === 'cancelled' || updatedStatus === 'expired') {
+            void moveToPastMember(profileForAudience.email, profileForAudience.first_name ?? undefined, profileForAudience.last_name ?? undefined)
+          }
+        }
+      }
 
       console.log(`[Stripe Webhook] Subscription updated (${sub.id}): status=${sub.status} for customer ${customerId}`)
       break

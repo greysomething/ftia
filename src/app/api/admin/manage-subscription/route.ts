@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
+import { moveToPastMember, moveToActiveMember } from '@/lib/resend-audiences'
 
 export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
@@ -16,6 +17,18 @@ export async function POST(req: NextRequest) {
 
   if (!action) {
     return NextResponse.json({ error: 'Missing action' }, { status: 400 })
+  }
+
+  // Helper: look up user email from membership for audience updates
+  async function getEmailFromMembership(memId: string) {
+    if (!memId) return null
+    const { data } = await supabase
+      .from('user_memberships')
+      .select('user_id, user_profiles!inner(email, first_name, last_name)')
+      .eq('id', memId)
+      .single()
+    const profile = (data as any)?.user_profiles
+    return profile?.email ? { email: profile.email, firstName: profile.first_name, lastName: profile.last_name } : null
   }
 
   const { secretKey } = await getActiveStripeKeys()
@@ -45,6 +58,12 @@ export async function POST(req: NextRequest) {
             .eq('id', membershipId)
         }
 
+        // Move to Past Members audience (fire-and-forget)
+        if (membershipId) {
+          const contact = await getEmailFromMembership(membershipId)
+          if (contact) void moveToPastMember(contact.email, contact.firstName ?? undefined, contact.lastName ?? undefined)
+        }
+
         return NextResponse.json({
           success: true,
           message: `Subscription will cancel at end of billing period (${new Date(periodEnd).toLocaleDateString()}).`,
@@ -62,6 +81,12 @@ export async function POST(req: NextRequest) {
             .from('user_memberships')
             .update({ status: 'expired', enddate: new Date().toISOString(), modified: new Date().toISOString() })
             .eq('id', membershipId)
+        }
+
+        // Move to Past Members audience (fire-and-forget)
+        if (membershipId) {
+          const contact = await getEmailFromMembership(membershipId)
+          if (contact) void moveToPastMember(contact.email, contact.firstName ?? undefined, contact.lastName ?? undefined)
         }
 
         return NextResponse.json({
@@ -85,6 +110,12 @@ export async function POST(req: NextRequest) {
             .from('user_memberships')
             .update({ status: 'active', enddate: periodEnd, modified: new Date().toISOString() })
             .eq('id', membershipId)
+        }
+
+        // Move back to Active Members audience (fire-and-forget)
+        if (membershipId) {
+          const contact = await getEmailFromMembership(membershipId)
+          if (contact) void moveToActiveMember(contact.email, contact.firstName ?? undefined, contact.lastName ?? undefined)
         }
 
         return NextResponse.json({

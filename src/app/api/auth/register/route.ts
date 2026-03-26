@@ -3,9 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/send-email'
 import { getTemplate } from '@/lib/email-templates'
 import { logActivity } from '@/lib/activity-log'
-
-const RESEND_API_KEY = process.env.RESEND_API_KEY
-const RESEND_AUDIENCE_ID = process.env.RESEND_AUDIENCE_ID
+import { addToNewsletter } from '@/lib/resend-audiences'
 
 export async function POST(req: NextRequest) {
   try {
@@ -95,26 +93,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Add user to the Resend newsletter audience
-    if (RESEND_API_KEY && RESEND_AUDIENCE_ID) {
-      try {
-        await fetch(`https://api.resend.com/audiences/${RESEND_AUDIENCE_ID}/contacts`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email,
-            first_name: firstName,
-            last_name: lastName ?? '',
-            unsubscribed: false,
-          }),
-        })
-      } catch (audienceErr) {
-        // Don't fail registration if audience add fails
-        console.error('[register] Failed to add contact to Resend audience:', audienceErr)
-      }
-    }
+    void addToNewsletter(email, firstName, lastName ?? '')
 
     // 5. Log registration event
     void logActivity({

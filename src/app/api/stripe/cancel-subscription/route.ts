@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
+import { moveToPastMember } from '@/lib/resend-audiences'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -43,6 +44,9 @@ export async function POST(req: NextRequest) {
     .update({ status: 'cancelled', enddate: periodEnd })
     .eq('user_id', user.id)
     .eq('stripe_subscription_id', membership.stripe_subscription_id)
+
+  // Move to Past Members audience (fire-and-forget)
+  void moveToPastMember(user.email!, user.user_metadata?.first_name ?? undefined, user.user_metadata?.last_name ?? undefined)
 
   return NextResponse.json({ success: true, periodEnd })
 }

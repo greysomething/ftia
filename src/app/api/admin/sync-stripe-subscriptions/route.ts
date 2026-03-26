@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
+import { moveToActiveMember, moveToPastMember } from '@/lib/resend-audiences'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -548,10 +549,44 @@ export async function POST() {
     stats.errors.push(`Stripe customer name backfill failed: ${err.message}`)
   }
 
+  // 8. Sync Resend audiences — bulk-add active members and move cancelled/expired to Past Members
+  let audienceSynced = 0
+  let audienceErrors = 0
+  try {
+    // Fetch all memberships with their profile emails
+    const { data: allMemberships } = await supabase
+      .from('user_memberships')
+      .select('user_id, status, user_profiles!inner(email, first_name, last_name)')
+
+    if (allMemberships) {
+      for (const mem of allMemberships as any[]) {
+        const profile = mem.user_profiles
+        if (!profile?.email) continue
+
+        try {
+          if (mem.status === 'active' || mem.status === 'trialing') {
+            await moveToActiveMember(profile.email, profile.first_name ?? undefined, profile.last_name ?? undefined)
+          } else if (mem.status === 'cancelled' || mem.status === 'expired') {
+            await moveToPastMember(profile.email, profile.first_name ?? undefined, profile.last_name ?? undefined)
+          }
+          audienceSynced++
+        } catch {
+          audienceErrors++
+        }
+      }
+    }
+    console.log(`[Stripe Sync] Resend audiences synced: ${audienceSynced} contacts (${audienceErrors} errors)`)
+  } catch (err: any) {
+    console.error('[Stripe Sync] Resend audience sync failed:', err)
+    stats.errors.push(`Audience sync failed: ${err.message}`)
+  }
+
   return NextResponse.json({
     ok: true,
     ...stats,
     stripeCustomersBackfilled,
+    audienceSynced,
+    audienceErrors,
     uniqueUsers: bestSubByEmail.size,
     message: [
       `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total Stripe subscriptions.`,

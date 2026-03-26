@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { logActivity } from '@/lib/activity-log'
+import { moveToActiveMember, moveToPastMember } from '@/lib/resend-audiences'
 
 export async function updateUserRole(userId: string, role: 'admin' | 'member') {
   await requireAdmin()
@@ -29,6 +30,23 @@ export async function updateMembershipStatus(
     .update({ status, modified: new Date().toISOString() })
     .eq('id', membershipId)
   if (error) throw new Error(error.message)
+
+  // Update Resend audience (fire-and-forget)
+  if (userId) {
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('email, first_name, last_name')
+      .eq('id', userId)
+      .single()
+    if (profile?.email) {
+      if (status === 'active') {
+        void moveToActiveMember(profile.email, profile.first_name ?? undefined, profile.last_name ?? undefined)
+      } else if (status === 'expired' || status === 'cancelled') {
+        void moveToPastMember(profile.email, profile.first_name ?? undefined, profile.last_name ?? undefined)
+      }
+    }
+  }
+
   if (userId) revalidatePath(`/admin/users/${userId}`)
   revalidatePath('/admin/users')
 }
@@ -80,6 +98,18 @@ export async function assignMembership(formData: FormData) {
     })
 
   if (error) throw new Error(error.message)
+
+  // Add to Active Members audience (fire-and-forget)
+  {
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('email, first_name, last_name')
+      .eq('id', userId)
+      .single()
+    if (profile?.email) {
+      void moveToActiveMember(profile.email, profile.first_name ?? undefined, profile.last_name ?? undefined)
+    }
+  }
 
   revalidatePath(`/admin/users/${userId}`)
   revalidatePath('/admin/users')
