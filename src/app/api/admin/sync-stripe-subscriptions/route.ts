@@ -443,9 +443,64 @@ export async function POST() {
     if (batch.data.length > 0) invoiceStartingAfter = batch.data[batch.data.length - 1].id
   }
 
+  // 7. Backfill Stripe customer name/description from user_profiles
+  // For any Stripe customer that has no name set, populate it from the
+  // first_name/last_name stored in user_profiles so Stripe's dashboard
+  // and receipts show real names instead of blank entries.
+  let stripeCustomersBackfilled = 0
+  try {
+    // Fetch all profiles that have a stripe_customer_id and at least one name field
+    const profilesToCheck: { id: string; stripe_customer_id: string; first_name: string | null; last_name: string | null }[] = []
+    let namePage = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, stripe_customer_id, first_name, last_name')
+        .not('stripe_customer_id', 'is', null)
+        .range(namePage * 1000, namePage * 1000 + 999)
+      if (error || !data || data.length === 0) break
+      for (const p of data as any[]) {
+        if (p.stripe_customer_id && (p.first_name || p.last_name)) {
+          profilesToCheck.push(p)
+        }
+      }
+      if (data.length < 1000) break
+      namePage++
+    }
+
+    console.log(`[Stripe Sync] Checking ${profilesToCheck.length} profiles for Stripe customer name backfill`)
+
+    for (const profile of profilesToCheck) {
+      try {
+        const stripeCustomer = await stripe.customers.retrieve(profile.stripe_customer_id)
+        if ((stripeCustomer as any).deleted) continue
+
+        // Only update if the Stripe customer has no name set
+        if (!(stripeCustomer as any).name) {
+          const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ')
+          const email = (stripeCustomer as any).email || ''
+          const description = email ? `${fullName} (${email})` : fullName
+
+          await stripe.customers.update(profile.stripe_customer_id, {
+            name: fullName,
+            description,
+          })
+          stripeCustomersBackfilled++
+        }
+      } catch (err: any) {
+        // Don't fail the whole sync for individual customer update errors
+        stats.errors.push(`Stripe customer backfill ${profile.stripe_customer_id}: ${err.message}`)
+      }
+    }
+    console.log(`[Stripe Sync] Backfilled name on ${stripeCustomersBackfilled} Stripe customers`)
+  } catch (err: any) {
+    stats.errors.push(`Stripe customer name backfill failed: ${err.message}`)
+  }
+
   return NextResponse.json({
     ok: true,
     ...stats,
+    stripeCustomersBackfilled,
     uniqueUsers: bestSubByEmail.size,
     message: [
       `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total Stripe subscriptions.`,
@@ -453,6 +508,7 @@ export async function POST() {
       `Synced: ${stats.syncedAsActive} active, ${stats.syncedAsTrialing} trialing, ${stats.syncedAsPastDue} past due, ${stats.syncedAsCancelled} cancelled, ${stats.syncedAsExpired} expired.`,
       stats.usersCreated > 0 ? `Created ${stats.usersCreated} new accounts.` : '',
       stats.ordersBackfilled > 0 ? `Backfilled ${stats.ordersBackfilled} payment records.` : '',
+      stripeCustomersBackfilled > 0 ? `Backfilled name on ${stripeCustomersBackfilled} Stripe customers.` : '',
       stats.skipped > 0 ? `${stats.skipped} skipped.` : '',
     ].filter(Boolean).join(' '),
   })
