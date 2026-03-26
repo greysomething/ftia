@@ -22,6 +22,17 @@ export function BlogPostForm({ post }: BlogPostFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const v = (key: string) => post?.[key] ?? ''
 
+  // Determine if post is currently scheduled
+  const isScheduled = post?.visibility === 'publish' && post?.published_at && new Date(post.published_at) > new Date()
+  const [visibility, setVisibility] = useState<string>(isScheduled ? 'schedule' : (v('visibility') || 'draft'))
+  const [scheduleDate, setScheduleDate] = useState<string>(() => {
+    if (isScheduled && post?.published_at) {
+      const d = new Date(post.published_at)
+      return d.toISOString().slice(0, 16) // YYYY-MM-DDTHH:MM
+    }
+    return ''
+  })
+
   async function handleFeaturedImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -80,16 +91,63 @@ export function BlogPostForm({ post }: BlogPostFormProps) {
           {/* Publish settings */}
           <div className="admin-card space-y-4">
             <h3 className="text-sm font-semibold text-gray-900">Publish</h3>
+            {/* Actual visibility sent to server */}
+            <input type="hidden" name="visibility" value={visibility === 'schedule' ? 'publish' : visibility} />
+            {visibility === 'schedule' && scheduleDate && (
+              <input type="hidden" name="scheduled_at" value={scheduleDate} />
+            )}
             <div>
               <label className="form-label">Status</label>
-              <select name="visibility" defaultValue={v('visibility') || 'draft'} className="form-input">
+              <select
+                value={visibility}
+                onChange={e => {
+                  setVisibility(e.target.value)
+                  if (e.target.value === 'schedule' && !scheduleDate) {
+                    // Default to tomorrow at 9am
+                    const tomorrow = new Date()
+                    tomorrow.setDate(tomorrow.getDate() + 1)
+                    tomorrow.setHours(9, 0, 0, 0)
+                    setScheduleDate(tomorrow.toISOString().slice(0, 16))
+                  }
+                }}
+                className="form-input"
+              >
                 <option value="draft">Draft</option>
                 <option value="publish">Published</option>
+                <option value="schedule">Scheduled</option>
               </select>
             </div>
+
+            {visibility === 'schedule' && (
+              <div>
+                <label className="form-label">Publish Date & Time</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleDate}
+                  onChange={e => setScheduleDate(e.target.value)}
+                  min={new Date().toISOString().slice(0, 16)}
+                  className="form-input text-sm"
+                  required
+                />
+                {scheduleDate && (
+                  <p className="text-[11px] text-blue-600 mt-1">
+                    Will be published on {new Date(scheduleDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} at {new Date(scheduleDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {isScheduled && visibility !== 'schedule' && visibility !== 'draft' && (
+              <p className="text-[11px] text-amber-600">
+                This will publish the post immediately instead of at the scheduled time.
+              </p>
+            )}
+
             <div className="flex items-center gap-3 pt-2">
               <button type="submit" disabled={pending} className="btn-primary flex-1">
-                {pending ? 'Saving...' : post ? 'Update Post' : 'Create Post'}
+                {pending ? 'Saving...'
+                  : visibility === 'schedule' ? 'Schedule'
+                  : post ? 'Update Post' : 'Create Post'}
               </button>
               <Link href="/admin/blog" className="btn-outline text-center">Cancel</Link>
             </div>

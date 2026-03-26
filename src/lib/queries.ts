@@ -625,6 +625,7 @@ export async function getBlogPosts(page = 1, { perPage, category }: { perPage?: 
     }
   }
 
+  const now = new Date().toISOString()
   let query = supabase
     .from('blog_posts')
     .select(
@@ -637,6 +638,7 @@ export async function getBlogPosts(page = 1, { perPage, category }: { perPage?: 
       { count: 'exact' }
     )
     .eq('visibility', 'publish')
+    .or(`published_at.is.null,published_at.lte.${now}`)
     .order('published_at', { ascending: false })
 
   if (postIds !== null) {
@@ -652,6 +654,7 @@ export async function getBlogPosts(page = 1, { perPage, category }: { perPage?: 
 
 export async function getBlogPostBySlug(slug: string): Promise<(BlogPost & Record<string, any>) | null> {
   const supabase = await createClient()
+  const now = new Date().toISOString()
 
   const { data, error } = await supabase
     .from('blog_posts')
@@ -665,6 +668,7 @@ export async function getBlogPostBySlug(slug: string): Promise<(BlogPost & Recor
     )
     .eq('slug', slug)
     .eq('visibility', 'publish')
+    .or(`published_at.is.null,published_at.lte.${now}`)
     .single()
 
   if (error) return null

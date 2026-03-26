@@ -46,21 +46,29 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
     excerpt: (formData.get('excerpt') as string) || null,
   }
 
-  // Set published_at when publishing for the first time
-  if (visibility === 'publish') {
+  // Handle published_at / scheduling
+  const scheduledAt = (formData.get('scheduled_at') as string) || null
+
+  if (visibility === 'publish' && scheduledAt) {
+    // Scheduling for a future date
+    row.published_at = new Date(scheduledAt).toISOString()
+  } else if (visibility === 'publish') {
     if (id) {
-      // Only set published_at if it wasn't already set
+      // Only set published_at if it wasn't already set (or was a future date being published now)
       const { data: existing } = await supabase
         .from('blog_posts')
         .select('published_at')
         .eq('id', id)
         .single()
-      if (!existing?.published_at) {
+      if (!existing?.published_at || new Date(existing.published_at) > new Date()) {
         row.published_at = new Date().toISOString()
       }
     } else {
       row.published_at = new Date().toISOString()
     }
+  } else if (visibility === 'draft') {
+    // Drafts clear the published_at
+    row.published_at = null
   }
 
   if (id) {
@@ -74,6 +82,27 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
   revalidatePath('/admin/blog')
   revalidatePath('/blog')
   redirect('/admin/blog')
+}
+
+export async function trashBlogPost(id: number) {
+  await requireAdmin()
+  const supabase = createAdminClient()
+  const { error } = await supabase.from('blog_posts')
+    .update({ visibility: 'private' as any })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/blog')
+  revalidatePath('/blog')
+}
+
+export async function restoreBlogPost(id: number) {
+  await requireAdmin()
+  const supabase = createAdminClient()
+  const { error } = await supabase.from('blog_posts')
+    .update({ visibility: 'draft' as any })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/blog')
 }
 
 export async function deleteBlogPost(id: number) {

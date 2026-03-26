@@ -263,22 +263,59 @@ export async function getAdminCrewById(id: number) {
 
 // ─── Blog ─────────────────────────────────────────────────────────────────────
 
-export async function getAdminBlogPosts({ page = 1, q }: { page?: number; q?: string } = {}) {
+export async function getAdminBlogPosts({ page = 1, q, tab }: { page?: number; q?: string; tab?: string } = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
+  const now = new Date().toISOString()
 
   let query = supabase
     .from('blog_posts')
-    .select('id, title, slug, visibility, published_at, updated_at', { count: 'exact' })
-    .order('id', { ascending: false })
-    .range(from, to)
+    .select('id, title, slug, visibility, published_at, updated_at, created_at', { count: 'exact' })
+
+  // Apply tab filter
+  if (tab === 'published') {
+    query = query.eq('visibility', 'publish').or(`published_at.is.null,published_at.lte.${now}`)
+  } else if (tab === 'drafts') {
+    query = query.eq('visibility', 'draft')
+  } else if (tab === 'scheduled') {
+    query = query.eq('visibility', 'publish').gt('published_at', now)
+  } else if (tab === 'trash') {
+    query = query.eq('visibility', 'private')
+  }
+  // 'all' tab = no filter
 
   if (q) query = query.ilike('title', `%${q}%`)
+  query = query.order('id', { ascending: false }).range(from, to)
 
   const { data, count, error } = await query
   if (error) throw error
   return { posts: data ?? [], total: count ?? 0, perPage: PER_PAGE }
+}
+
+export async function getAdminBlogCounts() {
+  const supabase = createAdminClient()
+  const now = new Date().toISOString()
+
+  const [allRes, pubRes, draftRes, schedRes, trashRes] = await Promise.all([
+    supabase.from('blog_posts').select('id', { count: 'exact', head: true }),
+    supabase.from('blog_posts').select('id', { count: 'exact', head: true })
+      .eq('visibility', 'publish').or(`published_at.is.null,published_at.lte.${now}`),
+    supabase.from('blog_posts').select('id', { count: 'exact', head: true })
+      .eq('visibility', 'draft'),
+    supabase.from('blog_posts').select('id', { count: 'exact', head: true })
+      .eq('visibility', 'publish').gt('published_at', now),
+    supabase.from('blog_posts').select('id', { count: 'exact', head: true })
+      .eq('visibility', 'private'),
+  ])
+
+  return {
+    all: allRes.count ?? 0,
+    published: pubRes.count ?? 0,
+    drafts: draftRes.count ?? 0,
+    scheduled: schedRes.count ?? 0,
+    trash: trashRes.count ?? 0,
+  }
 }
 
 export async function getAdminBlogPostById(id: number) {
