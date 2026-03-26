@@ -755,6 +755,8 @@ const AUDIENCE_OPTIONS = [
 /**
  * Automation tab — configure weekly digest cron schedule.
  */
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
 function AutomationTab() {
   const [settings, setSettings] = useState<{
     enabled: boolean
@@ -845,7 +847,7 @@ function AutomationTab() {
           <span className="text-gray-500">—</span>
           <span>
             {settings.enabled
-              ? `Next digest sends ${timeLabel} (${settings.timezone.replace('America/', '').replace('_', ' ')})`
+              ? `Starts checking ${timeLabel} (${settings.timezone.replace('America/', '').replace('_', ' ')}) — sends once list has ${settings.min_productions}+ productions`
               : 'No digests will be sent automatically'
             }
           </span>
@@ -973,14 +975,19 @@ function AutomationTab() {
         <h3 className="font-semibold text-gray-900 mb-3">How Automation Works</h3>
         <div className="text-sm text-gray-600 space-y-2">
           <p>
-            A Vercel Cron job runs every hour and checks these settings. When the configured
-            day and time arrive, it automatically triggers the weekly digest email to all
-            recipients in the selected audience.
+            A Vercel Cron job runs every hour. On the configured day, starting at the configured
+            time, it checks if the current week&apos;s production list has been published with
+            at least <strong>{settings.min_productions} productions</strong>.
           </p>
-          <p><strong>Safety checks:</strong></p>
+          <p><strong>The flow:</strong></p>
+          <ol className="list-decimal list-inside space-y-1 text-gray-500 ml-2">
+            <li>On {DAY_NAMES[settings.day_of_week]} at {settings.send_hour}:00, the cron starts checking</li>
+            <li>If the weekly list isn&apos;t ready yet (not published or under {settings.min_productions} productions), it waits and re-checks every hour</li>
+            <li>Once the list has {settings.min_productions}+ productions, the digest is sent automatically within the hour</li>
+            <li>Won&apos;t re-send if the digest was already sent this week (prevents duplicates)</li>
+          </ol>
+          <p className="mt-2"><strong>Safety &amp; compliance:</strong></p>
           <ul className="list-disc list-inside space-y-1 text-gray-500 ml-2">
-            <li>Won&apos;t send if the weekly production list has fewer than {settings.min_productions} productions</li>
-            <li>Won&apos;t send if the digest was already sent this week (prevents duplicates)</li>
             <li>Includes <code className="bg-gray-100 px-1 rounded text-xs">List-Unsubscribe</code> headers for Gmail/Yahoo spam compliance</li>
             <li>Rate-limited to 5 emails per 1.2 seconds to avoid ISP spam filters</li>
           </ul>

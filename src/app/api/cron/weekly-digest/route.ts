@@ -2,8 +2,16 @@
  * GET /api/cron/weekly-digest
  *
  * Vercel Cron handler — runs every hour and checks digest_settings
- * to determine if it's the right day/time to send. This allows
- * admins to configure the schedule from the UI without redeploying.
+ * to determine if it's the right day/time to send.
+ *
+ * Flow:
+ *  1. On the configured day, starting at the configured hour, check
+ *     if the current week's production list has been published with
+ *     enough productions (min_productions setting, default 40).
+ *  2. If the list isn't ready yet (admin hasn't published), skip and
+ *     re-check on the next hourly run throughout the day.
+ *  3. Once the list has enough productions, send the digest.
+ *  4. Never re-send if a digest was already sent this week.
  *
  * Protected by CRON_SECRET to prevent unauthorized triggers.
  */
@@ -15,6 +23,15 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function getCurrentWeekMonday(): string {
+  const now = new Date()
+  const day = now.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + diff)
+  return monday.toISOString().split('T')[0]
+}
 
 export async function GET(req: NextRequest) {
   // Verify cron secret
@@ -42,11 +59,10 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // 2. Check if it's the right day and hour
+  // 2. Check if it's the right day and at or after the configured hour
   const tz = settings.timezone || 'America/New_York'
   const now = new Date()
 
-  // Get current day/hour in the configured timezone
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     weekday: 'long',
@@ -62,14 +78,14 @@ export async function GET(req: NextRequest) {
 
   const targetDay = settings.day_of_week
   const targetHour = settings.send_hour
-  const targetMinute = settings.send_minute
 
-  // Check: right day, right hour, within 30 minutes of target time
-  // (cron runs hourly, so we check if we're in the right hour window)
-  if (currentDay !== targetDay || currentHour !== targetHour) {
+  // Must be the configured day AND at or after the configured hour.
+  // This lets the cron keep checking every hour after the target time
+  // until the list is ready.
+  if (currentDay !== targetDay || currentHour < targetHour) {
     return NextResponse.json({
       skipped: true,
-      reason: `Not the right time. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:${String(targetMinute).padStart(2, '0')} ${tz}`,
+      reason: `Not the right time. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:00+ ${tz}`,
       checkedAt: new Date().toISOString(),
     })
   }
@@ -95,7 +111,31 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // 4. Trigger the digest send
+  // 4. Check if the current week's production list is ready
+  const weekMonday = getCurrentWeekMonday()
+  const minProductions = settings.min_productions ?? 40
+
+  const { count } = await supabase
+    .from('production_week_entries')
+    .select('id', { count: 'exact', head: true })
+    .eq('week_monday', weekMonday)
+
+  const productionCount = count ?? 0
+
+  if (productionCount < minProductions) {
+    return NextResponse.json({
+      skipped: true,
+      reason: `Weekly list not ready. Current week (${weekMonday}) has ${productionCount} productions, need ${minProductions}+. Will re-check next hour.`,
+      productionCount,
+      minProductions,
+      weekMonday,
+      checkedAt: new Date().toISOString(),
+    })
+  }
+
+  // 5. List is ready — trigger the digest send
+  console.log(`[Cron] Weekly list ready: ${productionCount} productions for ${weekMonday}. Sending digest.`)
+
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://productionlist.com'
 
   try {
