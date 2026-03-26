@@ -141,7 +141,24 @@ export async function POST(req: NextRequest) {
       // Record order (with duplicate check on payment_transaction_id AND
       // a fallback check for same user+amount within 5 minutes to catch
       // cases where payment_intent is null on the checkout session)
-      const checkoutPiId = session.payment_intent as string | null
+      let checkoutPiId = session.payment_intent as string | null
+
+      // For subscription checkouts, session.payment_intent is often null.
+      // Get the real payment_intent from the subscription's latest invoice.
+      if (!checkoutPiId && subscriptionId) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId as string, {
+            expand: ['latest_invoice'],
+          })
+          const latestInvoice = (sub as any).latest_invoice
+          if (latestInvoice?.payment_intent) {
+            checkoutPiId = typeof latestInvoice.payment_intent === 'string'
+              ? latestInvoice.payment_intent
+              : latestInvoice.payment_intent?.id ?? null
+          }
+        } catch { /* best effort */ }
+      }
+
       let checkoutAlreadyRecorded = false
       if (checkoutPiId) {
         const { data: existingCheckout } = await supabase

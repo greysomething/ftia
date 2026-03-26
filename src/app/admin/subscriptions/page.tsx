@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { getAdminSubscriptions, getAdminSubscriptionStats, getAdminOrders, getAdminMembershipPlans } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate } from '@/lib/utils'
-import { StatCard } from '@/components/admin/StatCard'
 import { SubscriptionActions } from './SubscriptionActions'
 
 export const metadata: Metadata = { title: 'Subscriptions & Payments' }
@@ -47,6 +46,10 @@ const TABS = [
   { key: 'orders', label: 'Orders' },
 ]
 
+function formatCurrency(amount: number): string {
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default async function AdminSubscriptionsPage({ searchParams }: Props) {
   const params = await searchParams
   const page = parseInt(params.page || '1', 10) || 1
@@ -74,12 +77,25 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
   const statusTabs = [
     { key: '', label: 'All', count: stats.total },
     { key: 'active', label: 'Active', count: stats.active },
-    { key: 'trialing', label: 'Trialing', count: stats.trialing },
-    { key: 'past_due', label: 'Past Due', count: stats.pastDue },
-    { key: 'cancelled', label: 'Cancelled', count: stats.cancelled },
-    { key: 'expired', label: 'Expired', count: stats.expired },
-    { key: 'suspended', label: 'Suspended', count: stats.suspended },
-    { key: 'manual', label: 'Manual', count: stats.manual },
+    ...(stats.trialing > 0 ? [{ key: 'trialing', label: 'Trialing', count: stats.trialing }] : []),
+    ...(stats.pastDue > 0 ? [{ key: 'past_due', label: 'Past Due', count: stats.pastDue }] : []),
+    ...(stats.cancelled > 0 ? [{ key: 'cancelled', label: 'Cancelled', count: stats.cancelled }] : []),
+    ...(stats.expired > 0 ? [{ key: 'expired', label: 'Expired', count: stats.expired }] : []),
+    ...(stats.suspended > 0 ? [{ key: 'suspended', label: 'Suspended', count: stats.suspended }] : []),
+    ...(stats.manual > 0 ? [{ key: 'manual', label: 'Manual', count: stats.manual }] : []),
+  ]
+
+  // Order status tabs with counts
+  const orderTabs = [
+    { key: '', label: 'All Orders', count: stats.totalOrders },
+    { key: 'success', label: 'Successful', count: stats.orderCounts['success'] ?? 0 },
+    ...(stats.orderCounts['refunded'] ? [{ key: 'refunded', label: 'Refunded', count: stats.orderCounts['refunded'] }] : []),
+    ...(stats.orderCounts['failed'] ? [{ key: 'failed', label: 'Failed', count: stats.orderCounts['failed'] }] : []),
+    ...((stats.orderCounts['dispute_opened'] || stats.orderCounts['dispute_lost']) ? [{
+      key: 'dispute_opened',
+      label: 'Disputed',
+      count: (stats.orderCounts['dispute_opened'] ?? 0) + (stats.orderCounts['dispute_lost'] ?? 0),
+    }] : []),
   ]
 
   return (
@@ -92,63 +108,86 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
       </div>
 
       {/* Revenue & Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
-        <StatCard
-          label="Active"
-          value={stats.active}
-          icon={
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3 mb-6">
+        {/* MRR */}
+        <div className="admin-card flex items-center gap-4 border-accent">
+          <div className="p-3 rounded-lg flex-shrink-0 bg-accent/10 text-accent">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">${formatCurrency(stats.mrr)}</p>
+            <p className="text-sm text-gray-500 mt-0.5">MRR</p>
+          </div>
+        </div>
+
+        {/* Active */}
+        <div className="admin-card flex items-center gap-4 border-accent">
+          <div className="p-3 rounded-lg flex-shrink-0 bg-green-50 text-green-600">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-          }
-          accent
-        />
-        <StatCard
-          label="Trialing"
-          value={stats.trialing}
-          icon={
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
+            <p className="text-sm text-gray-500 mt-0.5">Active</p>
+          </div>
+        </div>
+
+        {/* New This Month */}
+        <div className="admin-card flex items-center gap-4">
+          <div className="p-3 rounded-lg flex-shrink-0 bg-blue-50 text-blue-600">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
             </svg>
-          }
-        />
-        <StatCard
-          label="Past Due"
-          value={stats.pastDue}
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          }
-        />
-        <StatCard
-          label="Cancelled"
-          value={stats.cancelled}
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-            </svg>
-          }
-        />
-        <StatCard
-          label="Total Orders"
-          value={stats.totalOrders}
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          }
-        />
-        <StatCard
-          label="30-Day Revenue"
-          value={`$${stats.recentRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-          icon={
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{stats.newThisMonth}</p>
+            <p className="text-sm text-gray-500 mt-0.5">New This Month</p>
+          </div>
+        </div>
+
+        {/* 30-Day Revenue */}
+        <div className="admin-card flex items-center gap-4">
+          <div className="p-3 rounded-lg flex-shrink-0 bg-emerald-50 text-emerald-600">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-          }
-          accent
-        />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">${formatCurrency(stats.recentRevenue)}</p>
+            <p className="text-sm text-gray-500 mt-0.5">30-Day Revenue</p>
+          </div>
+        </div>
+
+        {/* Total Orders */}
+        <div className="admin-card flex items-center gap-4">
+          <div className="p-3 rounded-lg flex-shrink-0 bg-gray-100 text-gray-600">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{stats.totalOrders}</p>
+            <p className="text-sm text-gray-500 mt-0.5">Total Orders</p>
+          </div>
+        </div>
+
+        {/* Attention Needed */}
+        <div className="admin-card flex items-center gap-4">
+          <div className={`p-3 rounded-lg flex-shrink-0 ${
+            (stats.pastDue + stats.suspended) > 0 ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-400'
+          }`}>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{stats.pastDue + stats.suspended}</p>
+            <p className="text-sm text-gray-500 mt-0.5">Needs Attention</p>
+          </div>
+        </div>
       </div>
 
       {/* Main Tabs: Subscriptions / Orders */}
@@ -173,7 +212,6 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
           {/* Status Filter Tabs */}
           <div className="flex flex-wrap gap-1 mb-4">
             {statusTabs.map((st) => {
-              if (st.count === 0 && st.key !== '') return null
               const isActive = statusFilter === st.key
               return (
                 <Link
@@ -224,7 +262,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                   <th>Amount</th>
                   <th>Card</th>
                   <th>Started</th>
-                  <th>{statusFilter === 'cancelled' ? 'Expires' : 'Renews'}</th>
+                  <th>{statusFilter === 'cancelled' || statusFilter === 'expired' ? 'Expires' : 'Renews'}</th>
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>
@@ -232,7 +270,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                 {subsResult.subscriptions.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center text-gray-400 py-10">
-                      No subscriptions found.
+                      {q ? `No subscriptions matching "${q}"` : 'No subscriptions found.'}
                     </td>
                   </tr>
                 ) : (
@@ -329,32 +367,32 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
             current={page}
             total={subsResult.total}
             perPage={subsResult.perPage}
-            basePath={`/admin/subscriptions${statusFilter ? `?status=${statusFilter}` : ''}`}
+            basePath={`/admin/subscriptions${statusFilter ? `?status=${statusFilter}` : ''}${q ? `${statusFilter ? '&' : '?'}q=${encodeURIComponent(q)}` : ''}`}
           />
         </>
       ) : (
         <>
           {/* Order Status Filter */}
           <div className="flex flex-wrap gap-1 mb-4">
-            {[
-              { key: '', label: 'All Orders' },
-              { key: 'success', label: 'Successful' },
-              { key: 'refunded', label: 'Refunded' },
-              { key: 'failed', label: 'Failed' },
-              { key: 'dispute_opened', label: 'Disputed' },
-            ].map((st) => {
+            {orderTabs.map((st) => {
+              if (st.count === 0 && st.key !== '') return null
               const isActiveFilter = orderStatus === st.key
               return (
                 <Link
                   key={st.key}
                   href={`/admin/subscriptions?tab=orders${st.key ? `&order_status=${st.key}` : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
-                  className={`inline-flex items-center text-sm font-medium px-3 py-1.5 rounded-full transition-colors ${
+                  className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-full transition-colors ${
                     isActiveFilter
                       ? 'bg-[#1B2A4A] text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
                   {st.label}
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                    isActiveFilter ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {st.count}
+                  </span>
                 </Link>
               )
             })}
@@ -386,9 +424,9 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                   <th>ID</th>
                   <th>Member</th>
                   <th>Plan</th>
+                  <th>Type</th>
                   <th>Amount</th>
                   <th>Status</th>
-                  <th>Gateway</th>
                   <th>Date</th>
                   <th className="text-right">Stripe</th>
                 </tr>
@@ -397,7 +435,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                 {ordersResult.orders.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center text-gray-400 py-10">
-                      No orders found.
+                      {q ? `No orders matching "${q}"` : 'No orders found.'}
                     </td>
                   </tr>
                 ) : (
@@ -409,6 +447,27 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                     const email = profile?.email || ''
                     const isRefund = o.status === 'refunded' || o.status === 'dispute_lost'
                     const amount = o.total != null ? o.total.toFixed(2) : null
+
+                    // Determine payment type from billing_reason
+                    const billingType = o.billing_reason === 'subscription_create'
+                      ? 'New Signup'
+                      : o.billing_reason === 'subscription_cycle'
+                        ? 'Renewal'
+                        : o.status === 'refunded'
+                          ? 'Refund'
+                          : o.status === 'dispute_opened' || o.status === 'dispute_lost'
+                            ? 'Dispute'
+                            : null
+
+                    const billingTypeColor = o.billing_reason === 'subscription_create'
+                      ? 'text-blue-600 bg-blue-50'
+                      : o.billing_reason === 'subscription_cycle'
+                        ? 'text-gray-600 bg-gray-100'
+                        : o.status === 'refunded'
+                          ? 'text-amber-600 bg-amber-50'
+                          : o.status === 'dispute_opened' || o.status === 'dispute_lost'
+                            ? 'text-red-600 bg-red-50'
+                            : ''
 
                     return (
                       <tr key={o.id}>
@@ -427,6 +486,15 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                         <td className="text-sm text-gray-600">
                           {(o.membership_levels as any)?.name ?? '—'}
                         </td>
+                        <td>
+                          {billingType ? (
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${billingTypeColor}`}>
+                              {billingType}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
                         <td className={`text-sm font-medium ${isRefund ? 'text-red-600' : 'text-gray-700'}`}>
                           {amount != null ? `${isRefund ? '-' : ''}$${amount}` : '—'}
                         </td>
@@ -440,7 +508,6 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                             </p>
                           )}
                         </td>
-                        <td className="text-sm text-gray-500">{o.gateway || '—'}</td>
                         <td className="text-sm text-gray-500">{formatDate(o.timestamp) || '—'}</td>
                         <td className="text-right">
                           {o.payment_transaction_id ? (
@@ -468,7 +535,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
             current={page}
             total={ordersResult.total}
             perPage={ordersResult.perPage}
-            basePath={`/admin/subscriptions?tab=orders${orderStatus ? `&order_status=${orderStatus}` : ''}`}
+            basePath={`/admin/subscriptions?tab=orders${orderStatus ? `&order_status=${orderStatus}` : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
           />
         </>
       )}

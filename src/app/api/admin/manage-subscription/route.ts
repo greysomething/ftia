@@ -242,6 +242,50 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      case 'cleanup_duplicate_orders': {
+        // Remove duplicate orders: for each user+total+date combo,
+        // keep the order WITH a payment_transaction_id and remove the one without.
+        const { data: allOrders } = await supabase
+          .from('membership_orders')
+          .select('id, user_id, total, payment_transaction_id, timestamp, billing_reason')
+          .eq('status', 'success')
+          .order('timestamp', { ascending: false })
+
+        if (!allOrders || allOrders.length === 0) {
+          return NextResponse.json({ success: true, removed: 0, message: 'No orders to check.' })
+        }
+
+        // Group by user_id + total + date (same day)
+        const groups = new Map<string, typeof allOrders>()
+        for (const order of allOrders) {
+          const date = order.timestamp ? order.timestamp.slice(0, 10) : 'unknown'
+          const key = `${order.user_id}:${order.total}:${date}`
+          if (!groups.has(key)) groups.set(key, [])
+          groups.get(key)!.push(order)
+        }
+
+        const idsToRemove: number[] = []
+        for (const [, group] of groups) {
+          if (group.length <= 1) continue
+          // Keep the one with payment_transaction_id, remove the others
+          const withPi = group.filter((o: any) => o.payment_transaction_id)
+          const withoutPi = group.filter((o: any) => !o.payment_transaction_id)
+          if (withPi.length > 0 && withoutPi.length > 0) {
+            idsToRemove.push(...withoutPi.map((o: any) => o.id))
+          }
+        }
+
+        if (idsToRemove.length > 0) {
+          await supabase.from('membership_orders').delete().in('id', idsToRemove)
+        }
+
+        return NextResponse.json({
+          success: true,
+          removed: idsToRemove.length,
+          message: `Removed ${idsToRemove.length} duplicate order(s).`,
+        })
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }

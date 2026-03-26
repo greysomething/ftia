@@ -366,10 +366,47 @@ export async function getAdminDnwNoticeById(id: number) {
 
 // ─── Subscriptions & Orders ──────────────────────────────────────────────────
 
+/**
+ * Search helper: when a search query is provided, first resolve matching
+ * user IDs from user_profiles so we can filter at the DB level (not post-pagination).
+ */
+async function resolveSearchUserIds(supabase: any, q: string): Promise<string[] | null> {
+  if (!q) return null
+  const lower = q.toLowerCase()
+  // Search across first_name, last_name, display_name, email
+  const { data: profiles } = await supabase
+    .from('user_profiles')
+    .select('id')
+    .or(`first_name.ilike.%${lower}%,last_name.ilike.%${lower}%,display_name.ilike.%${lower}%,email.ilike.%${lower}%`)
+    .limit(500)
+  return profiles?.map((p: any) => p.id) ?? []
+}
+
+/**
+ * Attach user_profiles to a list of records that have user_id.
+ */
+async function attachProfiles(supabase: any, records: any[]): Promise<any[]> {
+  if (records.length === 0) return records
+  const userIds = [...new Set(records.map((r: any) => r.user_id))]
+  const { data: profiles } = await supabase
+    .from('user_profiles')
+    .select('id, first_name, last_name, display_name, email')
+    .in('id', userIds)
+  if (!profiles) return records
+  const profileMap = new Map(profiles.map((p: any) => [p.id, p]))
+  return records.map((r: any) => ({
+    ...r,
+    user_profile: profileMap.get(r.user_id) ?? null,
+  }))
+}
+
 export async function getAdminSubscriptions({ page = 1, q, status }: { page?: number; q?: string; status?: string } = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
+
+  // Resolve search to user IDs first (DB-level filtering)
+  const searchUserIds = await resolveSearchUserIds(supabase, q ?? '')
 
   let query = supabase
     .from('user_memberships')
@@ -381,52 +418,26 @@ export async function getAdminSubscriptions({ page = 1, q, status }: { page?: nu
       membership_levels(name, billing_amount, cycle_period)
     `, { count: 'exact' })
     .order('created_at', { ascending: false })
-    .range(from, to)
 
   if (status) {
-    if (status === 'trialing') {
-      query = query.eq('status', 'trialing')
-    } else if (status === 'past_due') {
-      query = query.eq('status', 'past_due')
-    } else if (status === 'suspended') {
-      query = query.eq('status', 'suspended')
-    } else if (status === 'manual') {
+    if (status === 'manual') {
       query = query.eq('status', 'active').is('stripe_subscription_id', null)
     } else {
       query = query.eq('status', status)
     }
   }
 
-  const { data, count, error } = await query
-
-  // Fetch user profiles for returned memberships
-  let subscriptions = data ?? []
-  if (subscriptions.length > 0) {
-    const userIds = [...new Set(subscriptions.map((s: any) => s.user_id))]
-    const { data: profiles } = await supabase
-      .from('user_profiles')
-      .select('id, first_name, last_name, display_name, email')
-      .in('id', userIds)
-
-    if (profiles) {
-      const profileMap = new Map(profiles.map((p: any) => [p.id, p]))
-      subscriptions = subscriptions.map((s: any) => ({
-        ...s,
-        user_profile: profileMap.get(s.user_id) ?? null,
-      }))
+  // Apply search filter at DB level
+  if (searchUserIds !== null) {
+    if (searchUserIds.length === 0) {
+      return { subscriptions: [], total: 0, perPage: PER_PAGE }
     }
-
-    // Filter by search after attaching profiles
-    if (q) {
-      const lower = q.toLowerCase()
-      subscriptions = subscriptions.filter((s: any) => {
-        const p = s.user_profile
-        if (!p) return false
-        const name = [p.first_name, p.last_name, p.display_name, p.email].filter(Boolean).join(' ').toLowerCase()
-        return name.includes(lower)
-      })
-    }
+    query = query.in('user_id', searchUserIds)
   }
+
+  query = query.range(from, to)
+  const { data, count } = await query
+  const subscriptions = await attachProfiles(supabase, data ?? [])
 
   return { subscriptions, total: count ?? 0, perPage: PER_PAGE }
 }
@@ -434,57 +445,89 @@ export async function getAdminSubscriptions({ page = 1, q, status }: { page?: nu
 export async function getAdminSubscriptionStats() {
   const supabase = createAdminClient()
 
-  const [
-    { count: total },
-    { count: active },
-    { count: trialing },
-    { count: pastDue },
-    { count: cancelled },
-    { count: expired },
-    { count: suspended },
-    { count: pending },
-    { count: totalOrders },
-  ] = await Promise.all([
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }),
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'trialing'),
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'past_due'),
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'expired'),
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'suspended'),
-    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('membership_orders').select('*', { count: 'exact', head: true }),
-  ])
-
-  // Count manual memberships (active but no stripe_subscription_id)
-  const { count: manual } = await supabase
+  // Fetch all memberships with their plan info in a single query
+  const { data: allMemberships } = await supabase
     .from('user_memberships')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'active')
-    .is('stripe_subscription_id', null)
+    .select('status, stripe_subscription_id, level_id, membership_levels(billing_amount, cycle_period)')
 
-  // Get recent revenue (last 30 days)
+  const memberships = allMemberships ?? []
+
+  // Count statuses
+  const counts: Record<string, number> = {}
+  let manual = 0
+  let mrr = 0
+
+  for (const m of memberships) {
+    const s = m.status || 'unknown'
+    counts[s] = (counts[s] || 0) + 1
+
+    if (s === 'active' && !m.stripe_subscription_id) {
+      manual++
+    }
+
+    // Calculate MRR from active subscriptions
+    if (s === 'active') {
+      const level = m.membership_levels as any
+      const amount = parseFloat(level?.billing_amount || '0')
+      const period = (level?.cycle_period || '').toLowerCase()
+      if (period === 'month') mrr += amount
+      else if (period === 'year') mrr += amount / 12
+    }
+  }
+
+  // Revenue queries in parallel
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: recentOrders } = await supabase
-    .from('membership_orders')
-    .select('total')
-    .gte('timestamp', thirtyDaysAgo)
-    .eq('status', 'success')
+  const thisMonthStart = new Date()
+  thisMonthStart.setDate(1)
+  thisMonthStart.setHours(0, 0, 0, 0)
+
+  const [
+    { data: recentOrders },
+    { count: totalOrders },
+    { count: newThisMonth },
+    { data: orderStatusCounts },
+  ] = await Promise.all([
+    supabase
+      .from('membership_orders')
+      .select('total')
+      .gte('timestamp', thirtyDaysAgo)
+      .eq('status', 'success'),
+    supabase.from('membership_orders').select('*', { count: 'exact', head: true }),
+    // Count new signups this month using startdate (not created_at which reflects sync date)
+    supabase
+      .from('user_memberships')
+      .select('*', { count: 'exact', head: true })
+      .gte('startdate', thisMonthStart.toISOString())
+      .not('status', 'in', '(expired,pending)'),
+    supabase
+      .from('membership_orders')
+      .select('status'),
+  ])
 
   const recentRevenue = (recentOrders ?? []).reduce((sum: number, o: any) => sum + (o.total ?? 0), 0)
 
+  // Count order statuses
+  const orderCounts: Record<string, number> = {}
+  for (const o of (orderStatusCounts ?? [])) {
+    const s = o.status || 'unknown'
+    orderCounts[s] = (orderCounts[s] || 0) + 1
+  }
+
   return {
-    total: total ?? 0,
-    active: active ?? 0,
-    trialing: trialing ?? 0,
-    pastDue: pastDue ?? 0,
-    cancelled: cancelled ?? 0,
-    expired: expired ?? 0,
-    suspended: suspended ?? 0,
-    pending: pending ?? 0,
-    manual: manual ?? 0,
+    total: memberships.length,
+    active: counts['active'] ?? 0,
+    trialing: counts['trialing'] ?? 0,
+    pastDue: counts['past_due'] ?? 0,
+    cancelled: counts['cancelled'] ?? 0,
+    expired: counts['expired'] ?? 0,
+    suspended: counts['suspended'] ?? 0,
+    pending: counts['pending'] ?? 0,
+    manual,
+    mrr,
     totalOrders: totalOrders ?? 0,
+    newThisMonth: newThisMonth ?? 0,
     recentRevenue,
+    orderCounts,
   }
 }
 
@@ -493,48 +536,33 @@ export async function getAdminOrders({ page = 1, q, status }: { page?: number; q
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
 
+  // Resolve search to user IDs first
+  const searchUserIds = await resolveSearchUserIds(supabase, q ?? '')
+
   let query = supabase
     .from('membership_orders')
     .select(`
       id, user_id, level_id, total, status, gateway, payment_transaction_id,
-      subscription_transaction_id, notes, timestamp, created_at,
+      subscription_transaction_id, billing_reason, notes, timestamp, created_at,
       membership_levels(name)
     `, { count: 'exact' })
     .order('timestamp', { ascending: false })
-    .range(from, to)
 
   if (status) query = query.eq('status', status)
 
-  const { data, count, error } = await query
-
-  let orders = data ?? []
-  if (orders.length > 0) {
-    const userIds = [...new Set(orders.map((o: any) => o.user_id))]
-    const { data: profiles } = await supabase
-      .from('user_profiles')
-      .select('id, first_name, last_name, display_name, email')
-      .in('id', userIds)
-
-    if (profiles) {
-      const profileMap = new Map(profiles.map((p: any) => [p.id, p]))
-      orders = orders.map((o: any) => ({
-        ...o,
-        user_profile: profileMap.get(o.user_id) ?? null,
-      }))
+  if (searchUserIds !== null) {
+    if (searchUserIds.length === 0) {
+      return { orders: [], total: 0, perPage: PER_PAGE }
     }
-
-    if (q) {
-      const lower = q.toLowerCase()
-      orders = orders.filter((o: any) => {
-        const p = o.user_profile
-        if (!p) return false
-        const name = [p.first_name, p.last_name, p.display_name, p.email].filter(Boolean).join(' ').toLowerCase()
-        return name.includes(lower)
-      })
-    }
+    query = query.in('user_id', searchUserIds)
   }
 
+  query = query.range(from, to)
+  const { data, count, error } = await query
   if (error) throw error
+
+  const orders = await attachProfiles(supabase, data ?? [])
+
   return { orders, total: count ?? 0, perPage: PER_PAGE }
 }
 
