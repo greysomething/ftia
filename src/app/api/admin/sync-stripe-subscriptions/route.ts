@@ -158,7 +158,17 @@ export async function POST() {
 
   console.log(`[Stripe Sync] ${uniqueSubs.length} total subs → ${bestSubByEmail.size} unique users. Active: ${stats.byStatus.active}, Cancelling: ${stats.byStatus.active_cancelling}, Canceled: ${stats.byStatus.canceled}`)
 
-  // 5b. Process the single best subscription per user
+  // 5b. RESET: Delete ALL existing membership records before re-importing.
+  // This prevents duplicate rows from accumulating across syncs.
+  // Users and profiles are preserved — only the membership link rows are cleared.
+  const { count: deletedCount } = await supabase
+    .from('user_memberships')
+    .delete()
+    .neq('id', 0) // delete all rows
+    .select('*', { count: 'exact', head: true })
+  console.log(`[Stripe Sync] Cleared ${deletedCount ?? 'all'} existing membership records`)
+
+  // 5c. Process the single best subscription per user
   for (const [email, sub] of bestSubByEmail) {
     try {
       const customer = sub.customer as any
@@ -302,17 +312,21 @@ export async function POST() {
       }
 
       // Check if membership already exists for this user
-      const { data: existingMem } = await supabase
+      // Use select + limit instead of .single() which errors on multiple rows
+      const { data: existingMems } = await supabase
         .from('user_memberships')
-        .select('id, status')
+        .select('id')
         .eq('user_id', userId)
-        .single()
 
-      if (existingMem) {
-        // Always update — we've already picked the best subscription
+      if (existingMems && existingMems.length > 0) {
+        // Update the first row, delete any extras (cleanup duplicates)
         await supabase.from('user_memberships')
           .update(membershipRow)
-          .eq('id', existingMem.id)
+          .eq('id', existingMems[0].id)
+        if (existingMems.length > 1) {
+          const extraIds = existingMems.slice(1).map((m: any) => m.id)
+          await supabase.from('user_memberships').delete().in('id', extraIds)
+        }
       } else {
         // Insert new
         const { error: insertErr } = await supabase.from('user_memberships').insert(membershipRow)
