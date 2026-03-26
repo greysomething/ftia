@@ -264,7 +264,8 @@ export default async function AdminUserDetailPage({ params }: Props) {
                               <span>Started: <strong>{formatDate(m.startdate)}</strong></span>
                             )}
                             <span>
-                              Expires: <strong>{m.enddate ? formatDate(m.enddate) : 'Never'}</strong>
+                              {m.status === 'active' || m.status === 'trialing' ? 'Renews' : 'Expires'}:{' '}
+                              <strong>{m.enddate ? formatDate(m.enddate) : 'Never'}</strong>
                             </span>
                           </div>
 

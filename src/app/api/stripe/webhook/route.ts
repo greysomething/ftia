@@ -85,16 +85,29 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Record order
-      await supabase.from('membership_orders').insert({
-        user_id: userId,
-        level_id: parseInt(levelId, 10),
-        status: 'success',
-        total: session.amount_total ? (session.amount_total / 100) : 0,
-        gateway: 'stripe',
-        payment_transaction_id: session.payment_intent as string ?? null,
-        subscription_transaction_id: subscriptionId as string ?? null,
-      })
+      // Record order (with duplicate check on payment_transaction_id)
+      const checkoutPiId = session.payment_intent as string | null
+      let checkoutAlreadyRecorded = false
+      if (checkoutPiId) {
+        const { data: existingCheckout } = await supabase
+          .from('membership_orders')
+          .select('id')
+          .eq('payment_transaction_id', checkoutPiId)
+          .limit(1)
+        checkoutAlreadyRecorded = !!(existingCheckout && existingCheckout.length > 0)
+      }
+
+      if (!checkoutAlreadyRecorded) {
+        await supabase.from('membership_orders').insert({
+          user_id: userId,
+          level_id: parseInt(levelId, 10),
+          status: 'success',
+          total: session.amount_total ? (session.amount_total / 100) : 0,
+          gateway: 'stripe',
+          payment_transaction_id: checkoutPiId ?? null,
+          subscription_transaction_id: subscriptionId as string ?? null,
+        })
+      }
 
       break
     }
@@ -208,16 +221,30 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', mem.id)
 
-        // Log dispute in membership_orders for audit trail
-        await supabase.from('membership_orders').insert({
-          user_id: mem.user_id,
-          level_id: mem.level_id,
-          status: 'dispute_opened',
-          total: dispute.amount ? -(dispute.amount / 100) : 0,
-          gateway: 'stripe',
-          payment_transaction_id: dispute.payment_intent as string ?? null,
-          notes: `Dispute opened: ${dispute.reason || 'No reason given'}. Dispute ID: ${dispute.id}. Account suspended pending resolution.`,
-        })
+        // Log dispute in membership_orders for audit trail (with duplicate check)
+        const disputePiId = dispute.payment_intent as string | null
+        let disputeAlreadyRecorded = false
+        if (disputePiId) {
+          const { data: existingDispute } = await supabase
+            .from('membership_orders')
+            .select('id')
+            .eq('payment_transaction_id', disputePiId)
+            .eq('status', 'dispute_opened')
+            .limit(1)
+          disputeAlreadyRecorded = !!(existingDispute && existingDispute.length > 0)
+        }
+
+        if (!disputeAlreadyRecorded) {
+          await supabase.from('membership_orders').insert({
+            user_id: mem.user_id,
+            level_id: mem.level_id,
+            status: 'dispute_opened',
+            total: dispute.amount ? -(dispute.amount / 100) : 0,
+            gateway: 'stripe',
+            payment_transaction_id: disputePiId ?? null,
+            notes: `Dispute opened: ${dispute.reason || 'No reason given'}. Dispute ID: ${dispute.id}. Account suspended pending resolution.`,
+          })
+        }
       }
 
       console.log(`[Stripe Webhook] Dispute created (${dispute.id}) — suspended ${memberships.length} membership(s) for customer ${customerId}`)
@@ -296,16 +323,31 @@ export async function POST(req: NextRequest) {
 
       // Calculate refund amount (total refunded - could be partial)
       const refundAmount = charge.amount_refunded ? (charge.amount_refunded / 100) : 0
+      const refundPiId = charge.payment_intent as string | null
 
-      await supabase.from('membership_orders').insert({
-        user_id: membershipForRefund.user_id,
-        level_id: membershipForRefund.level_id,
-        status: 'refunded',
-        total: -refundAmount,
-        gateway: 'stripe',
-        payment_transaction_id: charge.payment_intent as string ?? null,
-        notes: `Refund of $${refundAmount.toFixed(2)}${charge.refunds?.data?.[0]?.reason ? ` — Reason: ${charge.refunds.data[0].reason}` : ''}`,
-      })
+      // Check for duplicate refund record (same payment_intent + refunded status)
+      let refundAlreadyRecorded = false
+      if (refundPiId) {
+        const { data: existingRefund } = await supabase
+          .from('membership_orders')
+          .select('id')
+          .eq('payment_transaction_id', refundPiId)
+          .eq('status', 'refunded')
+          .limit(1)
+        refundAlreadyRecorded = !!(existingRefund && existingRefund.length > 0)
+      }
+
+      if (!refundAlreadyRecorded) {
+        await supabase.from('membership_orders').insert({
+          user_id: membershipForRefund.user_id,
+          level_id: membershipForRefund.level_id,
+          status: 'refunded',
+          total: -refundAmount,
+          gateway: 'stripe',
+          payment_transaction_id: refundPiId ?? null,
+          notes: `Refund of $${refundAmount.toFixed(2)}${charge.refunds?.data?.[0]?.reason ? ` — Reason: ${charge.refunds.data[0].reason}` : ''}`,
+        })
+      }
 
       console.log(`[Stripe Webhook] Charge refunded: $${refundAmount} for customer ${customerId}`)
       break

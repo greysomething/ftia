@@ -374,7 +374,7 @@ export async function POST() {
     txPage++
   }
 
-  // Fetch all paid invoices from Stripe
+  // Fetch all paid invoices from Stripe (auto-paginate through ALL pages)
   let invoiceStartingAfter: string | undefined
   let hasMoreInvoices = true
   while (hasMoreInvoices) {
@@ -388,11 +388,22 @@ export async function POST() {
         const piId = inv.payment_intent as string | null
         if (!piId) continue
 
-        // Skip if already recorded
+        // Skip if already recorded (deduplicate by payment_transaction_id)
         if (existingTxIds.has(piId)) continue
 
         const custId = typeof inv.customer === 'string' ? inv.customer : (inv.customer as any)?.id
-        const userId = customerToUserId.get(custId ?? '') ?? null
+
+        // Try to resolve user from customer ID map first
+        let userId = customerToUserId.get(custId ?? '') ?? null
+
+        // Fallback: resolve user by invoice customer email → auth user email
+        if (!userId && inv.customer_email) {
+          const invoiceEmail = inv.customer_email.toLowerCase()
+          userId = emailToUserId.get(invoiceEmail) ?? null
+          // Cache the mapping so we don't re-lookup for this customer's other invoices
+          if (userId && custId) customerToUserId.set(custId, userId)
+        }
+
         if (!userId) continue
 
         // Determine level from subscription
@@ -410,7 +421,8 @@ export async function POST() {
         const charge = inv.charge as any
         const invCard = charge?.payment_method_details?.card
 
-        await supabase.from('membership_orders').insert({
+        // Use upsert with payment_transaction_id to prevent duplicate records
+        const orderRow = {
           user_id: userId,
           level_id: invLevelId,
           status: 'success',
@@ -430,7 +442,21 @@ export async function POST() {
             ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
             : new Date((inv.created ?? 0) * 1000).toISOString(),
           notes: inv.number ? `Invoice ${inv.number}` : null,
-        })
+        }
+
+        // Double-check for existing record with same payment_transaction_id before insert
+        const { data: existingOrder } = await supabase
+          .from('membership_orders')
+          .select('id')
+          .eq('payment_transaction_id', piId)
+          .limit(1)
+
+        if (existingOrder && existingOrder.length > 0) {
+          existingTxIds.add(piId)
+          continue
+        }
+
+        await supabase.from('membership_orders').insert(orderRow)
         existingTxIds.add(piId)
         stats.ordersBackfilled++
       } catch (err: any) {
