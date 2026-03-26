@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
+import { formatDateTime } from '@/lib/utils'
 
 interface LogEntry {
   id: number
@@ -247,7 +248,7 @@ export function LoginLogClient({
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {parseUA(log.user_agent)}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap" title={new Date(log.created_at).toLocaleString()}>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap" title={formatDateTime(log.created_at)}>
                       {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
                     </td>
                     <td className="px-4 py-3">

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getAdminUserById } from '@/lib/admin-queries'
 import { createAdminClient } from '@/lib/supabase/server'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
 import {
   updateUserRole,
@@ -491,7 +491,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
                       </span>
                       <span className="font-mono text-gray-500">{entry.ip_address ?? '—'}</span>
                       {location && <span className="text-gray-400">{location}</span>}
-                      <span className="ml-auto text-gray-400 whitespace-nowrap" title={new Date(entry.created_at).toLocaleString()}>
+                      <span className="ml-auto text-gray-400 whitespace-nowrap" title={formatDateTime(entry.created_at)}>
                         {formatDistanceToNow(new Date(entry.created_at), { addSuffix: true })}
                       </span>
                     </div>

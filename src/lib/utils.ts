@@ -4,6 +4,8 @@ export function cn(...classes: (string | undefined | null | false)[]) {
   return classes.filter(Boolean).join(' ')
 }
 
+const TZ = 'America/Los_Angeles'
+
 /** Format YYYYMMDD or ISO date string to "Month YYYY" */
 export function formatProductionDate(raw: string | null | undefined): string {
   if (!raw) return 'TBA'
@@ -12,19 +14,27 @@ export function formatProductionDate(raw: string | null | undefined): string {
     const year = raw.slice(0, 4)
     const month = parseInt(raw.slice(4, 6), 10) - 1
     const d = new Date(parseInt(year), month, 1)
-    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: TZ })
   }
   const d = new Date(raw)
   if (isNaN(d.getTime())) return 'TBA'
-  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: TZ })
 }
 
-/** Format ISO date to "Jan 15, 2024" */
+/** Format ISO date to "Jan 15, 2024" (Pacific Time) */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: TZ })
+}
+
+/** Format ISO datetime to "Jan 15, 2024, 3:45 PM" (Pacific Time) */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ })
 }
 
 export const PHASE_LABELS: Record<ProductionPhase, string> = {

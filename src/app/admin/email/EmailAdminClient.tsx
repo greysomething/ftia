@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { formatDate, formatDateTime } from '@/lib/utils'
 
 interface AudienceData {
   id: string
@@ -402,7 +403,7 @@ export default function EmailAdminClient({
                       </span>
                     </td>
                     <td className="text-sm text-gray-500">
-                      {email.created_at ? new Date(email.created_at).toLocaleDateString() : '--'}
+                      {email.created_at ? formatDate(email.created_at) : '--'}
                     </td>
                   </tr>
                 ))}
@@ -666,7 +667,7 @@ export default function EmailAdminClient({
                       </span>
                     </td>
                     <td className="text-sm text-gray-500">
-                      {log.sent_at ? new Date(log.sent_at).toLocaleString() : '--'}
+                      {log.sent_at ? formatDateTime(log.sent_at) : '--'}
                     </td>
                   </tr>
                 ))}
