@@ -790,7 +790,7 @@ export async function getUserActiveMembership(userId: string): Promise<any> {
     .from('user_memberships')
     .select('*, membership_levels(*)')
     .eq('user_id', userId)
-    .eq('status', 'active')
+    .in('status', ['active', 'trialing', 'past_due'])
     .order('created_at', { ascending: false })
     .limit(1)
     .single()

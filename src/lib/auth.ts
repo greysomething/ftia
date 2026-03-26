@@ -30,7 +30,7 @@ export async function requireMembership() {
     .from('user_memberships')
     .select('id, status, enddate, membership_levels(name)')
     .eq('user_id', user.id)
-    .eq('status', 'active')
+    .in('status', ['active', 'trialing', 'past_due'])
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -38,7 +38,7 @@ export async function requireMembership() {
   const m = membership as { id: number; status: string; enddate: string | null } | null
   const hasActive =
     m &&
-    m.status === 'active' &&
+    ['active', 'trialing', 'past_due'].includes(m.status) &&
     (!m.enddate || new Date(m.enddate) > new Date())
 
   if (!hasActive) {
@@ -119,12 +119,12 @@ export async function isMember(userId: string): Promise<boolean> {
     return true
   }
 
-  // Regular membership check
+  // Regular membership check (active, trialing, past_due all have access)
   const { data } = await supabase
     .from('user_memberships')
     .select('id')
     .eq('user_id', userId)
-    .eq('status', 'active')
+    .in('status', ['active', 'trialing', 'past_due'])
     .limit(1)
 
   return (data?.length ?? 0) > 0

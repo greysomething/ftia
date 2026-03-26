@@ -20,6 +20,8 @@ const ROLE_TABS = [
 const MEMBERSHIP_FILTERS = [
   { key: '', label: 'Any' },
   { key: 'active', label: 'Active' },
+  { key: 'trialing', label: 'Trialing' },
+  { key: 'past_due', label: 'Past Due' },
   { key: 'suspended', label: 'Suspended' },
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'expired', label: 'Expired' },
@@ -161,6 +163,24 @@ export default async function AdminUsersPage({ searchParams }: Props) {
           <div className="text-[11px] text-gray-500">Total Memberships</div>
         </div>
       </div>
+
+      {/* Trialing / Past Due counts (only show if any exist) */}
+      {(counts.trialingMemberships > 0 || counts.pastDueMemberships > 0) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {counts.trialingMemberships > 0 && (
+            <Link href={buildHref({ membership: 'trialing' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow text-center border-l-4 border-l-cyan-400">
+              <div className="text-xl font-bold text-cyan-600">{counts.trialingMemberships}</div>
+              <div className="text-[11px] text-gray-500">Trialing (Free Trial)</div>
+            </Link>
+          )}
+          {counts.pastDueMemberships > 0 && (
+            <Link href={buildHref({ membership: 'past_due' })} className="admin-card py-3 px-4 hover:shadow-md transition-shadow text-center border-l-4 border-l-orange-400">
+              <div className="text-xl font-bold text-orange-600">{counts.pastDueMemberships}</div>
+              <div className="text-[11px] text-gray-500">Past Due (Payment Failed)</div>
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Plan breakdown (only if memberships exist) */}
       {counts.planStats.length > 0 && (

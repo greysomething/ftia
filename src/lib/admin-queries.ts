@@ -601,11 +601,15 @@ export async function getAdminUsers({
 
   // 'active-members' tab = users with at least one active membership
   if (role === 'active-members') {
-    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'active'))
+    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => ['active', 'trialing', 'past_due'].includes(m.status)))
   }
 
   if (membership === 'active') {
     filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'active'))
+  } else if (membership === 'trialing') {
+    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'trialing'))
+  } else if (membership === 'past_due') {
+    filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'past_due'))
   } else if (membership === 'cancelled') {
     filtered = filtered.filter((u: any) => u.user_memberships?.some((m: any) => m.status === 'cancelled'))
   } else if (membership === 'expired') {
@@ -649,7 +653,7 @@ export async function getAdminUserCounts() {
     offset += batchSize
   }
 
-  const memCounts = { active: 0, cancelled: 0, expired: 0, pending: 0 }
+  const memCounts = { active: 0, trialing: 0, past_due: 0, cancelled: 0, expired: 0, pending: 0 }
   let mrr = 0 // Monthly Recurring Revenue
   const planBreakdown: Record<string, { name: string; active: number; total: number; mrr: number }> = {}
   const uniqueUserIds = new Set<string>()
@@ -687,6 +691,8 @@ export async function getAdminUserCounts() {
     admins: adminCount ?? 0,
     members: memberCount ?? 0,
     activeMemberships: memCounts.active,
+    trialingMemberships: memCounts.trialing,
+    pastDueMemberships: memCounts.past_due,
     cancelledMemberships: memCounts.cancelled,
     expiredMemberships: memCounts.expired,
     pendingMemberships: memCounts.pending,

@@ -107,6 +107,8 @@ export async function POST() {
     totalSubscriptions: uniqueSubs.length,
     synced: 0,
     syncedAsActive: 0,
+    syncedAsTrialing: 0,
+    syncedAsPastDue: 0,
     syncedAsCancelled: 0,
     syncedAsExpired: 0,
     usersCreated: 0,
@@ -189,10 +191,9 @@ export async function POST() {
           case 'active':
             membershipStatus = 'active'; break
           case 'trialing':
-            membershipStatus = 'active'; break
+            membershipStatus = 'trialing'; break
           case 'past_due':
-            // Payment failed but Stripe hasn't cancelled yet — still has access
-            membershipStatus = 'active'; break
+            membershipStatus = 'past_due'; break
           case 'canceled':
             membershipStatus = 'cancelled'; break
           default:
@@ -346,6 +347,8 @@ export async function POST() {
 
       stats.synced++
       if (membershipStatus === 'active') stats.syncedAsActive++
+      else if (membershipStatus === 'trialing') stats.syncedAsTrialing++
+      else if (membershipStatus === 'past_due') stats.syncedAsPastDue++
       else if (membershipStatus === 'cancelled') stats.syncedAsCancelled++
       else stats.syncedAsExpired++
     } catch (err: any) {
@@ -447,7 +450,7 @@ export async function POST() {
     message: [
       `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total Stripe subscriptions.`,
       `Stripe breakdown: ${stats.byStatus.active} active (${stats.byStatus.active_cancelling} cancelling at period end), ${stats.byStatus.trialing} trialing, ${stats.byStatus.past_due} past due, ${stats.byStatus.canceled} canceled, ${stats.byStatus.unpaid} unpaid.`,
-      `Synced: ${stats.syncedAsActive} active, ${stats.syncedAsCancelled} cancelled, ${stats.syncedAsExpired} expired.`,
+      `Synced: ${stats.syncedAsActive} active, ${stats.syncedAsTrialing} trialing, ${stats.syncedAsPastDue} past due, ${stats.syncedAsCancelled} cancelled, ${stats.syncedAsExpired} expired.`,
       stats.usersCreated > 0 ? `Created ${stats.usersCreated} new accounts.` : '',
       stats.ordersBackfilled > 0 ? `Backfilled ${stats.ordersBackfilled} payment records.` : '',
       stats.skipped > 0 ? `${stats.skipped} skipped.` : '',

@@ -307,11 +307,15 @@ export async function POST(req: NextRequest) {
 
       if (!membershipForUpdate) break
 
-      // Map status
+      // Map status — keep trialing and past_due as distinct statuses
       let updatedStatus: string
       switch (sub.status) {
-        case 'active': case 'trialing': case 'past_due':
-          updatedStatus = 'active'; break
+        case 'active':
+          updatedStatus = sub.cancel_at_period_end ? 'cancelled' : 'active'; break
+        case 'trialing':
+          updatedStatus = 'trialing'; break
+        case 'past_due':
+          updatedStatus = 'past_due'; break
         case 'canceled':
           updatedStatus = 'cancelled'; break
         default:
