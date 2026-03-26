@@ -134,7 +134,7 @@ export const emailTemplates: EmailTemplate[] = [
     category: 'marketing',
     variables: ['firstName', 'weekDate', 'weekEndDate', 'productionCount', 'digestUrl', 'productionsHtml', 'recipientEmail'],
     render: (vars) => ({
-      subject: `Weekly Digest Report: ${vars.productionCount || ''} Productions This Week — ${vars.weekDate || 'This Week'}`,
+      subject: `Weekly Digest: ${vars.productionCount || ''} Productions This Week — ${vars.weekDate || 'This Week'}`,
       html: `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
