@@ -176,6 +176,7 @@ export async function POST(req: NextRequest) {
           gateway: 'stripe',
           payment_transaction_id: checkoutPiId ?? null,
           subscription_transaction_id: subscriptionId as string ?? null,
+          billing_reason: 'subscription_create',
         })
       }
 
@@ -239,6 +240,7 @@ export async function POST(req: NextRequest) {
             gateway: 'stripe',
             payment_transaction_id: piId ?? null,
             subscription_transaction_id: subscriptionId as string ?? null,
+            billing_reason: invoice.billing_reason ?? 'subscription_cycle',
           })
         }
       }

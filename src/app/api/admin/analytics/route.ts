@@ -14,51 +14,69 @@ export async function GET(req: NextRequest) {
   since.setDate(since.getDate() - days)
   const sinceISO = since.toISOString()
 
-  // 1. Fetch ALL successful orders for users who have orders in this period
-  //    We need the full history to know each user's first-ever order (= sign-up)
-  const ordersInRange: Array<{ user_id: string; timestamp: string; total: number }> = []
+  // Fetch all successful orders in the date range
+  const ordersInRange: Array<{
+    user_id: string
+    timestamp: string
+    total: number
+    billing_reason: string | null
+  }>[] = []
+  const allOrders: Array<{
+    user_id: string
+    timestamp: string
+    total: number
+    billing_reason: string | null
+  }> = []
+
   let page = 0
   while (true) {
     const from = page * 1000
     const { data } = await supabase
       .from('membership_orders')
-      .select('user_id, timestamp, total')
+      .select('user_id, timestamp, total, billing_reason')
       .gte('timestamp', sinceISO)
       .eq('status', 'success')
       .order('timestamp', { ascending: true })
       .range(from, from + 999)
     if (!data || data.length === 0) break
-    ordersInRange.push(...data)
+    allOrders.push(...data)
     if (data.length < 1000) break
     page++
   }
 
-  // 2. For each user with orders in this range, find their first-ever order date
-  //    to determine if an order in-range is a new sign-up or a rebill
-  const userIds = [...new Set(ordersInRange.map(o => o.user_id))]
+  // For orders missing billing_reason, fall back to first-order heuristic
+  const usersNeedingLookup = new Set<string>()
+  for (const order of allOrders) {
+    if (!order.billing_reason) {
+      usersNeedingLookup.add(order.user_id)
+    }
+  }
 
-  const firstOrderMap: Record<string, string> = {} // user_id -> first order timestamp
+  const firstOrderMap: Record<string, string> = {}
+  if (usersNeedingLookup.size > 0) {
+    const userIds = [...usersNeedingLookup]
+    for (let i = 0; i < userIds.length; i += 100) {
+      const batch = userIds.slice(i, i + 100)
+      const { data } = await supabase
+        .from('membership_orders')
+        .select('user_id, timestamp')
+        .in('user_id', batch)
+        .eq('status', 'success')
+        .order('timestamp', { ascending: true })
 
-  // Batch fetch first orders for these users
-  for (let i = 0; i < userIds.length; i += 100) {
-    const batch = userIds.slice(i, i + 100)
-    const { data } = await supabase
-      .from('membership_orders')
-      .select('user_id, timestamp')
-      .in('user_id', batch)
-      .eq('status', 'success')
-      .order('timestamp', { ascending: true })
-
-    for (const row of data ?? []) {
-      // Keep only the earliest timestamp per user
-      if (!firstOrderMap[row.user_id] || row.timestamp < firstOrderMap[row.user_id]) {
-        firstOrderMap[row.user_id] = row.timestamp
+      for (const row of data ?? []) {
+        if (!firstOrderMap[row.user_id] || row.timestamp < firstOrderMap[row.user_id]) {
+          firstOrderMap[row.user_id] = row.timestamp
+        }
       }
     }
   }
 
-  // 3. Build daily buckets
-  const buckets: Record<string, { newSignups: number; rebills: number; signupRevenue: number; rebillRevenue: number; revenue: number }> = {}
+  // Build daily buckets
+  const buckets: Record<string, {
+    newSignups: number; rebills: number
+    signupRevenue: number; rebillRevenue: number; revenue: number
+  }> = {}
 
   for (let i = 0; i < days; i++) {
     const d = new Date()
@@ -67,13 +85,20 @@ export async function GET(req: NextRequest) {
     buckets[key] = { newSignups: 0, rebills: 0, signupRevenue: 0, rebillRevenue: 0, revenue: 0 }
   }
 
-  // 4. Categorize each order: if it's the user's first-ever order, it's a new sign-up
-  for (const order of ordersInRange) {
+  // Categorize each order
+  for (const order of allOrders) {
     const key = order.timestamp?.slice(0, 10)
     if (!key || !buckets[key]) continue
 
-    const firstOrderDate = firstOrderMap[order.user_id]?.slice(0, 10)
-    const isNewSignup = firstOrderDate === key
+    let isNewSignup: boolean
+    if (order.billing_reason) {
+      // Use the authoritative billing_reason from Stripe
+      isNewSignup = order.billing_reason === 'subscription_create'
+    } else {
+      // Fallback: compare to user's first-ever order date
+      const firstOrderDate = firstOrderMap[order.user_id]?.slice(0, 10)
+      isNewSignup = firstOrderDate === key
+    }
 
     if (isNewSignup) {
       buckets[key].newSignups++

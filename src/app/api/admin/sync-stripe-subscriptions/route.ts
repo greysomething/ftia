@@ -468,6 +468,7 @@ export async function POST() {
             ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
             : new Date((inv.created ?? 0) * 1000).toISOString(),
           notes: inv.number ? `Invoice ${inv.number}` : null,
+          billing_reason: inv.billing_reason ?? null,
         }
 
         // Double-check for existing record with same payment_transaction_id before insert
@@ -478,6 +479,22 @@ export async function POST() {
           .limit(1)
 
         if (existingOrder && existingOrder.length > 0) {
+          // Update billing_reason on existing records that are missing it
+          if (inv.billing_reason) {
+            await supabase
+              .from('membership_orders')
+              .update({
+                billing_reason: inv.billing_reason,
+                ...(invCard ? {
+                  cardtype: invCard.brand ?? null,
+                  accountnumber: invCard.last4 ?? null,
+                  expirationmonth: invCard.exp_month ? String(invCard.exp_month) : null,
+                  expirationyear: invCard.exp_year ? String(invCard.exp_year) : null,
+                } : {}),
+              })
+              .eq('id', existingOrder[0].id)
+              .is('billing_reason', null)
+          }
           existingTxIds.add(piId)
           continue
         }
