@@ -191,10 +191,15 @@ export async function POST() {
 
       if (!userId) { stats.skipped++; continue }
 
-      // Update profile (stripe_customer_id if column exists, display_name always)
+      // Update profile with Stripe customer data
+      // Use Stripe customer creation date as the real "joined" date
+      const stripeJoined = customer.created
+        ? new Date(customer.created * 1000).toISOString()
+        : undefined
       await supabase.from('user_profiles').upsert({
         id: userId,
         display_name: customer.name || email.split('@')[0],
+        ...(stripeJoined ? { created_at: stripeJoined } : {}),
       }, { onConflict: 'id' }).then(() => {
         // Try to set stripe_customer_id separately (column may not exist)
         return supabase.from('user_profiles').update({ stripe_customer_id: customer.id } as any).eq('id', userId)
