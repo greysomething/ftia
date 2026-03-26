@@ -113,6 +113,7 @@ export async function POST() {
     syncedAsCancelled: 0,
     syncedAsExpired: 0,
     usersCreated: 0,
+    levelsCreated: 0,
     skipped: 0,
     ordersBackfilled: 0,
     errors: [] as string[],
@@ -206,12 +207,15 @@ export async function POST() {
       const priceId = sub.items?.data?.[0]?.price?.id
       let levelId = priceId ? priceLevelMap[priceId] : undefined
 
+      // If no exact stripe_price_id match, try matching by amount to existing levels
+      // (only match levels that DON'T already have a stripe_price_id set)
       if (!levelId && sub.items?.data?.[0]?.price) {
         const amount = (sub.items.data[0].price.unit_amount || 0) / 100
-        const match = (levels ?? []).find((l: any) => Math.abs(parseFloat(l.billing_amount) - amount) < 1)
+        const match = (levels ?? []).find((l: any) =>
+          !l.stripe_price_id && Math.abs(parseFloat(l.billing_amount) - amount) < 1
+        )
         if (match) {
           levelId = match.id
-          // Auto-map this price for future
           if (priceId && priceId.startsWith('price_')) {
             priceLevelMap[priceId] = match.id
             await supabase.from('membership_levels').update({ stripe_price_id: priceId }).eq('id', match.id)
@@ -219,7 +223,70 @@ export async function POST() {
         }
       }
 
-      if (!levelId) levelId = 3 // Default: Monthly Unlimited
+      // Auto-create a new membership level for unmapped Stripe prices
+      // (legacy prices, promotional prices, etc.)
+      if (!levelId && priceId && sub.items?.data?.[0]?.price) {
+        const price = sub.items.data[0].price
+        const amount = (price.unit_amount || 0) / 100
+        const interval = price.recurring?.interval ?? 'month'
+        const cyclePeriod = interval === 'year' ? 'Year' : interval === 'week' ? 'Week' : 'Month'
+        const cycleNumber = price.recurring?.interval_count ?? 1
+
+        // Fetch product name from Stripe
+        let productName = ''
+        try {
+          const productId = typeof price.product === 'string' ? price.product : (price.product as any)?.id
+          if (productId) {
+            const product = await stripe.products.retrieve(productId)
+            productName = product.name || ''
+          }
+        } catch { /* use fallback name */ }
+
+        // Build a descriptive name
+        const levelName = productName
+          || `$${amount.toFixed(2)}/${cyclePeriod.toLowerCase()}`
+
+        // Check if we already created this level in a previous iteration
+        const existingAutoLevel = (levels ?? []).find((l: any) => l.stripe_price_id === priceId)
+        if (existingAutoLevel) {
+          levelId = existingAutoLevel.id
+        } else {
+          const { data: newLevel, error: levelErr } = await supabase
+            .from('membership_levels')
+            .insert({
+              name: levelName,
+              description: `Auto-created from Stripe price ${priceId}`,
+              billing_amount: amount,
+              initial_payment: amount,
+              cycle_number: cycleNumber,
+              cycle_period: cyclePeriod,
+              stripe_price_id: priceId,
+              is_active: true,
+              allow_signups: false, // Hidden — legacy/promotional
+            })
+            .select('id')
+            .single()
+
+          if (newLevel) {
+            levelId = newLevel.id
+            priceLevelMap[priceId] = newLevel.id
+            // Add to local levels array so subsequent subs can match
+            ;(levels ?? []).push({
+              id: newLevel.id,
+              name: levelName,
+              stripe_price_id: priceId,
+              billing_amount: String(amount),
+              cycle_period: cyclePeriod,
+            })
+            stats.levelsCreated = (stats.levelsCreated ?? 0) + 1
+            console.log(`[Stripe Sync] Auto-created level "${levelName}" for price ${priceId} ($${amount}/${cyclePeriod})`)
+          } else if (levelErr) {
+            stats.errors.push(`Failed to create level for ${priceId}: ${levelErr.message}`)
+          }
+        }
+      }
+
+      if (!levelId) levelId = 3 // Last resort fallback
 
       // Find or create user
       let userId: string | null = null
@@ -441,7 +508,7 @@ export async function POST() {
           const mSubPriceId = matchedSub.items?.data?.[0]?.price?.id
           invLevelId = mSubPriceId ? priceLevelMap[mSubPriceId] : undefined
         }
-        if (!invLevelId) invLevelId = 3
+        if (!invLevelId) invLevelId = 3 // Fallback for invoices without a matched price
 
         // Extract card info from charge if available
         const charge = inv.charge as any
@@ -610,6 +677,7 @@ export async function POST() {
       `Stripe breakdown: ${stats.byStatus.active} active (${stats.byStatus.active_cancelling} cancelling at period end), ${stats.byStatus.trialing} trialing, ${stats.byStatus.past_due} past due, ${stats.byStatus.canceled} canceled, ${stats.byStatus.unpaid} unpaid.`,
       `Synced: ${stats.syncedAsActive} active, ${stats.syncedAsTrialing} trialing, ${stats.syncedAsPastDue} past due, ${stats.syncedAsCancelled} cancelled, ${stats.syncedAsExpired} expired.`,
       stats.usersCreated > 0 ? `Created ${stats.usersCreated} new accounts.` : '',
+      stats.levelsCreated > 0 ? `Auto-created ${stats.levelsCreated} new membership levels for unmapped Stripe prices.` : '',
       stats.ordersBackfilled > 0 ? `Backfilled ${stats.ordersBackfilled} payment records.` : '',
       stripeCustomersBackfilled > 0 ? `Backfilled name on ${stripeCustomersBackfilled} Stripe customers.` : '',
       stats.skipped > 0 ? `${stats.skipped} skipped.` : '',
