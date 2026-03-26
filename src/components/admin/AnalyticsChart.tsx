@@ -2,20 +2,24 @@
 
 import { useEffect, useState } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts'
 
 interface DataPoint {
   date: string
-  signups: number
+  newSignups: number
   rebills: number
+  signupRevenue: number
+  rebillRevenue: number
   revenue: number
 }
 
 interface Summary {
-  signups: number
+  newSignups: number
   rebills: number
   revenue: number
+  signupRevenue: number
+  rebillRevenue: number
 }
 
 const RANGES = [
@@ -27,8 +31,10 @@ const RANGES = [
 
 function formatDateLabel(dateStr: string, days: number) {
   const d = new Date(dateStr + 'T00:00:00')
+  if (days <= 7) return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })
   if (days <= 30) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (days <= 90) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
 }
 
 function CustomTooltip({ active, payload, label }: any) {
@@ -36,25 +42,53 @@ function CustomTooltip({ active, payload, label }: any) {
   const d = new Date(label + 'T00:00:00')
   const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 
+  // Get data from the chart payload
+  const newSignups = payload.find((p: any) => p.dataKey === 'newSignups')
+  const rebills = payload.find((p: any) => p.dataKey === 'rebills')
+  const signupRev = payload.find((p: any) => p.dataKey === 'signupRevenue')
+  const rebillRev = payload.find((p: any) => p.dataKey === 'rebillRevenue')
+
+  const totalPayments = (newSignups?.value ?? 0) + (rebills?.value ?? 0)
+  const totalRevenue = (signupRev?.value ?? 0) + (rebillRev?.value ?? 0)
+
   return (
-    <div className="bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-sm">
-      <p className="font-semibold text-gray-900 mb-1.5">{dateStr}</p>
-      {payload.map((entry: any) => (
-        <div key={entry.name} className="flex items-center gap-2 py-0.5">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-          <span className="text-gray-600">{entry.name}:</span>
-          <span className="font-semibold text-gray-900">
-            {entry.name === 'Revenue' ? `$${entry.value.toFixed(2)}` : entry.value}
-          </span>
+    <div className="bg-white border border-gray-200 shadow-xl rounded-xl p-4 text-sm min-w-[200px]">
+      <p className="font-semibold text-gray-900 mb-2 pb-2 border-b border-gray-100">{dateStr}</p>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-sm bg-blue-500" />
+            <span className="text-gray-600">New Sign-ups</span>
+          </div>
+          <span className="font-semibold text-gray-900">{newSignups?.value ?? 0}</span>
         </div>
-      ))}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+            <span className="text-gray-600">Recurring</span>
+          </div>
+          <span className="font-semibold text-gray-900">{rebills?.value ?? 0}</span>
+        </div>
+      </div>
+
+      <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-gray-500">Total Payments</span>
+          <span className="font-bold text-gray-900">{totalPayments}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-gray-500">Revenue</span>
+          <span className="font-bold text-emerald-700">${totalRevenue.toFixed(2)}</span>
+        </div>
+      </div>
     </div>
   )
 }
 
 export function AnalyticsChart() {
   const [data, setData] = useState<DataPoint[]>([])
-  const [summary, setSummary] = useState<Summary>({ signups: 0, rebills: 0, revenue: 0 })
+  const [summary, setSummary] = useState<Summary>({ newSignups: 0, rebills: 0, revenue: 0, signupRevenue: 0, rebillRevenue: 0 })
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
 
@@ -64,19 +98,22 @@ export function AnalyticsChart() {
       .then((r) => r.json())
       .then((d) => {
         setData(d.chartData ?? [])
-        setSummary(d.summary ?? { signups: 0, rebills: 0, revenue: 0 })
+        setSummary(d.summary ?? { newSignups: 0, rebills: 0, revenue: 0, signupRevenue: 0, rebillRevenue: 0 })
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [days])
+
+  const totalPayments = summary.newSignups + summary.rebills
+  const avgDaily = days > 0 ? (summary.revenue / days) : 0
 
   return (
     <div className="admin-card mb-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">Growth Analytics</h2>
-          <p className="text-xs text-gray-400 mt-0.5">New sign-ups, payments, and revenue</p>
+          <h2 className="text-lg font-bold text-gray-900">Payment Analytics</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Stripe transactions — new sign-ups vs recurring payments</p>
         </div>
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {RANGES.map((r) => (
@@ -96,48 +133,39 @@ export function AnalyticsChart() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg p-3.5">
-          <p className="text-xs font-medium text-blue-600 uppercase tracking-wider">New Sign-ups</p>
-          <p className="text-2xl font-bold text-blue-900 mt-1">{summary.signups.toLocaleString()}</p>
-          <p className="text-xs text-blue-500 mt-0.5">Last {days} days</p>
+          <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider">New Sign-ups</p>
+          <p className="text-2xl font-bold text-blue-900 mt-1">{summary.newSignups.toLocaleString()}</p>
+          <p className="text-xs text-blue-500 mt-0.5">${summary.signupRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} revenue</p>
         </div>
         <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-lg p-3.5">
-          <p className="text-xs font-medium text-emerald-600 uppercase tracking-wider">Payments</p>
+          <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wider">Recurring</p>
           <p className="text-2xl font-bold text-emerald-900 mt-1">{summary.rebills.toLocaleString()}</p>
-          <p className="text-xs text-emerald-500 mt-0.5">Last {days} days</p>
+          <p className="text-xs text-emerald-500 mt-0.5">${summary.rebillRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} revenue</p>
         </div>
         <div className="bg-gradient-to-br from-violet-50 to-violet-100/50 rounded-lg p-3.5">
-          <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Revenue</p>
+          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider">Total Revenue</p>
           <p className="text-2xl font-bold text-violet-900 mt-1">${summary.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-          <p className="text-xs text-violet-500 mt-0.5">Last {days} days</p>
+          <p className="text-xs text-violet-500 mt-0.5">{totalPayments} payments</p>
+        </div>
+        <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-lg p-3.5">
+          <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wider">Daily Avg</p>
+          <p className="text-2xl font-bold text-amber-900 mt-1">${avgDaily.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <p className="text-xs text-amber-500 mt-0.5">per day ({days}D)</p>
         </div>
       </div>
 
       {/* Chart */}
-      <div className="h-[280px]">
+      <div className="h-[300px]">
         {loading ? (
           <div className="h-full bg-gray-50 rounded-lg animate-pulse flex items-center justify-center">
-            <span className="text-sm text-gray-400">Loading chart data...</span>
+            <span className="text-sm text-gray-400">Loading payment data...</span>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gradSignups" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradRebills" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+            <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
               <XAxis
                 dataKey="date"
                 tickFormatter={(v) => formatDateLabel(v, days)}
@@ -151,46 +179,30 @@ export function AnalyticsChart() {
                 axisLine={false}
                 tickLine={false}
                 width={35}
+                allowDecimals={false}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: '#F9FAFB' }} />
               <Legend
-                iconType="circle"
-                iconSize={8}
-                wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                iconType="square"
+                iconSize={10}
+                wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }}
               />
-              <Area
-                type="monotone"
-                dataKey="signups"
-                name="Sign-ups"
-                stroke="#3B82F6"
-                strokeWidth={2}
-                fill="url(#gradSignups)"
-                dot={days <= 30}
-                activeDot={{ r: 5, strokeWidth: 2, fill: '#fff' }}
+              <ReferenceLine y={0} stroke="#E5E7EB" />
+              <Bar
+                dataKey="newSignups"
+                name="New Sign-ups"
+                fill="#3B82F6"
+                radius={[2, 2, 0, 0]}
+                stackId="payments"
               />
-              <Area
-                type="monotone"
+              <Bar
                 dataKey="rebills"
-                name="Payments"
-                stroke="#10B981"
-                strokeWidth={2}
-                fill="url(#gradRebills)"
-                dot={days <= 30}
-                activeDot={{ r: 5, strokeWidth: 2, fill: '#fff' }}
+                name="Recurring"
+                fill="#10B981"
+                radius={[2, 2, 0, 0]}
+                stackId="payments"
               />
-              <Area
-                type="monotone"
-                dataKey="revenue"
-                name="Revenue"
-                stroke="#8B5CF6"
-                strokeWidth={2}
-                fill="url(#gradRevenue)"
-                dot={false}
-                activeDot={{ r: 5, strokeWidth: 2, fill: '#fff' }}
-                yAxisId="right"
-                hide
-              />
-            </AreaChart>
+            </BarChart>
           </ResponsiveContainer>
         )}
       </div>
