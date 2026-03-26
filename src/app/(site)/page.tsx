@@ -178,7 +178,7 @@ export default async function HomePage() {
           <div className="grid md:grid-cols-2 gap-10 items-center">
             <div>
               <h2 className="text-3xl md:text-4xl font-bold text-primary mb-4 leading-tight">
-                We monitor &amp; publish <span className="text-accent">20+ new projects</span> weekly
+                We monitor &amp; publish <span className="text-accent">40+ new projects</span> weekly
               </h2>
               <p className="text-gray-600 mb-6 leading-relaxed">
                 Our editorial team tracks all major studios and production companies across North America,
