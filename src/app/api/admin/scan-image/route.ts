@@ -16,6 +16,7 @@ IMPORTANT FIELD MAPPING RULES:
 - For locations, focus on filling "city", "stage" (state/province abbreviation), and "country" fields. Leave "location" blank unless there is a specific place name (e.g. a studio name, venue, or address). Each location is a separate object.
 - For companies, extract ALL contact details: multiple phones, faxes, emails are common.
 - For crew, extract phone numbers and emails if visible next to their names.
+- For crew roles, use the full role name without abbreviations. For example: "POC" → "Production Coordinator", "UPM" → "Unit Production Manager", "AD" → "Assistant Director", "DP" → "Director of Photography", "EP" → "Executive Producer", "LP" → "Line Producer", "CD" → "Casting Director", "PD" → "Production Designer".
 
 CONTENT/DESCRIPTION RULES:
 - The "content" field should ONLY contain information about the project itself: plot synopsis, storyline, what the show/film is about, where and when it's filming, and who is producing it.
