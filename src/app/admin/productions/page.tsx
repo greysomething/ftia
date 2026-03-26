@@ -214,7 +214,7 @@ export default async function AdminProductionsPage({ searchParams }: Props) {
                           : p.visibility === 'members_only' ? 'badge-blue'
                           : 'badge-gray'
                       }`}>
-                        {p.visibility === 'publish' ? 'Published' : p.visibility}
+                        {p.visibility === 'publish' ? 'Published' : p.visibility === 'private' ? 'Draft' : p.visibility}
                       </span>
                     </td>
                     <td className="text-xs text-gray-500 whitespace-nowrap">

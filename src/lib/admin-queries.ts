@@ -74,7 +74,12 @@ export async function getAdminProductions({
   }
 
   if (visibility) {
-    query = query.eq('visibility', visibility)
+    // Draft tab should show both 'draft' and legacy 'private' records
+    if (visibility === 'draft') {
+      query = query.in('visibility', ['draft', 'private'])
+    } else {
+      query = query.eq('visibility', visibility)
+    }
   }
 
   const { data, count, error } = await query
@@ -96,7 +101,7 @@ export async function getAdminProductionCounts() {
   ] = await Promise.all([
     supabase.from('productions').select('*', { count: 'exact', head: true }),
     supabase.from('productions').select('*', { count: 'exact', head: true }).eq('visibility', 'publish'),
-    supabase.from('productions').select('*', { count: 'exact', head: true }).eq('visibility', 'draft'),
+    supabase.from('productions').select('*', { count: 'exact', head: true }).in('visibility', ['draft', 'private']),
     supabase.from('productions').select('*', { count: 'exact', head: true }).eq('visibility', 'pending'),
     supabase.from('productions').select('*', { count: 'exact', head: true }).eq('visibility', 'trash'),
   ])
