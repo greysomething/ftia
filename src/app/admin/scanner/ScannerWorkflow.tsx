@@ -32,7 +32,26 @@ interface DuplicateMatch {
   similarity_score: number; is_same_season: boolean; season_info: string | null
 }
 
-type Step = 'upload' | 'extracting' | 'duplicates' | 'research' | 'review'
+type Step = 'upload' | 'extracting' | 'duplicates' | 'compare' | 'research' | 'review'
+
+interface ExistingProduction {
+  id: number; title: string; slug: string; content: string; excerpt: string
+  production_date_start: string | null; production_date_end: string | null
+  computed_status: string | null; visibility: string
+  production_type_links: { is_primary: boolean; production_types: { id: number; name: string; slug: string } }[]
+  production_status_links: { is_primary: boolean; production_statuses: { id: number; name: string; slug: string } }[]
+  production_locations: { id: number; location: string; city: string; stage: string; country: string; sort_order: number }[]
+  production_company_links: { id: number; company_id: number | null; inline_name: string; inline_address: string; inline_phones: string[]; inline_faxes: string[]; inline_emails: string[]; inline_linkedin: string; sort_order: number; companies: { id: number; title: string; slug: string } | null }[]
+  production_crew_roles: { id: number; crew_id: number | null; role_name: string; inline_name: string; inline_linkedin: string; inline_phones: string[]; inline_emails: string[]; sort_order: number; crew_members: { id: number; name: string; slug: string } | null }[]
+}
+
+interface FieldDiff {
+  field: string
+  label: string
+  existing: string
+  scanned: string
+  accepted: boolean
+}
 
 interface ScannerWorkflowProps {
   typeOptions: TypeOption[]
@@ -43,6 +62,7 @@ const STEPS: { key: Step; label: string }[] = [
   { key: 'upload', label: 'Upload' },
   { key: 'extracting', label: 'Extract' },
   { key: 'duplicates', label: 'Duplicates' },
+  { key: 'compare', label: 'Compare' },
   { key: 'research', label: 'Research' },
   { key: 'review', label: 'Review & Create' },
 ]
@@ -59,6 +79,15 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
   const [researchData, setResearchData] = useState<any>(null)
   const [researching, setResearching] = useState(false)
+
+  // Compare/update state
+  const [existingProduction, setExistingProduction] = useState<ExistingProduction | null>(null)
+  const [loadingExisting, setLoadingExisting] = useState(false)
+  const [fieldDiffs, setFieldDiffs] = useState<FieldDiff[]>([])
+  const [crewDiffs, setCrewDiffs] = useState<{ added: CrewRow[]; acceptedAdded: boolean[] }>({ added: [], acceptedAdded: [] })
+  const [companyDiffs, setCompanyDiffs] = useState<{ added: CompanyRow[]; acceptedAdded: boolean[] }>({ added: [], acceptedAdded: [] })
+  const [locationDiffs, setLocationDiffs] = useState<{ added: LocationRow[]; acceptedAdded: boolean[] }>({ added: [], acceptedAdded: [] })
+  const [updateMode, setUpdateMode] = useState(false) // true = updating existing, false = creating new
 
   // Entity matching state
   const [crewMatches, setCrewMatches] = useState<Record<string, MatchCandidate[]>>({})
@@ -241,6 +270,148 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     setMatchingEntities(false)
   }
 
+  // ── Compare & Update flow ──
+  async function handleCompare(dupId: number) {
+    setLoadingExisting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/get-production?id=${dupId}`)
+      if (!res.ok) throw new Error('Failed to load production')
+      const { production } = await res.json()
+      setExistingProduction(production)
+      computeDiffs(production)
+      setStep('compare')
+    } catch (err: any) {
+      setError(err.message || 'Failed to load existing production')
+    }
+    setLoadingExisting(false)
+  }
+
+  function computeDiffs(existing: ExistingProduction) {
+    const diffs: FieldDiff[] = []
+
+    // Text fields
+    const textFields: { field: string; label: string; existingVal: string; scannedVal: string }[] = [
+      { field: 'title', label: 'Title', existingVal: existing.title || '', scannedVal: title || '' },
+      { field: 'excerpt', label: 'Logline / Excerpt', existingVal: existing.excerpt || '', scannedVal: excerpt || '' },
+      { field: 'content', label: 'Description', existingVal: existing.content || '', scannedVal: content || '' },
+      { field: 'production_date_start', label: 'Start Date', existingVal: existing.production_date_start || '', scannedVal: dateStart || '' },
+      { field: 'production_date_end', label: 'End Date', existingVal: existing.production_date_end || '', scannedVal: dateEnd || '' },
+      { field: 'computed_status', label: 'Production Phase', existingVal: existing.computed_status || '', scannedVal: computedStatus || '' },
+    ]
+
+    for (const f of textFields) {
+      const ev = f.existingVal.trim()
+      const sv = f.scannedVal.trim()
+      if (sv && sv !== ev) {
+        diffs.push({ field: f.field, label: f.label, existing: ev, scanned: sv, accepted: true })
+      }
+    }
+
+    setFieldDiffs(diffs)
+
+    // Crew: find new crew from scan that aren't in existing
+    const existingCrewNames = new Set(
+      (existing.production_crew_roles ?? []).map(c => c.inline_name?.toLowerCase().trim()).filter(Boolean)
+    )
+    const newCrew = crew.filter(c => c.inline_name && !existingCrewNames.has(c.inline_name.toLowerCase().trim()))
+    setCrewDiffs({ added: newCrew, acceptedAdded: newCrew.map(() => true) })
+
+    // Companies: find new companies from scan not in existing
+    const existingCompanyNames = new Set(
+      (existing.production_company_links ?? []).map(c => c.inline_name?.toLowerCase().trim()).filter(Boolean)
+    )
+    const newCompanies = companies.filter(c => c.inline_name && !existingCompanyNames.has(c.inline_name.toLowerCase().trim()))
+    setCompanyDiffs({ added: newCompanies, acceptedAdded: newCompanies.map(() => true) })
+
+    // Locations: find new locations from scan not in existing
+    const existingLocKeys = new Set(
+      (existing.production_locations ?? []).map(l => `${l.city?.toLowerCase().trim()}|${l.location?.toLowerCase().trim()}`)
+    )
+    const newLocations = locations.filter(l => {
+      const key = `${l.city?.toLowerCase().trim()}|${l.location?.toLowerCase().trim()}`
+      return (l.city || l.location) && !existingLocKeys.has(key)
+    })
+    setLocationDiffs({ added: newLocations, acceptedAdded: newLocations.map(() => true) })
+  }
+
+  function applyUpdates() {
+    if (!existingProduction) return
+
+    // Build merged data from existing + accepted diffs
+    let mergedTitle = existingProduction.title
+    let mergedExcerpt = existingProduction.excerpt || ''
+    let mergedContent = existingProduction.content || ''
+    let mergedDateStart = existingProduction.production_date_start || ''
+    let mergedDateEnd = existingProduction.production_date_end || ''
+    let mergedComputedStatus = existingProduction.computed_status || ''
+
+    for (const diff of fieldDiffs) {
+      if (!diff.accepted) continue
+      switch (diff.field) {
+        case 'title': mergedTitle = diff.scanned; break
+        case 'excerpt': mergedExcerpt = diff.scanned; break
+        case 'content': mergedContent = diff.scanned; break
+        case 'production_date_start': mergedDateStart = diff.scanned; break
+        case 'production_date_end': mergedDateEnd = diff.scanned; break
+        case 'computed_status': mergedComputedStatus = diff.scanned; break
+      }
+    }
+
+    // Populate form state with merged data
+    setTitle(mergedTitle)
+    setExcerpt(mergedExcerpt)
+    setContent(mergedContent)
+    setDateStart(mergedDateStart)
+    setDateEnd(mergedDateEnd)
+    setComputedStatus(mergedComputedStatus)
+
+    // Keep existing types/statuses (scan may not have them)
+    const existingTypes = (existingProduction.production_type_links ?? []).map(l => l.production_types.id)
+    const existingPrimaryType = existingProduction.production_type_links?.find(l => l.is_primary)?.production_types.id ?? null
+    if (selectedTypeIds.length === 0 && existingTypes.length > 0) {
+      setSelectedTypeIds(existingTypes)
+      setPrimaryTypeId(existingPrimaryType)
+    }
+    const existingStatuses = (existingProduction.production_status_links ?? []).map(l => l.production_statuses.id)
+    const existingPrimaryStatus = existingProduction.production_status_links?.find(l => l.is_primary)?.production_statuses.id ?? null
+    if (selectedStatusIds.length === 0 && existingStatuses.length > 0) {
+      setSelectedStatusIds(existingStatuses)
+      setPrimaryStatusId(existingPrimaryStatus)
+    }
+
+    // Merge crew: existing + accepted new
+    const existingCrew: CrewRow[] = (existingProduction.production_crew_roles ?? []).map(c => ({
+      role_name: c.role_name || '', inline_name: c.inline_name || '',
+      crew_id: c.crew_id, inline_phones: c.inline_phones || [],
+      inline_emails: c.inline_emails || [], inline_linkedin: c.inline_linkedin || '',
+    }))
+    const acceptedNewCrew = crewDiffs.added.filter((_, i) => crewDiffs.acceptedAdded[i])
+    setCrew([...existingCrew, ...acceptedNewCrew])
+
+    // Merge companies: existing + accepted new
+    const existingCompanies: CompanyRow[] = (existingProduction.production_company_links ?? []).map(c => ({
+      inline_name: c.inline_name || '', inline_address: c.inline_address || '',
+      company_id: c.company_id, inline_phones: c.inline_phones || [],
+      inline_faxes: c.inline_faxes || [], inline_emails: c.inline_emails || [],
+      inline_linkedin: c.inline_linkedin || '',
+    }))
+    const acceptedNewCompanies = companyDiffs.added.filter((_, i) => companyDiffs.acceptedAdded[i])
+    setCompanies([...existingCompanies, ...acceptedNewCompanies])
+
+    // Merge locations: existing + accepted new
+    const existingLocs: LocationRow[] = (existingProduction.production_locations ?? []).map(l => ({
+      location: l.location || '', city: l.city || '', stage: l.stage || '', country: l.country || '',
+    }))
+    const acceptedNewLocs = locationDiffs.added.filter((_, i) => locationDiffs.acceptedAdded[i])
+    setLocations([...existingLocs, ...acceptedNewLocs])
+
+    setUpdateMode(true)
+    setStep('review')
+  }
+
+  const hasAnyChanges = fieldDiffs.length > 0 || crewDiffs.added.length > 0 || companyDiffs.added.length > 0 || locationDiffs.added.length > 0
+
   // ── Step 4: AI Research ──
   async function handleResearch() {
     setResearching(true)
@@ -362,6 +533,9 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     setTitle(''); setExcerpt(''); setContent(''); setComputedStatus(''); setDateStart(''); setDateEnd('')
     setSelectedTypeIds([]); setPrimaryTypeId(null); setSelectedStatusIds([])
     setPrimaryStatusId(null); setLocations([]); setCrew([]); setCompanies([])
+    setExistingProduction(null); setFieldDiffs([]); setCrewDiffs({ added: [], acceptedAdded: [] })
+    setCompanyDiffs({ added: [], acceptedAdded: [] }); setLocationDiffs({ added: [], acceptedAdded: [] })
+    setUpdateMode(false)
   }
 
   const stepIdx = STEPS.findIndex(s => s.key === step)
@@ -480,9 +654,18 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                       )}
                     </div>
                   </div>
-                  <Link href={`/admin/productions/${dup.id}/edit`} className="btn-outline text-xs py-1 px-3">
-                    Open Existing
-                  </Link>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleCompare(dup.id)}
+                      disabled={loadingExisting}
+                      className="btn-primary text-xs py-1 px-3"
+                    >
+                      {loadingExisting ? 'Loading...' : 'Compare & Update'}
+                    </button>
+                    <Link href={`/admin/productions/${dup.id}/edit`} className="btn-outline text-xs py-1 px-3">
+                      Open Existing
+                    </Link>
+                  </div>
                 </div>
               ))}
             </div>
@@ -493,6 +676,207 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
               </button>
               <button onClick={resetAll} className="btn-outline text-sm">
                 Start Over
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ STEP 3b: COMPARE & UPDATE ═══ */}
+      {step === 'compare' && existingProduction && (
+        <div className="space-y-4">
+          <div className="admin-card border-l-4 border-[#3ea8c8]">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Compare Scanned Data with Existing Production</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Review what&apos;s changed. Toggle checkboxes to accept or reject each update.
+                </p>
+              </div>
+              <Link href={`/admin/productions/${existingProduction.id}/edit`} target="_blank"
+                className="text-xs text-[#3ea8c8] hover:underline flex items-center gap-1">
+                View existing
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </Link>
+            </div>
+
+            {!hasAnyChanges && (
+              <div className="p-6 text-center bg-green-50 rounded-lg border border-green-200">
+                <svg className="w-10 h-10 text-green-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <p className="font-semibold text-green-800">No differences found</p>
+                <p className="text-sm text-green-600 mt-1">The scanned data matches the existing production.</p>
+              </div>
+            )}
+
+            {/* Field-level diffs */}
+            {fieldDiffs.length > 0 && (
+              <div className="space-y-3 mb-5">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Field Changes</h4>
+                {fieldDiffs.map((diff, i) => (
+                  <label key={diff.field} className={`block p-3 rounded-lg border cursor-pointer transition-colors ${
+                    diff.accepted ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={diff.accepted}
+                        onChange={() => {
+                          const updated = [...fieldDiffs]
+                          updated[i] = { ...updated[i], accepted: !updated[i].accepted }
+                          setFieldDiffs(updated)
+                        }}
+                        className="rounded border-gray-300 text-[#3ea8c8] focus:ring-[#3ea8c8]"
+                      />
+                      <span className="text-sm font-semibold text-gray-900">{diff.label}</span>
+                    </div>
+                    <div className="mt-2 ml-7 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-[10px] font-semibold text-red-500 uppercase">Current</span>
+                        <p className="text-gray-600 mt-0.5 whitespace-pre-wrap break-words bg-red-50 rounded px-2 py-1 text-xs">
+                          {diff.existing || <span className="italic text-gray-400">empty</span>}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-semibold text-green-600 uppercase">From Screenshot</span>
+                        <p className="text-gray-800 mt-0.5 whitespace-pre-wrap break-words bg-green-50 rounded px-2 py-1 text-xs">
+                          {diff.scanned}
+                        </p>
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* New crew from scan */}
+            {crewDiffs.added.length > 0 && (
+              <div className="space-y-2 mb-5">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  New Crew Members ({crewDiffs.added.length})
+                </h4>
+                {crewDiffs.added.map((c, i) => (
+                  <label key={i} className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                    crewDiffs.acceptedAdded[i] ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={crewDiffs.acceptedAdded[i]}
+                      onChange={() => {
+                        const updated = [...crewDiffs.acceptedAdded]
+                        updated[i] = !updated[i]
+                        setCrewDiffs(prev => ({ ...prev, acceptedAdded: updated }))
+                      }}
+                      className="rounded border-gray-300 text-[#3ea8c8] focus:ring-[#3ea8c8]"
+                    />
+                    <div className="flex-1 text-sm">
+                      <span className="font-medium text-gray-900">{c.inline_name}</span>
+                      {c.role_name && <span className="text-gray-500 ml-2">— {c.role_name}</span>}
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-semibold">NEW</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* New companies from scan */}
+            {companyDiffs.added.length > 0 && (
+              <div className="space-y-2 mb-5">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  New Companies ({companyDiffs.added.length})
+                </h4>
+                {companyDiffs.added.map((c, i) => (
+                  <label key={i} className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                    companyDiffs.acceptedAdded[i] ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={companyDiffs.acceptedAdded[i]}
+                      onChange={() => {
+                        const updated = [...companyDiffs.acceptedAdded]
+                        updated[i] = !updated[i]
+                        setCompanyDiffs(prev => ({ ...prev, acceptedAdded: updated }))
+                      }}
+                      className="rounded border-gray-300 text-[#3ea8c8] focus:ring-[#3ea8c8]"
+                    />
+                    <span className="flex-1 text-sm font-medium text-gray-900">{c.inline_name}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-semibold">NEW</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* New locations from scan */}
+            {locationDiffs.added.length > 0 && (
+              <div className="space-y-2 mb-5">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  New Locations ({locationDiffs.added.length})
+                </h4>
+                {locationDiffs.added.map((l, i) => (
+                  <label key={i} className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                    locationDiffs.acceptedAdded[i] ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={locationDiffs.acceptedAdded[i]}
+                      onChange={() => {
+                        const updated = [...locationDiffs.acceptedAdded]
+                        updated[i] = !updated[i]
+                        setLocationDiffs(prev => ({ ...prev, acceptedAdded: updated }))
+                      }}
+                      className="rounded border-gray-300 text-[#3ea8c8] focus:ring-[#3ea8c8]"
+                    />
+                    <span className="flex-1 text-sm font-medium text-gray-900">
+                      {[l.location, l.city, l.stage, l.country].filter(Boolean).join(', ')}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-semibold">NEW</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* Existing data summary (for context) */}
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Existing Production Summary</h4>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs text-gray-600">
+                <div>
+                  <span className="text-gray-400">Crew</span>
+                  <p className="font-medium">{existingProduction.production_crew_roles?.length ?? 0} members</p>
+                </div>
+                <div>
+                  <span className="text-gray-400">Companies</span>
+                  <p className="font-medium">{existingProduction.production_company_links?.length ?? 0} companies</p>
+                </div>
+                <div>
+                  <span className="text-gray-400">Locations</span>
+                  <p className="font-medium">{existingProduction.production_locations?.length ?? 0} locations</p>
+                </div>
+                <div>
+                  <span className="text-gray-400">Types</span>
+                  <p className="font-medium">
+                    {existingProduction.production_type_links?.map(l => l.production_types.name).join(', ') || '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 mt-5 pt-4 border-t border-gray-200">
+              {hasAnyChanges ? (
+                <button onClick={applyUpdates} className="btn-primary text-sm">
+                  Apply {fieldDiffs.filter(d => d.accepted).length + crewDiffs.acceptedAdded.filter(Boolean).length + companyDiffs.acceptedAdded.filter(Boolean).length + locationDiffs.acceptedAdded.filter(Boolean).length} Selected Updates
+                </button>
+              ) : (
+                <Link href={`/admin/productions/${existingProduction.id}/edit`} className="btn-primary text-sm">
+                  Open Production to Edit
+                </Link>
+              )}
+              <button onClick={() => { setUpdateMode(false); setStep('research') }} className="btn-outline text-sm">
+                Create as New Instead
+              </button>
+              <button onClick={() => setStep('duplicates')} className="text-sm text-gray-400 hover:text-gray-600">
+                Back
               </button>
             </div>
           </div>
@@ -557,6 +941,9 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
           )}
 
           {/* Hidden fields for saveProduction */}
+          {updateMode && existingProduction && (
+            <input type="hidden" name="id" value={existingProduction.id} />
+          )}
           {selectedTypeIds.map(id => <input key={id} type="hidden" name="type_ids" value={id} />)}
           {primaryTypeId && <input type="hidden" name="primary_type_id" value={primaryTypeId} />}
           {selectedStatusIds.map(id => <input key={id} type="hidden" name="status_ids" value={id} />)}
@@ -565,6 +952,22 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
           <input type="hidden" name="crew_json" value={JSON.stringify(crew.filter(c => c.inline_name))} />
           <input type="hidden" name="companies_json" value={JSON.stringify(companies.filter(c => c.inline_name))} />
 
+          {/* Update mode banner */}
+          {updateMode && existingProduction && (
+            <div className="admin-card p-3 border-l-4 border-[#3ea8c8] bg-blue-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[#3ea8c8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span className="text-sm font-semibold text-[#3ea8c8]">Updating existing production #{existingProduction.id}</span>
+                </div>
+                <Link href={`/admin/productions/${existingProduction.id}/edit`} target="_blank"
+                  className="text-xs text-[#3ea8c8] hover:underline">View original</Link>
+              </div>
+            </div>
+          )}
+
           {/* Preview image */}
           {preview && (
             <div className="admin-card p-3">
@@ -572,7 +975,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                 <img src={preview} alt="Source" className="h-20 rounded shadow-sm" />
                 <div>
                   <p className="text-xs text-gray-400 uppercase font-semibold">Source Screenshot</p>
-                  <p className="text-sm text-gray-600 mt-0.5">Review the extracted and researched data below</p>
+                  <p className="text-sm text-gray-600 mt-0.5">Review the {updateMode ? 'merged' : 'extracted and researched'} data below</p>
                 </div>
               </div>
             </div>
@@ -778,7 +1181,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                 <h3 className="text-sm font-bold text-gray-900">Publish Settings</h3>
                 <div>
                   <label className="form-label">Visibility</label>
-                  <select name="visibility" defaultValue="publish" className="form-input">
+                  <select name="visibility" defaultValue={updateMode ? 'publish' : 'draft'} className="form-input">
                     <option value="publish">Published</option>
                     <option value="members_only">Members Only</option>
                     <option value="draft">Draft</option>
@@ -796,7 +1199,9 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="submit" disabled={formPending} className="btn-primary flex-1">
-                    {formPending ? 'Creating...' : 'Create Production'}
+                    {formPending
+                      ? (updateMode ? 'Updating...' : 'Creating...')
+                      : (updateMode ? 'Update Production' : 'Create Production')}
                   </button>
                 </div>
                 <button type="button" onClick={resetAll} className="btn-outline w-full text-sm">Start Over</button>

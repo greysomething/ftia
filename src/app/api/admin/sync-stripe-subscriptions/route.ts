@@ -103,16 +103,6 @@ export async function POST() {
   for (const sub of allSubs) subMap.set(sub.id, sub)
   const uniqueSubs = Array.from(subMap.values())
 
-  // Pre-build set of emails that have at least one active/trialing/past_due sub
-  // so we only protect those users from status downgrade
-  const emailsWithActiveSub = new Set<string>()
-  for (const sub of uniqueSubs) {
-    if (['active', 'trialing', 'past_due'].includes(sub.status)) {
-      const email = (sub.customer as any)?.email?.toLowerCase()
-      if (email) emailsWithActiveSub.add(email)
-    }
-  }
-
   const stats = {
     totalSubscriptions: uniqueSubs.length,
     synced: 0,
@@ -123,22 +113,55 @@ export async function POST() {
     byStatus: { active: 0, canceled: 0, past_due: 0, trialing: 0, unpaid: 0 },
   }
 
-  // 5. Process each subscription
+  // Count by status
   for (const sub of uniqueSubs) {
+    if (sub.status in stats.byStatus) {
+      (stats.byStatus as any)[sub.status]++
+    }
+  }
+
+  // 5. Group subscriptions by customer email and pick the BEST one per user.
+  // Priority: active > trialing > past_due > canceled > unpaid
+  // Within same priority, prefer the most recently created subscription.
+  const STATUS_PRIORITY: Record<string, number> = {
+    active: 5, trialing: 4, past_due: 3, canceled: 2, unpaid: 1,
+  }
+
+  const bestSubByEmail = new Map<string, any>()
+  for (const sub of uniqueSubs) {
+    const email = (sub.customer as any)?.email?.toLowerCase()
+    if (!email) continue
+
+    const existing = bestSubByEmail.get(email)
+    if (!existing) {
+      bestSubByEmail.set(email, sub)
+      continue
+    }
+
+    const existingPriority = STATUS_PRIORITY[existing.status] ?? 0
+    const newPriority = STATUS_PRIORITY[sub.status] ?? 0
+
+    // Higher status priority wins; tie-break by most recent creation
+    if (newPriority > existingPriority ||
+        (newPriority === existingPriority && (sub.created ?? 0) > (existing.created ?? 0))) {
+      bestSubByEmail.set(email, sub)
+    }
+  }
+
+  console.log(`[Stripe Sync] ${uniqueSubs.length} total subs → ${bestSubByEmail.size} unique users (by best sub)`)
+
+  // 5b. Process the single best subscription per user
+  for (const [email, sub] of bestSubByEmail) {
     try {
       const customer = sub.customer as any
-      const email = customer?.email?.toLowerCase()
       if (!email) { stats.skipped++; continue }
-
-      // Count by status
-      if (sub.status in stats.byStatus) {
-        (stats.byStatus as any)[sub.status]++
-      }
 
       // Map Stripe status → our membership status
       let membershipStatus: string
       switch (sub.status) {
-        case 'active': case 'trialing': case 'past_due':
+        case 'active': case 'trialing':
+          membershipStatus = 'active'; break
+        case 'past_due':
           membershipStatus = 'active'; break
         case 'canceled':
           membershipStatus = 'cancelled'; break
@@ -221,7 +244,7 @@ export async function POST() {
       }).catch(() => {})
       customerToUserId.set(customer.id, userId)
 
-      // Upsert membership
+      // Upsert membership — using the single best subscription
       const periodEnd = sub.current_period_end
         ? new Date(sub.current_period_end * 1000).toISOString()
         : null
@@ -241,11 +264,6 @@ export async function POST() {
 
       // Billing address from customer or payment method
       const billingAddress = pm?.billing_details?.address ?? customer?.address ?? null
-
-      // Cancellation details (for cancelled subs)
-      const cancelNotes = sub.cancellation_details?.reason
-        ? `Cancelled: ${sub.cancellation_details.reason}${sub.cancellation_details.comment ? ` — ${sub.cancellation_details.comment}` : ''}`
-        : null
 
       const membershipRow: Record<string, any> = {
         user_id: userId,
@@ -277,19 +295,7 @@ export async function POST() {
         .single()
 
       if (existingMem) {
-        // Only skip downgrade if this user actually has an active sub in Stripe
-        // (prevents processing order issues when active + cancelled subs both exist)
-        if (existingMem.status === 'active' && (membershipStatus === 'cancelled' || membershipStatus === 'expired') && emailsWithActiveSub.has(email)) {
-          await supabase.from('user_memberships')
-            .update({
-              stripe_customer_id: customer.id,
-              stripe_subscription_id: sub.id,
-            })
-            .eq('id', existingMem.id)
-          stats.synced++
-          continue
-        }
-        // Update existing
+        // Always update — we've already picked the best subscription
         await supabase.from('user_memberships')
           .update(membershipRow)
           .eq('id', existingMem.id)
@@ -399,6 +405,7 @@ export async function POST() {
   return NextResponse.json({
     ok: true,
     ...stats,
-    message: `Synced ${stats.synced} subscriptions. Created ${stats.usersCreated} new user accounts. Backfilled ${stats.ordersBackfilled} payment records. ${stats.skipped} skipped.`,
+    uniqueUsers: bestSubByEmail.size,
+    message: `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total subscriptions (active: ${stats.byStatus.active}, canceled: ${stats.byStatus.canceled}, past_due: ${stats.byStatus.past_due}, trialing: ${stats.byStatus.trialing}, unpaid: ${stats.byStatus.unpaid}). Synced ${stats.synced}. Created ${stats.usersCreated} new accounts. Backfilled ${stats.ordersBackfilled} payment records. ${stats.skipped} skipped.`,
   })
 }
