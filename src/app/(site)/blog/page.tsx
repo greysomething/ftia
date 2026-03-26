@@ -13,6 +13,9 @@ import {
   getFeaturedImageUrl,
 } from '@/lib/utils'
 
+// Revalidate every 60s so scheduled posts appear/disappear on time
+export const revalidate = 60
+
 export const metadata: Metadata = {
   title: 'Production News | Film & Television Industry Updates',
   description:

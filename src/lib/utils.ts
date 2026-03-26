@@ -91,19 +91,35 @@ export function maskPhone(phone: string): string {
 
 /** Generate media URL from Supabase Storage or original WP URL */
 export function getMediaUrl(storagePath: string | null, originalUrl: string | null): string {
-  // If we have a storage_path, construct URL to production WP uploads
-  // (media files live on productionlist.com, not in Supabase Storage)
-  if (storagePath) {
-    return `https://productionlist.com/wp-content/uploads/${storagePath}`
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  // If we have a storage_path, serve from Supabase Storage
+  if (storagePath && supabaseUrl) {
+    return `${supabaseUrl}/storage/v1/object/public/media/${storagePath}`
   }
-  // Fix local WP URLs to production
-  if (originalUrl?.includes('productionlist-wp-local.local')) {
-    return originalUrl.replace(
-      /https?:\/\/productionlist-wp-local\.local\/wp-content\/uploads/,
-      'https://productionlist.com/wp-content/uploads'
-    )
+  // Legacy WP URLs — rewrite to Supabase Storage
+  if (originalUrl && supabaseUrl) {
+    const wpMatch = originalUrl.match(/\/wp-content\/uploads\/(.+)$/)
+    if (wpMatch) {
+      return `${supabaseUrl}/storage/v1/object/public/media/${wpMatch[1]}`
+    }
   }
   return originalUrl ?? '/images/placeholder.svg'
+}
+
+/** Rewrite legacy WP upload URLs in HTML content to Supabase Storage */
+export function rewriteContentImageUrls(html: string): string {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!supabaseUrl || !html) return html
+  // Rewrite absolute WP upload URLs (both productionlist.com and local)
+  return html
+    .replace(
+      /https?:\/\/(www\.)?productionlist\.com\/wp-content\/uploads\//g,
+      `${supabaseUrl}/storage/v1/object/public/media/`
+    )
+    .replace(
+      /https?:\/\/productionlist-wp-local\.local\/wp-content\/uploads\//g,
+      `${supabaseUrl}/storage/v1/object/public/media/`
+    )
 }
 
 /** Get featured image URL from a post with media relation */

@@ -17,8 +17,12 @@ import {
   estimateReadTime,
   stripHtml,
   getFeaturedImageUrl,
+  rewriteContentImageUrls,
 } from '@/lib/utils'
 import { TrendingSearches } from '@/components/TrendingSearches'
+
+// Revalidate every 60s so scheduled posts are hidden until publish time
+export const revalidate = 60
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -194,7 +198,7 @@ export default async function SlugPage({ params }: Props) {
                     prose-li:text-gray-700
                     prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:py-1 prose-blockquote:rounded-r-lg
                     prose-img:rounded-lg prose-img:shadow-sm"
-                  dangerouslySetInnerHTML={{ __html: post.content ?? '' }}
+                  dangerouslySetInnerHTML={{ __html: rewriteContentImageUrls(post.content ?? '') }}
                 />
 
                 {/* Tags */}
@@ -373,7 +377,7 @@ export default async function SlugPage({ params }: Props) {
           <h1 className="text-3xl font-bold text-primary mb-6">{page.title}</h1>
           <div
             className="prose prose-lg max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-accent"
-            dangerouslySetInnerHTML={{ __html: page.content ?? '' }}
+            dangerouslySetInnerHTML={{ __html: rewriteContentImageUrls(page.content ?? '') }}
           />
         </div>
       </div>
