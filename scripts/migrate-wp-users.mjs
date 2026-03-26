@@ -232,6 +232,10 @@ async function run() {
       }
 
       // Step 2: Upsert user_profiles
+      // Never downgrade existing admins — check current role first
+      const { data: existingProfile } = await sb.from('user_profiles').select('role').eq('id', supabaseUserId).single()
+      const isExistingAdmin = existingProfile?.role === 'admin'
+
       const profileData = {
         id: supabaseUserId,
         wp_id: wpUser.wp_id,
@@ -241,8 +245,8 @@ async function run() {
         nickname: wpUser.nickname || null,
         description: wpUser.description || null,
         website: wpUser.user_url || null,
-        wp_role: wpRole,
-        role: supabaseRole,
+        wp_role: isExistingAdmin ? 'administrator' : wpRole,
+        role: isExistingAdmin ? 'admin' : supabaseRole,
         wp_registered_at: wpUser.user_registered || null,
       }
 
