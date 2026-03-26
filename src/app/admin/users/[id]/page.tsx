@@ -56,6 +56,21 @@ export default async function AdminUserDetailPage({ params }: Props) {
   const suspendedMembership = user.user_memberships?.find((m: any) => m.status === 'suspended')
   const hasStripe = user.user_memberships?.some((m: any) => m.stripe_subscription_id || m.stripe_customer_id)
 
+  // Fetch payment history
+  const { data: paymentHistory } = await supabase
+    .from('membership_orders')
+    .select('id, level_id, status, total, gateway, payment_transaction_id, cardtype, accountnumber, notes, timestamp, membership_levels(name)')
+    .eq('user_id', id)
+    .order('timestamp', { ascending: false })
+    .limit(50)
+
+  const totalSpent = (paymentHistory ?? [])
+    .filter((o: any) => o.status === 'success')
+    .reduce((sum: number, o: any) => sum + (parseFloat(o.total) || 0), 0)
+  const totalRefunded = (paymentHistory ?? [])
+    .filter((o: any) => o.status === 'refunded')
+    .reduce((sum: number, o: any) => sum + Math.abs(parseFloat(o.total) || 0), 0)
+
   // Fetch dispute-related orders for context
   let disputeNote: string | null = null
   if (suspendedMembership) {
@@ -366,6 +381,96 @@ export default async function AdminUserDetailPage({ params }: Props) {
               </form>
             </div>
           </div>
+          {/* Payment History */}
+          <div className="admin-card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-gray-700">Payment History</h2>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="text-gray-500">
+                  Total: <strong className="text-green-600">${totalSpent.toFixed(2)}</strong>
+                </span>
+                {totalRefunded > 0 && (
+                  <span className="text-gray-500">
+                    Refunded: <strong className="text-red-600">${totalRefunded.toFixed(2)}</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {!paymentHistory || paymentHistory.length === 0 ? (
+              <p className="text-sm text-gray-400">No payment records found. Run &quot;Sync Memberships from Stripe&quot; to backfill payment history.</p>
+            ) : (
+              <div className="overflow-x-auto -mx-4 px-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-500 border-b">
+                      <th className="text-left pb-2 font-medium">Date</th>
+                      <th className="text-left pb-2 font-medium">Plan</th>
+                      <th className="text-left pb-2 font-medium">Status</th>
+                      <th className="text-right pb-2 font-medium">Amount</th>
+                      <th className="text-left pb-2 font-medium">Card</th>
+                      <th className="text-left pb-2 font-medium">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {paymentHistory.map((order: any) => {
+                      const orderStatusStyles: Record<string, string> = {
+                        success: 'bg-green-100 text-green-800',
+                        refunded: 'bg-red-100 text-red-700',
+                        dispute_opened: 'bg-red-100 text-red-800',
+                        dispute_won: 'bg-green-100 text-green-800',
+                        dispute_lost: 'bg-red-100 text-red-800',
+                        failed: 'bg-yellow-100 text-yellow-800',
+                      }
+                      const amount = parseFloat(order.total) || 0
+                      const isNegative = amount < 0
+                      return (
+                        <tr key={order.id} className="text-xs">
+                          <td className="py-2 whitespace-nowrap text-gray-600">
+                            {order.timestamp ? formatDate(order.timestamp) : '—'}
+                          </td>
+                          <td className="py-2 text-gray-700">
+                            {(order.membership_levels as any)?.name ?? '—'}
+                          </td>
+                          <td className="py-2">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              orderStatusStyles[order.status] ?? 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {order.status === 'success' ? 'Paid' : order.status?.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className={`py-2 text-right font-medium whitespace-nowrap ${
+                            isNegative ? 'text-red-600' : 'text-gray-900'
+                          }`}>
+                            {isNegative ? '-' : ''}${Math.abs(amount).toFixed(2)}
+                          </td>
+                          <td className="py-2 text-gray-500 whitespace-nowrap">
+                            {order.cardtype && order.accountnumber
+                              ? `${order.cardtype} ••${order.accountnumber}`
+                              : '—'}
+                          </td>
+                          <td className="py-2 text-gray-400 truncate max-w-[150px]" title={order.notes ?? ''}>
+                            {order.payment_transaction_id ? (
+                              <a
+                                href={`https://dashboard.stripe.com/payments/${order.payment_transaction_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:underline"
+                              >
+                                {order.notes || 'View in Stripe'}
+                              </a>
+                            ) : (
+                              order.notes || '—'
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right column — Role & Quick Info */}
@@ -451,6 +556,14 @@ export default async function AdminUserDetailPage({ params }: Props) {
                 <span className="font-medium text-gray-900">{user.user_memberships?.length ?? 0}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-gray-500">Payments</span>
+                <span className="font-medium text-gray-900">{paymentHistory?.filter((o: any) => o.status === 'success').length ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Lifetime Value</span>
+                <span className="font-medium text-green-600">${totalSpent.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-gray-500">Stripe Linked</span>
                 <span className={`font-medium ${hasStripe ? 'text-green-600' : 'text-amber-600'}`}>
                   {hasStripe ? 'Yes' : 'No'}
@@ -481,6 +594,8 @@ export default async function AdminUserDetailPage({ params }: Props) {
                     password_reset: { label: 'Reset', color: 'bg-yellow-100 text-yellow-800' },
                     pdf_download: { label: 'PDF', color: 'bg-purple-100 text-purple-800' },
                     profile_update: { label: 'Profile', color: 'bg-indigo-100 text-indigo-800' },
+                    logout: { label: 'Logout', color: 'bg-gray-100 text-gray-600' },
+                    contact_form: { label: 'Contact', color: 'bg-teal-100 text-teal-800' },
                   }
                   const evt = eventLabels[entry.event_type] ?? { label: entry.event_type, color: 'bg-gray-100 text-gray-600' }
                   const location = [entry.city, entry.country].filter(Boolean).join(', ')
