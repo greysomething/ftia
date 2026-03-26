@@ -149,7 +149,7 @@ export function WeeklyReportPDF({ weekMonday, projectCount, isMember = false }: 
         doc.text(`Page ${pageNum}`, pw - mr, ph - 7.5, { align: 'right' })
         doc.setFontSize(5.5)
         doc.text(
-          'productionlist.ai  |  Confidential — For Members Only',
+          'productionlist.com  |  Confidential — For Members Only',
           pw / 2,
           ph - 4,
           { align: 'center' }
