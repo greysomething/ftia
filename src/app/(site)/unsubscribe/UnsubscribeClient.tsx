@@ -1,14 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 type Step = 'form' | 'confirm' | 'success'
 
 export default function UnsubscribeClient() {
-  const [step, setStep] = useState<Step>('form')
-  const [email, setEmail] = useState('')
+  const searchParams = useSearchParams()
+  const emailParam = searchParams.get('email') || ''
+
+  const [step, setStep] = useState<Step>(emailParam ? 'confirm' : 'form')
+  const [email, setEmail] = useState(emailParam)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // If email param changes (e.g. navigating), update state
+  useEffect(() => {
+    if (emailParam) {
+      setEmail(emailParam)
+      setStep('confirm')
+    }
+  }, [emailParam])
 
   async function handleUnsubscribe() {
     setLoading(true)

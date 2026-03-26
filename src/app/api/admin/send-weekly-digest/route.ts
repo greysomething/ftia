@@ -211,7 +211,7 @@ export async function POST(req: NextRequest) {
 
   // 7. Test mode — send to single email
   if (testEmail) {
-    const personalVars = { ...vars, firstName: 'Test User' }
+    const personalVars = { ...vars, firstName: 'Test User', recipientEmail: testEmail }
     const personalRendered = template.render(personalVars)
 
     const result = await sendEmail({
@@ -280,7 +280,7 @@ export async function POST(req: NextRequest) {
   // Send individually so we can personalize with firstName
   for (const email of emails) {
     const firstName = emailToName.get(email) || ''
-    const personalVars = { ...vars, firstName }
+    const personalVars = { ...vars, firstName, recipientEmail: email }
     const personalRendered = template.render(personalVars)
 
     try {

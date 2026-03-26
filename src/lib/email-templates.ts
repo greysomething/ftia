@@ -18,17 +18,25 @@ export interface EmailTemplate {
 const BRAND = {
   color: '#1B2A4A',
   accent: '#43B7F0',
-  footer: `<p style="color: #999; font-size: 11px; margin-top: 32px; border-top: 1px solid #eee; padding-top: 16px;">
-    Film &amp; Television Industry Alliance<br/>
-    905 N Bethlehem Pk, #44, Spring House, PA 19477<br/>
-    <a href="https://productionlist.com/unsubscribe" style="color:#999;">Unsubscribe</a>
-  </p>`,
 }
 
-function wrap(body: string): string {
+function unsubscribeUrl(email?: string): string {
+  if (email) return `https://productionlist.com/unsubscribe?email=${encodeURIComponent(email)}`
+  return 'https://productionlist.com/unsubscribe'
+}
+
+function footer(email?: string): string {
+  return `<p style="color: #999; font-size: 11px; margin-top: 32px; border-top: 1px solid #eee; padding-top: 16px;">
+    Film &amp; Television Industry Alliance<br/>
+    905 N Bethlehem Pk, #44, Spring House, PA 19477<br/>
+    <a href="${unsubscribeUrl(email)}" style="color:#999;">Unsubscribe</a>
+  </p>`
+}
+
+function wrap(body: string, email?: string): string {
   return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
     ${body}
-    ${BRAND.footer}
+    ${footer(email)}
   </div>`
 }
 
@@ -124,7 +132,7 @@ export const emailTemplates: EmailTemplate[] = [
     name: 'Weekly Production Digest',
     description: 'Weekly summary of new and updated productions with full production listing.',
     category: 'marketing',
-    variables: ['firstName', 'weekDate', 'weekEndDate', 'productionCount', 'digestUrl', 'productionsHtml'],
+    variables: ['firstName', 'weekDate', 'weekEndDate', 'productionCount', 'digestUrl', 'productionsHtml', 'recipientEmail'],
     render: (vars) => ({
       subject: `Production List: ${vars.productionCount || ''} Productions This Week — ${vars.weekDate || 'This Week'}`,
       html: `<!DOCTYPE html>
@@ -195,7 +203,7 @@ export const emailTemplates: EmailTemplate[] = [
       <p style="color:#999;font-size:11px;margin:0;text-align:center;">
         Film &amp; Television Industry Alliance<br/>
         905 N Bethlehem Pk, #44, Spring House, PA 19477<br/>
-        <a href="https://productionlist.com/unsubscribe" style="color:#999;text-decoration:underline;">Unsubscribe</a>
+        <a href="${unsubscribeUrl(vars.recipientEmail)}" style="color:#999;text-decoration:underline;">Unsubscribe</a>
         &nbsp;&middot;&nbsp;
         <a href="https://productionlist.com" style="color:#999;text-decoration:underline;">Visit Website</a>
       </p>
