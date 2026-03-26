@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 
 interface UserRow {
   id: string
@@ -206,7 +206,10 @@ export function UsersTableClient({ users, sortHeaders }: {
                     )}
                   </td>
                   <td className="text-xs text-gray-500">{u.country || '—'}</td>
-                  <td className="text-xs text-gray-500 whitespace-nowrap">{formatDate(u.created_at)}</td>
+                  <td className="text-xs text-gray-500 whitespace-nowrap">
+                    <div>{formatDate(u.created_at)}</div>
+                    <div className="text-[10px] text-gray-400">{formatDateTime(u.created_at).split(', ').pop()}</div>
+                  </td>
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       {hasStripe && (
