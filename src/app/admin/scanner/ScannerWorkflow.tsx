@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useCallback, useRef, useActionState } from 'react'
+import { useState, useCallback, useRef, useEffect, useActionState } from 'react'
 import { saveProduction } from '@/app/admin/productions/actions'
 import Link from 'next/link'
 
 interface TypeOption { id: number; name: string; slug: string }
 interface StatusOption { id: number; name: string; slug: string }
+
+interface MatchCandidate {
+  id: number; title: string; slug: string; score: number; detail?: string
+}
 
 interface LocationRow {
   location: string; city: string; stage: string; country: string
@@ -54,6 +58,11 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
   const [researchData, setResearchData] = useState<any>(null)
   const [researching, setResearching] = useState(false)
+
+  // Entity matching state
+  const [crewMatches, setCrewMatches] = useState<Record<string, MatchCandidate[]>>({})
+  const [companyMatches, setCompanyMatches] = useState<Record<string, MatchCandidate[]>>({})
+  const [matchingEntities, setMatchingEntities] = useState(false)
 
   // Merged form data
   const [title, setTitle] = useState('')
@@ -104,6 +113,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
         const data = result.data
         setScannedData(data)
         populateFromScan(data)
+        matchEntities(data)
 
         // Step 3: Check duplicates
         if (data.title) {
@@ -186,6 +196,48 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
         origin: 'scan' as const,
       })))
     }
+  }
+
+  // ── Entity matching (runs in background after scan) ──
+  async function matchEntities(data: any) {
+    const crewNames = (data.crew ?? []).map((c: any) => c.inline_name || c.name).filter(Boolean)
+    const companyNames = (data.companies ?? []).map((c: any) => c.inline_name).filter(Boolean)
+    if (crewNames.length === 0 && companyNames.length === 0) return
+
+    setMatchingEntities(true)
+    try {
+      const res = await fetch('/api/admin/match-entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companies: companyNames, crew: crewNames }),
+      })
+      if (res.ok) {
+        const result = await res.json()
+        setCrewMatches(result.crewMatches ?? {})
+        setCompanyMatches(result.companyMatches ?? {})
+
+        // Auto-accept high-confidence matches (90%+)
+        if (result.crewMatches) {
+          setCrew(prev => prev.map(c => {
+            const matches = result.crewMatches[c.inline_name]
+            if (matches?.length && matches[0].score >= 90 && !c.crew_id) {
+              return { ...c, crew_id: matches[0].id }
+            }
+            return c
+          }))
+        }
+        if (result.companyMatches) {
+          setCompanies(prev => prev.map(c => {
+            const matches = result.companyMatches[c.inline_name]
+            if (matches?.length && matches[0].score >= 90 && !c.company_id) {
+              return { ...c, company_id: matches[0].id }
+            }
+            return c
+          }))
+        }
+      }
+    } catch { /* silent — matching is non-critical */ }
+    setMatchingEntities(false)
   }
 
   // ── Step 4: AI Research ──
@@ -305,8 +357,8 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
 
   function resetAll() {
     setStep('upload'); setPreview(null); setError(null); setScannedData(null)
-    setDuplicates([]); setResearchData(null); setTitle(''); setExcerpt('')
-    setContent(''); setComputedStatus(''); setDateStart(''); setDateEnd('')
+    setDuplicates([]); setResearchData(null); setCrewMatches({}); setCompanyMatches({})
+    setTitle(''); setExcerpt(''); setContent(''); setComputedStatus(''); setDateStart(''); setDateEnd('')
     setSelectedTypeIds([]); setPrimaryTypeId(null); setSelectedStatusIds([])
     setPrimaryStatusId(null); setLocations([]); setCrew([]); setCompanies([])
   }
@@ -578,28 +630,61 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
 
               {/* Crew */}
               <div className="admin-card space-y-3">
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Crew ({crew.length})</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Crew ({crew.length})</h3>
+                  {matchingEntities && <span className="text-[10px] text-gray-400 animate-pulse">Matching to database...</span>}
+                </div>
                 <div className="space-y-2">
-                  {crew.map((c, i) => (
-                    <div key={i} className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
-                      <div className="flex-1 grid grid-cols-4 gap-2">
-                        <input placeholder="Role" value={c.role_name} onChange={e => {
-                          const updated = [...crew]; updated[i] = { ...updated[i], role_name: e.target.value }; setCrew(updated)
-                        }} className="form-input text-sm" />
-                        <input placeholder="Name" value={c.inline_name} onChange={e => {
-                          const updated = [...crew]; updated[i] = { ...updated[i], inline_name: e.target.value }; setCrew(updated)
-                        }} className="form-input text-sm" />
-                        <input placeholder="Phone" value={c.inline_phones?.join(', ') || ''} onChange={e => {
-                          const updated = [...crew]; updated[i] = { ...updated[i], inline_phones: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCrew(updated)
-                        }} className="form-input text-sm" />
-                        <input placeholder="Email" value={c.inline_emails?.join(', ') || ''} onChange={e => {
-                          const updated = [...crew]; updated[i] = { ...updated[i], inline_emails: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCrew(updated)
-                        }} className="form-input text-sm" />
+                  {crew.map((c, i) => {
+                    const matches = crewMatches[c.inline_name] ?? []
+                    const linkedMatch = c.crew_id ? matches.find(m => m.id === c.crew_id) : null
+                    return (
+                      <div key={i} className="space-y-1">
+                        <div className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
+                          <div className="flex-1 grid grid-cols-4 gap-2">
+                            <input placeholder="Role" value={c.role_name} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], role_name: e.target.value }; setCrew(updated)
+                            }} className="form-input text-sm" />
+                            <input placeholder="Name" value={c.inline_name} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], inline_name: e.target.value }; setCrew(updated)
+                            }} className="form-input text-sm" />
+                            <input placeholder="Phone" value={c.inline_phones?.join(', ') || ''} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], inline_phones: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCrew(updated)
+                            }} className="form-input text-sm" />
+                            <input placeholder="Email" value={c.inline_emails?.join(', ') || ''} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], inline_emails: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCrew(updated)
+                            }} className="form-input text-sm" />
+                          </div>
+                          <OriginBadge origin={c.origin} confidence={c.confidence} status={c.status} />
+                          <button type="button" onClick={() => removeCrewRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
+                        </div>
+                        {/* DB match indicator */}
+                        {linkedMatch ? (
+                          <div className="flex items-center gap-2 ml-2 text-[11px]">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
+                              Linked: {linkedMatch.title} ({linkedMatch.score}%)
+                            </span>
+                            {linkedMatch.detail && <span className="text-gray-400">{linkedMatch.detail}</span>}
+                            <button type="button" onClick={() => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], crew_id: null }; setCrew(updated)
+                            }} className="text-gray-400 hover:text-red-500 underline">Unlink</button>
+                          </div>
+                        ) : matches.length > 0 ? (
+                          <div className="ml-2 flex flex-wrap items-center gap-1 text-[11px]">
+                            <span className="text-gray-400 font-medium">Match:</span>
+                            {matches.slice(0, 3).map(m => (
+                              <button key={m.id} type="button" onClick={() => {
+                                const updated = [...crew]; updated[i] = { ...updated[i], crew_id: m.id }; setCrew(updated)
+                              }} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors" title={m.detail || ''}>
+                                {m.title} <span className="text-amber-500">{m.score}%</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
-                      <OriginBadge origin={c.origin} confidence={c.confidence} status={c.status} />
-                      <button type="button" onClick={() => removeCrewRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <button type="button" onClick={() => setCrew(prev => [...prev, { role_name: '', inline_name: '' }])}
                   className="text-xs text-[#3ea8c8] hover:underline">+ Add Crew Member</button>
@@ -607,25 +692,58 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
 
               {/* Companies */}
               <div className="admin-card space-y-3">
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Companies ({companies.length})</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Companies ({companies.length})</h3>
+                  {matchingEntities && <span className="text-[10px] text-gray-400 animate-pulse">Matching to database...</span>}
+                </div>
                 <div className="space-y-2">
-                  {companies.map((c, i) => (
-                    <div key={i} className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
-                      <div className="flex-1 grid grid-cols-3 gap-2">
-                        <input placeholder="Company Name" value={c.inline_name} onChange={e => {
-                          const updated = [...companies]; updated[i] = { ...updated[i], inline_name: e.target.value }; setCompanies(updated)
-                        }} className="form-input text-sm" />
-                        <input placeholder="Address" value={c.inline_address || ''} onChange={e => {
-                          const updated = [...companies]; updated[i] = { ...updated[i], inline_address: e.target.value }; setCompanies(updated)
-                        }} className="form-input text-sm" />
-                        <input placeholder="Email" value={c.inline_emails?.join(', ') || ''} onChange={e => {
-                          const updated = [...companies]; updated[i] = { ...updated[i], inline_emails: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCompanies(updated)
-                        }} className="form-input text-sm" />
+                  {companies.map((c, i) => {
+                    const matches = companyMatches[c.inline_name] ?? []
+                    const linkedMatch = c.company_id ? matches.find(m => m.id === c.company_id) : null
+                    return (
+                      <div key={i} className="space-y-1">
+                        <div className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
+                          <div className="flex-1 grid grid-cols-3 gap-2">
+                            <input placeholder="Company Name" value={c.inline_name} onChange={e => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], inline_name: e.target.value }; setCompanies(updated)
+                            }} className="form-input text-sm" />
+                            <input placeholder="Address" value={c.inline_address || ''} onChange={e => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], inline_address: e.target.value }; setCompanies(updated)
+                            }} className="form-input text-sm" />
+                            <input placeholder="Email" value={c.inline_emails?.join(', ') || ''} onChange={e => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], inline_emails: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCompanies(updated)
+                            }} className="form-input text-sm" />
+                          </div>
+                          <OriginBadge origin={c.origin} confidence={c.confidence} />
+                          <button type="button" onClick={() => removeCompanyRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
+                        </div>
+                        {/* DB match indicator */}
+                        {linkedMatch ? (
+                          <div className="flex items-center gap-2 ml-2 text-[11px]">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
+                              Linked: {linkedMatch.title} ({linkedMatch.score}%)
+                            </span>
+                            {linkedMatch.detail && <span className="text-gray-400">{linkedMatch.detail}</span>}
+                            <button type="button" onClick={() => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], company_id: null }; setCompanies(updated)
+                            }} className="text-gray-400 hover:text-red-500 underline">Unlink</button>
+                          </div>
+                        ) : matches.length > 0 ? (
+                          <div className="ml-2 flex flex-wrap items-center gap-1 text-[11px]">
+                            <span className="text-gray-400 font-medium">Match:</span>
+                            {matches.slice(0, 3).map(m => (
+                              <button key={m.id} type="button" onClick={() => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], company_id: m.id }; setCompanies(updated)
+                              }} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors" title={m.detail || ''}>
+                                {m.title} <span className="text-amber-500">{m.score}%</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
-                      <OriginBadge origin={c.origin} confidence={c.confidence} />
-                      <button type="button" onClick={() => removeCompanyRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <button type="button" onClick={() => setCompanies(prev => [...prev, { inline_name: '' }])}
                   className="text-xs text-[#3ea8c8] hover:underline">+ Add Company</button>

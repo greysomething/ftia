@@ -13,15 +13,21 @@ IMPORTANT FIELD MAPPING RULES:
 - "production_statuses": Match to EXACTLY one or more of these names: "Announced", "Casting", "Development", "Halted", "Post-Production", "Pre-production", "Production". Pick based on context clues in the listing.
 - "computed_status" (production phase): Must be one of: "in-pre-production", "in-production", "in-post-production", "completed". Infer from status/dates.
 - For dates, always use YYYY-MM-DD format when possible. If only month/year shown, use YYYY-MM-01.
-- For locations, split into structured parts. Each location is a separate object.
+- For locations, focus on filling "city", "stage" (state/province abbreviation), and "country" fields. Leave "location" blank unless there is a specific place name (e.g. a studio name, venue, or address). Each location is a separate object.
 - For companies, extract ALL contact details: multiple phones, faxes, emails are common.
 - For crew, extract phone numbers and emails if visible next to their names.
+
+CONTENT/DESCRIPTION RULES:
+- The "content" field should ONLY contain information about the project itself: plot synopsis, storyline, what the show/film is about, where and when it's filming, and who is producing it.
+- Do NOT include metadata like "Type: Television", "Network: ABC", "Genres: Crime / Drama", "Status: Active Development", "Added: August 07, 2023", "Last Update: March 18, 2026" in the content field. That information belongs in the structured fields (production_types, production_statuses, etc.).
+- Do NOT copy posting dates, update dates, or source publication metadata into content.
+- The "excerpt" should be a clean one-line logline about the project.
 
 Return ONLY valid JSON with this structure (use null for missing fields, empty arrays [] if no items):
 {
   "title": "Production Title - Format (Season XX)",
   "excerpt": "One-line logline or short description",
-  "content": "Longer plot/description text, network info, genre details, any other notes",
+  "content": "Plot synopsis, filming details, and production notes about the project itself",
   "production_types": ["Series"],
   "production_statuses": ["Pre-production"],
   "computed_status": "in-pre-production",
@@ -31,7 +37,7 @@ Return ONLY valid JSON with this structure (use null for missing fields, empty a
   "production_date_endpost": null,
   "locations": [
     {
-      "location": "Los Angeles, CA",
+      "location": "",
       "city": "Los Angeles",
       "stage": "CA",
       "country": "United States"
