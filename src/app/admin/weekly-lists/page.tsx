@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getProductionWeeks } from '@/lib/queries'
 import { SnapshotButton } from './SnapshotButton'
 import { BackfillButton } from './BackfillButton'
+import { SendDigestButton } from './SendDigestButton'
 
 export const metadata: Metadata = { title: 'Weekly Lists' }
 
@@ -18,6 +19,7 @@ export default async function AdminWeeklyListsPage() {
   const currentMonday = monday.toISOString().split('T')[0]
 
   const totalProductions = weeks.reduce((sum, w) => sum + w.count, 0)
+  const currentWeekEntry = weeks.find((w) => w.monday === currentMonday)
 
   return (
     <div>
@@ -33,6 +35,9 @@ export default async function AdminWeeklyListsPage() {
           <SnapshotButton />
         </div>
       </div>
+
+      {/* Weekly Digest Email */}
+      <SendDigestButton currentWeekCount={currentWeekEntry?.count ?? 0} />
 
       {/* Info banner */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-6 text-sm text-blue-800">

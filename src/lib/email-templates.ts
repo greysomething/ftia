@@ -122,22 +122,88 @@ export const emailTemplates: EmailTemplate[] = [
   {
     slug: 'weekly-digest',
     name: 'Weekly Production Digest',
-    description: 'Weekly summary of new and updated productions.',
+    description: 'Weekly summary of new and updated productions with full production listing.',
     category: 'marketing',
-    variables: ['firstName', 'weekDate', 'productionCount', 'digestUrl'],
+    variables: ['firstName', 'weekDate', 'weekEndDate', 'productionCount', 'digestUrl', 'productionsHtml'],
     render: (vars) => ({
-      subject: `Production List Weekly Digest — ${vars.weekDate || 'This Week'}`,
-      html: wrap(`
-        <h2 style="color: ${BRAND.color};">Weekly Production Digest</h2>
-        <p>Hi ${vars.firstName || 'there'},</p>
-        <p>Here's your weekly roundup of production activity. This week we tracked <strong>${vars.productionCount || 'several'}</strong> new and updated productions in pre-production.</p>
-        <p style="text-align: center; margin: 24px 0;">
-          <a href="${vars.digestUrl || 'https://productionlist.com/production-list'}" style="background-color: ${BRAND.accent}; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-            View Full Digest
-          </a>
-        </p>
-        <p style="color: #666; font-size: 13px;">You're receiving this because you're subscribed to Production List weekly updates.</p>
-      `),
+      subject: `Production List: ${vars.productionCount || ''} Productions This Week — ${vars.weekDate || 'This Week'}`,
+      html: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;padding:20px 0;">
+<tr><td align="center">
+<table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+  <!-- Header -->
+  <tr>
+    <td style="background-color:${BRAND.color};padding:24px 32px;text-align:center;">
+      <h1 style="color:white;margin:0;font-size:22px;font-weight:700;letter-spacing:0.5px;">Production List</h1>
+      <p style="color:rgba(255,255,255,0.7);margin:4px 0 0;font-size:12px;text-transform:uppercase;letter-spacing:1px;">Film & Television Industry Alliance</p>
+    </td>
+  </tr>
+
+  <!-- Production Count Banner -->
+  <tr>
+    <td style="background-color:${BRAND.accent};padding:16px 32px;text-align:center;">
+      <p style="color:white;margin:0;font-size:28px;font-weight:700;">Productions this week: <span style="color:#FFD700;">${vars.productionCount || '0'}</span></p>
+    </td>
+  </tr>
+
+  <!-- Member CTA -->
+  <tr>
+    <td style="padding:20px 32px;text-align:center;border-bottom:2px solid #eee;">
+      <p style="margin:0 0 4px;color:#555;font-size:14px;">Already a member?</p>
+      <p style="margin:0;">
+        <a href="${vars.digestUrl || 'https://productionlist.com/production-list'}" style="color:${BRAND.accent};font-weight:600;text-decoration:none;font-size:14px;">Click here</a>
+        <span style="color:#555;font-size:14px;"> to view or download this Production List</span>
+      </p>
+    </td>
+  </tr>
+
+  <!-- Productions List -->
+  <tr>
+    <td style="padding:8px 24px 16px;">
+      ${vars.productionsHtml || '<p style="color:#999;text-align:center;padding:20px;">No productions available.</p>'}
+    </td>
+  </tr>
+
+  <!-- CTA Button -->
+  <tr>
+    <td style="padding:16px 32px 24px;text-align:center;">
+      <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+        <tr>
+          <td style="background-color:${BRAND.accent};border-radius:6px;">
+            <a href="${vars.digestUrl || 'https://productionlist.com/production-list'}" style="display:inline-block;padding:14px 40px;color:white;text-decoration:none;font-weight:700;font-size:15px;">
+              View Full Production List
+            </a>
+          </td>
+        </tr>
+      </table>
+      <p style="color:#888;font-size:12px;margin:12px 0 0;">
+        Not a member? <a href="https://productionlist.com/membership-plans" style="color:${BRAND.accent};text-decoration:none;font-weight:600;">See Plans & Pricing</a> — Starting at $38.85/month
+      </p>
+    </td>
+  </tr>
+
+  <!-- Footer -->
+  <tr>
+    <td style="background-color:#f8f8f8;padding:20px 32px;border-top:1px solid #eee;">
+      <p style="color:#999;font-size:11px;margin:0;text-align:center;">
+        Film &amp; Television Industry Alliance<br/>
+        905 N Bethlehem Pk, #44, Spring House, PA 19477<br/>
+        <a href="https://productionlist.com/unsubscribe" style="color:#999;text-decoration:underline;">Unsubscribe</a>
+        &nbsp;&middot;&nbsp;
+        <a href="https://productionlist.com" style="color:#999;text-decoration:underline;">Visit Website</a>
+      </p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`,
     }),
   },
   {
