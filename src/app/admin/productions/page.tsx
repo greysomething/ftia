@@ -75,7 +75,7 @@ export default async function AdminProductionsPage({ searchParams }: Props) {
   const status = params.status ?? ''
   const sort = (VALID_SORT_FIELDS.includes(params.sort as ProductionSortField)
     ? params.sort
-    : 'wp_updated_at') as ProductionSortField
+    : 'created_at') as ProductionSortField
   const dir = (params.dir === 'asc' ? 'asc' : 'desc') as SortDir
 
   const [{ productions, total, perPage }, counts] = await Promise.all([
@@ -86,14 +86,14 @@ export default async function AdminProductionsPage({ searchParams }: Props) {
   const extraParams: Record<string, string> = {}
   if (q) extraParams.q = q
   if (status) extraParams.status = status
-  if (sort !== 'wp_updated_at') extraParams.sort = sort
+  if (sort !== 'created_at') extraParams.sort = sort
   if (dir !== 'desc') extraParams.dir = dir
 
   function tabHref(key: string) {
     const p = new URLSearchParams()
     if (q) p.set('q', q)
     if (key) p.set('status', key)
-    if (sort !== 'wp_updated_at') p.set('sort', sort)
+    if (sort !== 'created_at') p.set('sort', sort)
     if (dir !== 'desc') p.set('dir', dir)
     const qs = p.toString()
     return `/admin/productions${qs ? `?${qs}` : ''}`
@@ -155,7 +155,14 @@ export default async function AdminProductionsPage({ searchParams }: Props) {
         />
         {status && <input type="hidden" name="status" value={status} />}
         <button type="submit" className="btn-primary">Search</button>
-        {q && <Link href={tabHref(status)} className="btn-outline">Clear</Link>}
+        {q && (() => {
+          const cp = new URLSearchParams()
+          if (status) cp.set('status', status)
+          if (sort !== 'created_at') cp.set('sort', sort)
+          if (dir !== 'desc') cp.set('dir', dir)
+          const cqs = cp.toString()
+          return <Link href={`/admin/productions${cqs ? `?${cqs}` : ''}`} className="btn-outline">Clear</Link>
+        })()}
       </form>
 
       <div className="admin-card p-0 overflow-hidden">
