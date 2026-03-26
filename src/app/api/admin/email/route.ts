@@ -118,6 +118,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'templateSlug and to are required' }, { status: 400 })
     }
 
+    // For weekly-digest, use real production data from the current week
+    if (templateSlug === 'weekly-digest') {
+      const baseUrl = req.nextUrl.origin || 'https://productionlist.com'
+      try {
+        const digestRes = await fetch(`${baseUrl}/api/admin/send-weekly-digest?test=${encodeURIComponent(to)}`, {
+          method: 'POST',
+          headers: {
+            cookie: req.headers.get('cookie') || '',
+          },
+        })
+        const digestData = await digestRes.json()
+        return NextResponse.json({
+          success: digestRes.ok && digestData.success,
+          error: digestData.error || digestData.message,
+          emailId: digestData.emailId,
+        })
+      } catch (err: any) {
+        return NextResponse.json({ success: false, error: err.message ?? 'Failed to send digest test' })
+      }
+    }
+
     const template = getTemplate(templateSlug)
     if (!template) {
       return NextResponse.json({ error: `Unknown template: ${templateSlug}` }, { status: 400 })
@@ -140,11 +161,7 @@ export async function POST(req: NextRequest) {
         }
         case 'productionCount': sampleVars[v] = '42'; break
         case 'digestUrl': sampleVars[v] = 'https://productionlist.com/production-list'; break
-        case 'productionsHtml': sampleVars[v] = `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;">
-          <tr style="background-color:#ffffff;"><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="#" style="color:#2b7bb9;text-decoration:none;font-weight:600;font-size:14px;">Sample Production</a> <span style="color:#666;font-size:12px;"> Feature Film</span></td><td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#555;font-size:13px;">Los Angeles, CA</td></tr>
-          <tr style="background-color:#f9fafb;"><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="#" style="color:#2b7bb9;text-decoration:none;font-weight:600;font-size:14px;">Another Show</a> <span style="color:#666;font-size:12px;"> Series</span></td><td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#555;font-size:13px;">New York, NY</td></tr>
-          <tr style="background-color:#ffffff;"><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="#" style="color:#2b7bb9;text-decoration:none;font-weight:600;font-size:14px;">The Great Pilot</a> <span style="color:#666;font-size:12px;"> Pilot</span></td><td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#555;font-size:13px;">Atlanta, GA</td></tr>
-        </table>`; break
+        case 'productionsHtml': sampleVars[v] = ''; break
         case 'subject': sampleVars[v] = 'General Inquiry'; break
         default: sampleVars[v] = `[${v}]`
       }
