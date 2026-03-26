@@ -99,6 +99,30 @@ export async function moveToPastMember(email: string, firstName?: string, lastNa
   await removeFromActiveMembersAudience(email)
 }
 
+/**
+ * Unsubscribe a contact from ALL audiences (General, Active, Past).
+ * Marks them as unsubscribed rather than removing, so we retain the record.
+ */
+export async function unsubscribeFromAll(email: string) {
+  const audiences = [AUDIENCE_GENERAL, AUDIENCE_ACTIVE_MEMBERS, AUDIENCE_PAST_MEMBERS]
+  const results: string[] = []
+
+  for (const audienceId of audiences) {
+    try {
+      await resend.contacts.update({
+        audienceId,
+        id: email,
+        unsubscribed: true,
+      })
+      results.push(audienceId)
+    } catch {
+      // Contact may not exist in this audience — that's fine
+    }
+  }
+
+  return results
+}
+
 // Legacy aliases used by existing code
 export const addToActiveMembers = moveToActiveMember
 export const addToPastMembers = moveToPastMember
