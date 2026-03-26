@@ -42,7 +42,7 @@ export function PageSidebar({
             Join Now
           </Link>
           <p className="text-xs text-gray-400 mt-2">
-            Starting at $29.95/month
+            Starting at $38.85/month
           </p>
         </div>
       )}

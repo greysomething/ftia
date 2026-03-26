@@ -340,7 +340,7 @@ export default async function BlogPage({ searchParams }: Props) {
                   >
                     View Membership Plans
                   </Link>
-                  <p className="text-white/30 text-[10px] mt-2">Starting at $29.95/month</p>
+                  <p className="text-white/30 text-[10px] mt-2">Starting at $38.85/month</p>
                 </div>
 
                 {/* News Categories */}

@@ -321,7 +321,7 @@ export default async function SlugPage({ params }: Props) {
                 >
                   See Plans &amp; Pricing
                 </Link>
-                <p className="text-xs text-gray-400 mt-2">Starting at $29.95/month</p>
+                <p className="text-xs text-gray-400 mt-2">Starting at $38.85/month</p>
               </div>
 
               {/* Trending Productions */}
