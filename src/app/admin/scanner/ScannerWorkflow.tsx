@@ -111,6 +111,10 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
 
   const [formState, formAction, formPending] = useActionState(saveProduction, null)
 
+  // Blog generation state
+  const [generatingBlog, setGeneratingBlog] = useState(false)
+  const [blogResult, setBlogResult] = useState<{ saved: boolean; blogPostId?: number; title?: string; error?: string } | null>(null)
+
   // ── Step 1: Upload & Extract ──
   const processFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -535,7 +539,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     setPrimaryStatusId(null); setLocations([]); setCrew([]); setCompanies([])
     setExistingProduction(null); setFieldDiffs([]); setCrewDiffs({ added: [], acceptedAdded: [] })
     setCompanyDiffs({ added: [], acceptedAdded: [] }); setLocationDiffs({ added: [], acceptedAdded: [] })
-    setUpdateMode(false)
+    setUpdateMode(false); setBlogResult(null)
   }
 
   const stepIdx = STEPS.findIndex(s => s.key === step)
@@ -1204,6 +1208,76 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                       : (updateMode ? 'Update Production' : 'Create Production')}
                   </button>
                 </div>
+                {/* Blog post generation */}
+                {blogResult?.saved ? (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm font-medium text-green-800">Blog draft created!</p>
+                    <p className="text-xs text-green-600 mt-1">{blogResult.title}</p>
+                    <Link href={`/admin/blog/${blogResult.blogPostId}/edit`}
+                      className="inline-block mt-2 text-xs text-[#3ea8c8] hover:underline font-medium">
+                      Edit blog post draft
+                    </Link>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={generatingBlog}
+                    onClick={async () => {
+                      setGeneratingBlog(true)
+                      setBlogResult(null)
+                      try {
+                        const res = await fetch('/api/admin/generate-blog-post', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            productionId: updateMode && existingProduction ? existingProduction.id : undefined,
+                            productionData: {
+                              title,
+                              excerpt,
+                              content,
+                              computed_status: computedStatus,
+                              production_date_start: dateStart,
+                              production_date_end: dateEnd,
+                              types: selectedTypeIds.map(id => typeOptions.find(t => t.id === id)?.name).filter(Boolean),
+                              statuses: selectedStatusIds.map(id => statusOptions.find(s => s.id === id)?.name).filter(Boolean),
+                              locations: locations.filter(l => l.city || l.location),
+                              crew: crew.filter(c => c.inline_name),
+                              companies: companies.filter(c => c.inline_name),
+                            },
+                          }),
+                        })
+                        const result = await res.json()
+                        if (!res.ok) throw new Error(result.error || 'Generation failed')
+                        setBlogResult({ saved: result.saved, blogPostId: result.blogPostId, title: result.blog?.title, error: result.saved ? undefined : result.error })
+                      } catch (err: any) {
+                        setBlogResult({ saved: false, error: err.message || 'Failed to generate blog post' })
+                      }
+                      setGeneratingBlog(false)
+                    }}
+                    className="btn-outline w-full text-sm flex items-center justify-center gap-2"
+                  >
+                    {generatingBlog ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Generating blog post...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Generate Blog Post Draft
+                      </>
+                    )}
+                  </button>
+                )}
+                {blogResult?.error && (
+                  <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">{blogResult.error}</div>
+                )}
+
                 <button type="button" onClick={resetAll} className="btn-outline w-full text-sm">Start Over</button>
               </div>
 

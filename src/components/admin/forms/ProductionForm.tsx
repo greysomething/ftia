@@ -77,6 +77,11 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
   const [state, action, pending] = useActionState(saveProduction, null)
   const [scannedData, setScannedData] = useState<any>(null)
 
+  // Blog generation state
+  const [generatingBlog, setGeneratingBlog] = useState(false)
+  const [blogResult, setBlogResult] = useState<{ saved: boolean; blogPostId?: number; blogSlug?: string; title?: string; error?: string } | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+
   // Entity match state
   const [companyMatches, setCompanyMatches] = useState<Record<string, MatchCandidate[]>>({})
   const [crewMatches, setCrewMatches] = useState<Record<string, MatchCandidate[]>>({})
@@ -331,7 +336,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
   }
 
   return (
-    <form action={action} className="space-y-6 max-w-4xl" key={scannedData ? 'scanned' : 'default'}>
+    <form ref={formRef} action={action} className="space-y-6 max-w-4xl" key={scannedData ? 'scanned' : 'default'}>
       {production && <input type="hidden" name="id" value={production.id} />}
 
       {/* Hidden JSON fields for repeatable sections */}
@@ -766,6 +771,102 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
             )
           })}
         </div>
+      </div>
+
+      {/* ── Generate Blog Post ── */}
+      <div className="admin-card space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-gray-900">Blog Post</h3>
+          {production?.blog_linked && (
+            <Link href={`/admin/blog/${production.blog_linked}/edit`} className="text-xs text-[#3ea8c8] hover:underline">
+              View linked post
+            </Link>
+          )}
+        </div>
+        <p className="text-xs text-gray-500">Generate an AI-written production report blog post based on this listing&apos;s data.</p>
+
+        {blogResult?.saved ? (
+          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-sm font-medium text-green-800">Blog draft created!</p>
+            <p className="text-xs text-green-600 mt-1">{blogResult.title}</p>
+            <Link href={`/admin/blog/${blogResult.blogPostId}/edit`}
+              className="inline-block mt-2 text-xs text-[#3ea8c8] hover:underline font-medium">
+              Edit blog post draft
+            </Link>
+          </div>
+        ) : blogResult?.error ? (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{blogResult.error}</div>
+        ) : null}
+
+        <button
+          type="button"
+          disabled={generatingBlog}
+          onClick={async () => {
+            setGeneratingBlog(true)
+            setBlogResult(null)
+            try {
+              // Read current form values from the DOM
+              const form = formRef.current
+              const currentTitle = form ? (form.elements.namedItem('title') as HTMLInputElement)?.value : production?.title
+              const currentExcerpt = form ? (form.elements.namedItem('excerpt') as HTMLTextAreaElement)?.value : production?.excerpt
+              const currentContent = form ? (form.elements.namedItem('content') as HTMLTextAreaElement)?.value : production?.content
+              const currentPhase = form ? (form.elements.namedItem('computed_status') as HTMLSelectElement)?.value : production?.computed_status
+              const currentDateStart = form ? (form.elements.namedItem('production_date_start') as HTMLInputElement)?.value : production?.production_date_start
+              const currentDateEnd = form ? (form.elements.namedItem('production_date_end') as HTMLInputElement)?.value : production?.production_date_end
+
+              const res = await fetch('/api/admin/generate-blog-post', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  productionId: production?.id,
+                  productionData: {
+                    title: currentTitle || '',
+                    excerpt: currentExcerpt || '',
+                    content: currentContent || '',
+                    computed_status: currentPhase || '',
+                    production_date_start: currentDateStart || '',
+                    production_date_end: currentDateEnd || '',
+                    types: selectedTypeIds.map(id => typeOptions.find(t => t.id === id)?.name).filter(Boolean),
+                    statuses: selectedStatusIds.map(id => statusOptions.find(s => s.id === id)?.name).filter(Boolean),
+                    locations: locations.filter(l => l.city || l.location),
+                    crew: crew.filter(c => c.inline_name),
+                    companies: companies.filter(c => c.inline_name),
+                  },
+                }),
+              })
+              const result = await res.json()
+              if (!res.ok) throw new Error(result.error || 'Generation failed')
+              setBlogResult({
+                saved: result.saved,
+                blogPostId: result.blogPostId,
+                blogSlug: result.blogSlug,
+                title: result.blog?.title,
+                error: result.saved ? undefined : result.error,
+              })
+            } catch (err: any) {
+              setBlogResult({ saved: false, error: err.message || 'Failed to generate blog post' })
+            }
+            setGeneratingBlog(false)
+          }}
+          className="btn-outline w-full text-sm flex items-center justify-center gap-2"
+        >
+          {generatingBlog ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Generating blog post...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Generate Blog Post Draft
+            </>
+          )}
+        </button>
       </div>
 
       {/* ── Save ── */}

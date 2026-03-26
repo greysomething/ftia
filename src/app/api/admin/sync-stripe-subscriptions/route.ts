@@ -110,21 +110,29 @@ export async function POST() {
     skipped: 0,
     ordersBackfilled: 0,
     errors: [] as string[],
-    byStatus: { active: 0, canceled: 0, past_due: 0, trialing: 0, unpaid: 0 },
+    byStatus: { active: 0, active_cancelling: 0, canceled: 0, past_due: 0, trialing: 0, unpaid: 0 },
   }
 
-  // Count by status
+  // Count by status (distinguish truly active vs cancel_at_period_end)
   for (const sub of uniqueSubs) {
-    if (sub.status in stats.byStatus) {
+    if (sub.status === 'active' && sub.cancel_at_period_end) {
+      stats.byStatus.active_cancelling++
+    } else if (sub.status in stats.byStatus) {
       (stats.byStatus as any)[sub.status]++
     }
   }
 
   // 5. Group subscriptions by customer email and pick the BEST one per user.
-  // Priority: active > trialing > past_due > canceled > unpaid
-  // Within same priority, prefer the most recently created subscription.
-  const STATUS_PRIORITY: Record<string, number> = {
-    active: 5, trialing: 4, past_due: 3, canceled: 2, unpaid: 1,
+  // Priority: truly active > trialing > past_due > active+cancelling > canceled > unpaid
+  // Subscriptions with cancel_at_period_end=true are treated as "cancelling" — the user
+  // has already cancelled, they just have access until their period ends.
+  function getSubPriority(sub: any): number {
+    if (sub.status === 'active' && !sub.cancel_at_period_end) return 6
+    if (sub.status === 'trialing') return 5
+    if (sub.status === 'past_due') return 4
+    if (sub.status === 'active' && sub.cancel_at_period_end) return 3  // cancelling
+    if (sub.status === 'canceled') return 2
+    return 1 // unpaid or other
   }
 
   const bestSubByEmail = new Map<string, any>()
@@ -138,17 +146,17 @@ export async function POST() {
       continue
     }
 
-    const existingPriority = STATUS_PRIORITY[existing.status] ?? 0
-    const newPriority = STATUS_PRIORITY[sub.status] ?? 0
+    const existingPriority = getSubPriority(existing)
+    const newPriority = getSubPriority(sub)
 
-    // Higher status priority wins; tie-break by most recent creation
+    // Higher priority wins; tie-break by most recent creation
     if (newPriority > existingPriority ||
         (newPriority === existingPriority && (sub.created ?? 0) > (existing.created ?? 0))) {
       bestSubByEmail.set(email, sub)
     }
   }
 
-  console.log(`[Stripe Sync] ${uniqueSubs.length} total subs → ${bestSubByEmail.size} unique users (by best sub)`)
+  console.log(`[Stripe Sync] ${uniqueSubs.length} total subs → ${bestSubByEmail.size} unique users. Active: ${stats.byStatus.active}, Cancelling: ${stats.byStatus.active_cancelling}, Canceled: ${stats.byStatus.canceled}`)
 
   // 5b. Process the single best subscription per user
   for (const [email, sub] of bestSubByEmail) {
@@ -157,16 +165,22 @@ export async function POST() {
       if (!email) { stats.skipped++; continue }
 
       // Map Stripe status → our membership status
+      // Key: if cancel_at_period_end is true, the user has cancelled even though
+      // Stripe still reports status as 'active'. Treat these as 'cancelled'.
       let membershipStatus: string
-      switch (sub.status) {
-        case 'active': case 'trialing':
-          membershipStatus = 'active'; break
-        case 'past_due':
-          membershipStatus = 'active'; break
-        case 'canceled':
-          membershipStatus = 'cancelled'; break
-        default:
-          membershipStatus = 'expired'; break
+      if (sub.status === 'active' && sub.cancel_at_period_end) {
+        membershipStatus = 'cancelled'
+      } else {
+        switch (sub.status) {
+          case 'active': case 'trialing':
+            membershipStatus = 'active'; break
+          case 'past_due':
+            membershipStatus = 'active'; break
+          case 'canceled':
+            membershipStatus = 'cancelled'; break
+          default:
+            membershipStatus = 'expired'; break
+        }
       }
 
       // Map Stripe price → membership level
