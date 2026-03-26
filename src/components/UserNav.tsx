@@ -25,6 +25,13 @@ export function UserNav({ user, isAdmin }: UserNavProps) {
   }, [])
 
   async function handleSignOut() {
+    // Log logout before signing out (fire-and-forget)
+    fetch('/api/log-activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType: 'logout' }),
+    }).catch(() => {})
+
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/')

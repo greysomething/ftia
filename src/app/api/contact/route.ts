@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendEmail } from '@/lib/send-email'
 import { getTemplate } from '@/lib/email-templates'
+import { logActivity } from '@/lib/activity-log'
 
-const CONTACT_TO = process.env.CONTACT_EMAIL ?? 'info@productionlist.com'
+const CONTACT_TO = process.env.CONTACT_EMAIL ?? 'hello@support.productionlist.com'
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,6 +62,14 @@ export async function POST(req: NextRequest) {
         console.error('[contact] Failed to send confirmation email:', confirmResult.error)
       }
     }
+
+    // Log contact form submission (fire-and-forget)
+    logActivity({
+      eventType: 'contact_form',
+      email,
+      metadata: { name, subject },
+      reqHeaders: req.headers,
+    })
 
     return NextResponse.redirect(
       new URL('/contact?success=true', req.url),

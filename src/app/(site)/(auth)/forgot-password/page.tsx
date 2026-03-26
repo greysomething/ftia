@@ -26,6 +26,14 @@ export default function ForgotPasswordPage() {
     await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
     })
+
+    // Log password reset request (fire-and-forget)
+    fetch('/api/log-activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType: 'password_reset', metadata: { email } }),
+    }).catch(() => {})
+
     setSent(true)
     setLoading(false)
   }

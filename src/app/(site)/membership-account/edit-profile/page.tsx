@@ -82,6 +82,13 @@ export default function EditProfilePage() {
     if (error) {
       setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' })
     } else {
+      // Log profile update (fire-and-forget)
+      fetch('/api/log-activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventType: 'profile_update', metadata: { updatedBy: 'self' } }),
+      }).catch(() => {})
+
       setMessage({ type: 'success', text: 'Profile updated successfully.' })
       setTimeout(() => router.push('/membership-account'), 1500)
     }

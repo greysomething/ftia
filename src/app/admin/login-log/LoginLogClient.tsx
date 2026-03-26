@@ -41,6 +41,7 @@ const EVENT_LABELS: Record<string, { label: string; color: string }> = {
   password_reset: { label: 'Password Reset', color: 'bg-yellow-100 text-yellow-800' },
   pdf_download: { label: 'PDF Download', color: 'bg-purple-100 text-purple-800' },
   profile_update: { label: 'Profile Update', color: 'bg-indigo-100 text-indigo-800' },
+  contact_form: { label: 'Contact Form', color: 'bg-teal-100 text-teal-800' },
 }
 
 function formatLocation(entry: LogEntry) {
@@ -139,7 +140,7 @@ export function LoginLogClient({
           <div className="flex-1 min-w-[200px]">
             <label className="form-label">Event Type</label>
             <div className="flex flex-wrap gap-1">
-              {['all', 'login', 'login_failed', 'register', 'password_reset', 'pdf_download'].map(type => (
+              {['all', 'login', 'login_failed', 'logout', 'register', 'password_reset', 'pdf_download', 'profile_update', 'contact_form'].map(type => (
                 <button
                   key={type}
                   onClick={() => router.push(buildUrl({ type, page: '1' }))}

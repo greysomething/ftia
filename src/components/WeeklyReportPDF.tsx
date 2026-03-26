@@ -772,6 +772,16 @@ export function WeeklyReportPDF({ weekMonday, projectCount, isMember = false }: 
 
       drawFooter()
 
+      // Log PDF download (fire-and-forget)
+      fetch('/api/log-activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'pdf_download',
+          metadata: { weekMonday, projectCount: productions.length },
+        }),
+      }).catch(() => {})
+
       doc.save(`production-list-${weekMonday}.pdf`)
     } catch (err) {
       console.error('PDF export error:', err)

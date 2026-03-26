@@ -3,6 +3,7 @@
 import { requireAdmin } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { logActivity } from '@/lib/activity-log'
 
 export async function updateUserRole(userId: string, role: 'admin' | 'member') {
   await requireAdmin()
@@ -109,6 +110,13 @@ export async function updateProfile(formData: FormData) {
     .eq('id', userId)
 
   if (error) throw new Error(error.message)
+
+  // Log admin profile update (fire-and-forget)
+  logActivity({
+    userId,
+    eventType: 'profile_update',
+    metadata: { updatedBy: 'admin', fields: Object.keys(updates).filter(k => k !== 'updated_at') },
+  })
 
   revalidatePath(`/admin/users/${userId}`)
   revalidatePath('/admin/users')

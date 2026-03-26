@@ -9,6 +9,7 @@ export type EventType =
   | 'password_reset'
   | 'pdf_download'
   | 'profile_update'
+  | 'contact_form'
 
 interface LogActivityOptions {
   userId?: string | null
