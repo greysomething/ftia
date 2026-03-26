@@ -174,7 +174,7 @@ export const emailTemplates: EmailTemplate[] = [
 
   <!-- Productions List -->
   <tr>
-    <td style="padding:8px 24px 16px;">
+    <td style="padding:8px 12px 16px;">
       ${vars.productionsHtml || '<p style="color:#999;text-align:center;padding:20px;">No productions available.</p>'}
     </td>
   </tr>

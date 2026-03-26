@@ -107,13 +107,18 @@ function buildProductionsHtml(productions: ProductionForDigest[]): string {
     const location = getLocationString(prod)
     const bgColor = i % 2 === 0 ? '#ffffff' : '#f9fafb'
 
+    // Single-column stacked layout — works well on both desktop and mobile
+    const metaParts: string[] = []
+    if (type) metaParts.push(escapeHtml(type))
+    if (location) metaParts.push(escapeHtml(location))
+    const metaLine = metaParts.length > 0
+      ? `<div style="color:#777;font-size:12px;margin-top:2px;">${metaParts.join(' &nbsp;&bull;&nbsp; ')}</div>`
+      : ''
+
     return `<tr style="background-color:${bgColor};">
-      <td style="padding:8px 12px;border-bottom:1px solid #eee;">
-        <a href="https://productionlist.com/productions/${prod.slug}" style="color:${type ? '#2b7bb9' : '#2b7bb9'};text-decoration:none;font-weight:600;font-size:14px;">${escapeHtml(prod.title)}</a>
-        ${type ? `<span style="color:#666;font-size:12px;font-weight:400;"> ${escapeHtml(type)}</span>` : ''}
-      </td>
-      <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#555;font-size:13px;white-space:nowrap;">
-        ${escapeHtml(location)}
+      <td style="padding:10px 12px;border-bottom:1px solid #eee;">
+        <a href="https://productionlist.com/productions/${prod.slug}" style="color:#2b7bb9;text-decoration:none;font-weight:600;font-size:15px;line-height:1.3;">${escapeHtml(prod.title)}</a>
+        ${metaLine}
       </td>
     </tr>`
   })
