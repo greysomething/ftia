@@ -265,7 +265,7 @@ export async function getAdminBlogPosts({ page = 1, q }: { page?: number; q?: st
 
   let query = supabase
     .from('blog_posts')
-    .select('id, title, slug, status, published_at, updated_at', { count: 'exact' })
+    .select('id, title, slug, visibility, published_at, updated_at', { count: 'exact' })
     .order('id', { ascending: false })
     .range(from, to)
 

@@ -59,11 +59,11 @@ export default async function AdminBlogPage({ searchParams }: Props) {
                 </td>
                 <td>
                   <span className={`badge ${
-                    p.status === 'published' ? 'badge-green'
-                      : p.status === 'scheduled' ? 'badge-yellow'
+                    p.visibility === 'publish' ? 'badge-green'
+                      : p.visibility === 'draft' ? 'badge-yellow'
                       : 'badge-gray'
                   }`}>
-                    {p.status}
+                    {p.visibility}
                   </span>
                 </td>
                 <td className="text-gray-500 text-sm">{formatDate(p.published_at) || '—'}</td>
