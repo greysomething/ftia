@@ -595,15 +595,26 @@ export async function getAdminUserCounts() {
   ])
 
   // Membership counts with revenue calculation
-  const { data: mems } = await supabase
-    .from('user_memberships')
-    .select('status, level_id, membership_levels(name, billing_amount, cycle_period)')
+  // Supabase caps at 1000 rows by default — fetch all with pagination
+  let mems: any[] = []
+  let offset = 0
+  const batchSize = 1000
+  while (true) {
+    const { data } = await supabase
+      .from('user_memberships')
+      .select('status, level_id, membership_levels(name, billing_amount, cycle_period)')
+      .range(offset, offset + batchSize - 1)
+    if (!data || data.length === 0) break
+    mems = mems.concat(data)
+    if (data.length < batchSize) break
+    offset += batchSize
+  }
 
   const memCounts = { active: 0, cancelled: 0, expired: 0, pending: 0 }
   let mrr = 0 // Monthly Recurring Revenue
   const planBreakdown: Record<string, { name: string; active: number; total: number; mrr: number }> = {}
 
-  for (const m of mems ?? []) {
+  for (const m of mems) {
     if (m.status in memCounts) (memCounts as any)[m.status]++
 
     const level = (m as any).membership_levels
@@ -637,8 +648,8 @@ export async function getAdminUserCounts() {
     cancelledMemberships: memCounts.cancelled,
     expiredMemberships: memCounts.expired,
     pendingMemberships: memCounts.pending,
-    noMembership: (totalCount ?? 0) - (mems?.length ?? 0),
-    totalMemberships: mems?.length ?? 0,
+    noMembership: (totalCount ?? 0) - mems.length,
+    totalMemberships: mems.length,
     mrr,
     arr: mrr * 12,
     planStats,

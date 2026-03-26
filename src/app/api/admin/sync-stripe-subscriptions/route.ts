@@ -235,8 +235,14 @@ export async function POST() {
         .single()
 
       if (existingMem) {
-        // Don't overwrite active with cancelled
+        // Don't overwrite active with cancelled, but still link Stripe IDs
         if (existingMem.status === 'active' && (membershipStatus === 'cancelled' || membershipStatus === 'expired')) {
+          await supabase.from('user_memberships')
+            .update({
+              stripe_customer_id: customer.id,
+              stripe_subscription_id: sub.id,
+            })
+            .eq('id', existingMem.id)
           stats.synced++
           continue
         }
