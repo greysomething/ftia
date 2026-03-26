@@ -131,15 +131,15 @@ export async function POST(req: NextRequest) {
   const parsed = parseTitle(title)
   const supabase = createAdminClient()
 
-  // Fetch all productions with their types and statuses
+  // Fetch all productions (including drafts) with their types and statuses
   const { data: productions } = await supabase
     .from('productions')
     .select(`
-      id, title, slug,
+      id, title, slug, visibility,
       production_type_links(production_types(name)),
       production_status_links(production_statuses(name))
     `)
-    .eq('visibility', 'publish')
+    .in('visibility', ['publish', 'draft', 'members_only'])
     .limit(5000)
 
   const matches: DuplicateMatch[] = []

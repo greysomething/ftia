@@ -62,7 +62,12 @@ export async function saveProduction(prevState: any, formData: FormData) {
     if (error) return { error: error.message }
   } else {
     const { data, error } = await supabase.from('productions').insert(row).select('id').single()
-    if (error) return { error: error.message }
+    if (error) {
+      if (error.message.includes('productions_slug_key')) {
+        return { error: `A production with the URL slug "${slug}" already exists. Try changing the title slightly or editing the existing production instead.` }
+      }
+      return { error: error.message }
+    }
     productionId = data.id
   }
 
