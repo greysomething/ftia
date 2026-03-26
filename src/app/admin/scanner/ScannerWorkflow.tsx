@@ -638,7 +638,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                 <div className="space-y-2">
                   {crew.map((c, i) => {
                     const matches = crewMatches[c.inline_name] ?? []
-                    const linkedMatch = c.crew_id ? matches.find(m => m.id === c.crew_id) : null
+                    const linkedFromFuzzy = c.crew_id ? matches.find(m => m.id === c.crew_id) : null
                     return (
                       <div key={i} className="space-y-1">
                         <div className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
@@ -650,7 +650,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                               type="crew"
                               value={c.inline_name}
                               onChange={val => {
-                                const updated = [...crew]; updated[i] = { ...updated[i], inline_name: val }; setCrew(updated)
+                                const updated = [...crew]; updated[i] = { ...updated[i], inline_name: val, crew_id: null }; setCrew(updated)
                               }}
                               onSelect={r => {
                                 const updated = [...crew]; updated[i] = { ...updated[i], inline_name: r.title, crew_id: r.id }; setCrew(updated)
@@ -670,13 +670,13 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                           <button type="button" onClick={() => removeCrewRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
                         </div>
                         {/* DB match indicator */}
-                        {linkedMatch ? (
+                        {c.crew_id ? (
                           <div className="flex items-center gap-2 ml-2 text-[11px]">
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
-                              Linked: {linkedMatch.title} ({linkedMatch.score}%)
+                              Linked: {linkedFromFuzzy?.title ?? c.inline_name} {linkedFromFuzzy ? `(${linkedFromFuzzy.score}%)` : `(#${c.crew_id})`}
                             </span>
-                            {linkedMatch.detail && <span className="text-gray-400">{linkedMatch.detail}</span>}
+                            {linkedFromFuzzy?.detail && <span className="text-gray-400">{linkedFromFuzzy.detail}</span>}
                             <button type="button" onClick={() => {
                               const updated = [...crew]; updated[i] = { ...updated[i], crew_id: null }; setCrew(updated)
                             }} className="text-gray-400 hover:text-red-500 underline">Unlink</button>
@@ -710,7 +710,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                 <div className="space-y-2">
                   {companies.map((c, i) => {
                     const matches = companyMatches[c.inline_name] ?? []
-                    const linkedMatch = c.company_id ? matches.find(m => m.id === c.company_id) : null
+                    const linkedFromFuzzy = c.company_id ? matches.find(m => m.id === c.company_id) : null
                     return (
                       <div key={i} className="space-y-1">
                         <div className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
@@ -719,7 +719,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                               type="company"
                               value={c.inline_name}
                               onChange={val => {
-                                const updated = [...companies]; updated[i] = { ...updated[i], inline_name: val }; setCompanies(updated)
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_name: val, company_id: null }; setCompanies(updated)
                               }}
                               onSelect={r => {
                                 const updated = [...companies]; updated[i] = { ...updated[i], inline_name: r.title, company_id: r.id }; setCompanies(updated)
@@ -739,13 +739,13 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                           <button type="button" onClick={() => removeCompanyRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
                         </div>
                         {/* DB match indicator */}
-                        {linkedMatch ? (
+                        {c.company_id ? (
                           <div className="flex items-center gap-2 ml-2 text-[11px]">
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
-                              Linked: {linkedMatch.title} ({linkedMatch.score}%)
+                              Linked: {linkedFromFuzzy?.title ?? c.inline_name} {linkedFromFuzzy ? `(${linkedFromFuzzy.score}%)` : `(#${c.company_id})`}
                             </span>
-                            {linkedMatch.detail && <span className="text-gray-400">{linkedMatch.detail}</span>}
+                            {linkedFromFuzzy?.detail && <span className="text-gray-400">{linkedFromFuzzy.detail}</span>}
                             <button type="button" onClick={() => {
                               const updated = [...companies]; updated[i] = { ...updated[i], company_id: null }; setCompanies(updated)
                             }} className="text-gray-400 hover:text-red-500 underline">Unlink</button>
