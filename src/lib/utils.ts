@@ -122,11 +122,14 @@ export function rewriteContentImageUrls(html: string): string {
     )
 }
 
-/** Get featured image URL from a post with media relation */
+/** Get featured image URL from a post with media relation or direct URL */
 export function getFeaturedImageUrl(post: any): string | null {
+  // Check media relation first (WP-migrated posts)
   const media = post?.media
-  if (!media) return null
-  return getMediaUrl(media.storage_path ?? null, media.original_url ?? null)
+  if (media) return getMediaUrl(media.storage_path ?? null, media.original_url ?? null)
+  // Fallback to directly uploaded featured image URL
+  if (post?.featured_image_url) return post.featured_image_url
+  return null
 }
 
 /** Format a production location from its component fields */

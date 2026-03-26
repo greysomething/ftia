@@ -44,6 +44,7 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
     title, slug, visibility,
     content: (formData.get('content') as string) || null,
     excerpt: (formData.get('excerpt') as string) || null,
+    featured_image_url: (formData.get('featured_image_url') as string) || null,
   }
 
   // Handle published_at / scheduling

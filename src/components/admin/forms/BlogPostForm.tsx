@@ -53,6 +53,7 @@ export function BlogPostForm({ post }: BlogPostFormProps) {
     <form ref={formRef} action={action} className="space-y-6 max-w-4xl">
       {post && <input type="hidden" name="id" value={post.id} />}
       <input type="hidden" name="content" value={content} />
+      <input type="hidden" name="featured_image_url" value={featuredImage} />
 
       {state?.error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">

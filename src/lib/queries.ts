@@ -630,7 +630,7 @@ export async function getBlogPosts(page = 1, { perPage, category }: { perPage?: 
     .from('blog_posts')
     .select(
       `
-      id, title, slug, excerpt, content, published_at, wp_updated_at,
+      id, title, slug, excerpt, content, published_at, wp_updated_at, featured_image_url,
       media(storage_path, original_url, alt_text),
       blog_post_categories(blog_categories(id,name,slug)),
       blog_post_tags(blog_tags(id,name,slug))
