@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/send-email'
 import { getTemplate } from '@/lib/email-templates'
+import { getAdminUser } from '@/lib/auth'
 
 const MIN_PRODUCTIONS = 40
 
@@ -130,7 +131,17 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
 }
 
+export const maxDuration = 300 // 5 minutes for bulk sends
+
 export async function POST(req: NextRequest) {
+  // Auth: either admin user session OR cron secret
+  const cronSecret = req.headers.get('x-cron-secret')
+  const isCron = cronSecret && cronSecret === process.env.CRON_SECRET
+  if (!isCron) {
+    const user = await getAdminUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const supabase = createAdminClient()
   const { searchParams } = new URL(req.url)
   const isPreview = searchParams.get('preview') === 'true'
@@ -284,11 +295,16 @@ export async function POST(req: NextRequest) {
     const personalRendered = template.render(personalVars)
 
     try {
+      const unsubUrl = `https://productionlist.com/unsubscribe?email=${encodeURIComponent(email)}`
       const result = await sendEmail({
         to: email,
         subject: personalRendered.subject,
         html: personalRendered.html,
         templateSlug: 'weekly-digest',
+        headers: {
+          'List-Unsubscribe': `<${unsubUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
       })
 
       if (result.success) {
@@ -302,9 +318,11 @@ export async function POST(req: NextRequest) {
       if (errors.length < 10) errors.push(`${email}: ${err.message}`)
     }
 
-    // Rate limiting — Resend allows 10 emails/second on most plans
-    if (sent % 8 === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+    // Rate limiting — Resend allows 2/sec on free, 10/sec on Pro.
+    // Send in bursts of 5 with 1s pause to stay well under limits
+    // and avoid triggering ISP spam filters with too many rapid sends.
+    if ((sent + failed) % 5 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1200))
     }
   }
 

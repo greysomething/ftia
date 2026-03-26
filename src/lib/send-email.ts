@@ -22,6 +22,8 @@ export interface SendEmailOptions {
   from?: string
   /** Reply-to address */
   replyTo?: string
+  /** Custom email headers (e.g. List-Unsubscribe) */
+  headers?: Record<string, string>
 }
 
 export interface SendEmailResult {
@@ -43,6 +45,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
       subject: opts.subject,
       html: opts.html,
       ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+      ...(opts.headers ? { headers: opts.headers } : {}),
     })
 
     if (error) {

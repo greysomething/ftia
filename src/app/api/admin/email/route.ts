@@ -72,6 +72,85 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ audiences })
   }
 
+  if (action === 'digest-stats') {
+    const supabase = createAdminClient()
+
+    // Fetch all weekly-digest logs (both individual sends and bulk summaries)
+    const allDigestLogs: Array<{
+      recipient: string
+      status: string
+      sent_at: string
+      error_message: string | null
+    }> = []
+
+    let dPage = 0
+    while (true) {
+      const { data } = await supabase
+        .from('email_logs')
+        .select('recipient, status, sent_at, error_message')
+        .eq('template_slug', 'weekly-digest')
+        .order('sent_at', { ascending: false })
+        .range(dPage * 1000, dPage * 1000 + 999)
+      if (!data || data.length === 0) break
+      allDigestLogs.push(...data)
+      if (data.length < 1000) break
+      dPage++
+    }
+
+    // Group bulk sends by week (bulk entries have recipient like "bulk:123")
+    const sends: Array<{
+      week: string
+      total: number
+      sent: number
+      failed: number
+      date: string
+    }> = []
+
+    let totalSent = 0
+    let totalFailed = 0
+    let lastSentAt: string | null = null
+
+    for (const log of allDigestLogs) {
+      if (log.recipient.startsWith('bulk:')) {
+        const totalRecipients = parseInt(log.recipient.replace('bulk:', ''), 10) || 0
+        const failedCount = log.error_message
+          ? (log.error_message.split(';').length)
+          : 0
+        const sentCount = totalRecipients - failedCount
+
+        const sentDate = new Date(log.sent_at)
+        const weekLabel = sentDate.toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric',
+        })
+
+        sends.push({
+          week: `Week of ${weekLabel}`,
+          total: totalRecipients,
+          sent: sentCount,
+          failed: failedCount,
+          date: weekLabel,
+        })
+
+        totalSent += sentCount
+        totalFailed += failedCount
+        if (!lastSentAt) lastSentAt = log.sent_at
+      }
+    }
+
+    const avgPerWeek = sends.length > 0
+      ? sends.reduce((s, d) => s + d.total, 0) / sends.length
+      : 0
+
+    return NextResponse.json({
+      sends,
+      totalSent,
+      totalFailed,
+      avgPerWeek,
+      lastSentAt,
+      cronEnabled: true,
+    })
+  }
+
   // Default: logs
   const supabase = createAdminClient()
   const statusFilter = req.nextUrl.searchParams.get('status')

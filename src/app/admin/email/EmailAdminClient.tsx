@@ -62,7 +62,7 @@ interface Props {
   initialOverrides: TemplateOverride[]
 }
 
-const TAB_LIST = ['Overview', 'Templates', 'Logs'] as const
+const TAB_LIST = ['Overview', 'Digest Reports', 'Templates', 'Logs'] as const
 type Tab = (typeof TAB_LIST)[number]
 
 const STATUS_COLORS: Record<string, string> = {
@@ -425,6 +425,11 @@ export default function EmailAdminClient({
         </>
       )}
 
+      {/* ===== DIGEST REPORTS TAB ===== */}
+      {tab === 'Digest Reports' && (
+        <DigestReportsTab />
+      )}
+
       {/* ===== TEMPLATES TAB ===== */}
       {tab === 'Templates' && (
         <>
@@ -712,6 +717,158 @@ export default function EmailAdminClient({
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * Digest Reports tab — shows weekly digest send history, stats, and growth.
+ */
+function DigestReportsTab() {
+  const [digestData, setDigestData] = useState<{
+    sends: Array<{
+      week: string
+      total: number
+      sent: number
+      failed: number
+      date: string
+    }>
+    totalSent: number
+    totalFailed: number
+    avgPerWeek: number
+    lastSentAt: string | null
+    cronEnabled: boolean
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchDigestStats()
+  }, [])
+
+  async function fetchDigestStats() {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/email?action=digest-stats')
+      if (res.ok) {
+        const data = await res.json()
+        setDigestData(data)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="admin-card text-center py-10 text-gray-400">Loading digest reports...</div>
+  }
+
+  if (!digestData) {
+    return <div className="admin-card text-center py-10 text-gray-400">Failed to load digest data.</div>
+  }
+
+  const { sends, totalSent, totalFailed, avgPerWeek, lastSentAt } = digestData
+
+  return (
+    <>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <div className="admin-card text-center">
+          <p className="text-2xl font-bold text-[#1B2A4A]">{totalSent.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 mt-1">Total Digests Sent</p>
+        </div>
+        <div className="admin-card text-center">
+          <p className="text-2xl font-bold text-green-600">
+            {totalSent > 0 ? ((totalSent / (totalSent + totalFailed)) * 100).toFixed(1) : '0'}%
+          </p>
+          <p className="text-xs text-gray-500 mt-1">Delivery Rate</p>
+        </div>
+        <div className="admin-card text-center">
+          <p className="text-2xl font-bold text-[#43B7F0]">{Math.round(avgPerWeek).toLocaleString()}</p>
+          <p className="text-xs text-gray-500 mt-1">Avg Recipients / Week</p>
+        </div>
+        <div className="admin-card text-center">
+          <p className="text-2xl font-bold text-gray-700">
+            {lastSentAt ? new Date(lastSentAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Never'}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">Last Sent</p>
+        </div>
+      </div>
+
+      {/* Cron Status */}
+      <div className="admin-card mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900">Automated Cron Schedule</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Weekly digest is scheduled to send every <strong>Monday at 10:00 AM ET</strong> via Vercel Cron.
+              It only fires when the production list has 40+ productions.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+            <span className="w-2 h-2 rounded-full bg-green-500" />
+            Active
+          </span>
+        </div>
+      </div>
+
+      {/* Send History Table */}
+      <div className="admin-card p-0 overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Send History</h2>
+          <button onClick={fetchDigestStats} className="btn-outline text-xs px-3 py-1">
+            Refresh
+          </button>
+        </div>
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Week</th>
+              <th>Date Sent</th>
+              <th className="text-center">Recipients</th>
+              <th className="text-center">Sent</th>
+              <th className="text-center">Failed</th>
+              <th className="text-center">Success Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sends.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-center text-gray-400 py-10">
+                  No weekly digests sent yet. Send your first digest from the Weekly Lists page.
+                </td>
+              </tr>
+            ) : sends.map((send, i) => {
+              const rate = send.total > 0 ? ((send.sent / send.total) * 100).toFixed(1) : '0'
+              return (
+                <tr key={i}>
+                  <td className="font-medium text-gray-900">{send.week}</td>
+                  <td className="text-sm text-gray-500">{send.date}</td>
+                  <td className="text-center text-sm">{send.total.toLocaleString()}</td>
+                  <td className="text-center">
+                    <span className="text-sm font-medium text-green-600">{send.sent.toLocaleString()}</span>
+                  </td>
+                  <td className="text-center">
+                    {send.failed > 0 ? (
+                      <span className="text-sm font-medium text-red-600">{send.failed}</span>
+                    ) : (
+                      <span className="text-sm text-gray-400">0</span>
+                    )}
+                  </td>
+                  <td className="text-center">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                      parseFloat(rate) >= 95 ? 'bg-green-100 text-green-700' :
+                      parseFloat(rate) >= 80 ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {rate}%
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 
