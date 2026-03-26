@@ -78,7 +78,7 @@ export default async function AdminWeekDetailPage({ params }: Props) {
   const supplementProductions = allProductions.filter(p => supplementSet.has(p.id))
   const totalCount = allProductions.length
 
-  function ProductionRow({ p, showFilmingDate = false }: { p: any; showFilmingDate?: boolean }) {
+  function ProductionRow({ p }: { p: any }) {
     return (
       <tr key={p.id}>
         <td className="text-gray-400 text-xs w-16">{p.id}</td>
@@ -93,9 +93,10 @@ export default async function AdminWeekDetailPage({ params }: Props) {
           </span>
         </td>
         <td className="text-xs text-gray-500 whitespace-nowrap">
-          {showFilmingDate && p.production_date_start
-            ? formatDate(p.production_date_start)
-            : formatDate(p.wp_updated_at)}
+          {p.production_date_start ? formatDate(p.production_date_start) : '—'}
+        </td>
+        <td className="text-xs text-gray-500 whitespace-nowrap">
+          {formatDate(p.wp_updated_at)}
         </td>
         <td className="text-right">
           {entryByProductionId[p.id] ? (
@@ -191,6 +192,7 @@ export default async function AdminWeekDetailPage({ params }: Props) {
               <th>ID</th>
               <th>Title</th>
               <th>Status</th>
+              <th>Filming Start</th>
               <th>Updated</th>
               <th className="text-right">Actions</th>
             </tr>
@@ -198,7 +200,7 @@ export default async function AdminWeekDetailPage({ params }: Props) {
           <tbody>
             {adminProductions.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center text-gray-400 py-8">
+                <td colSpan={6} className="text-center text-gray-400 py-8">
                   No admin-curated productions yet. Add productions above or use the AI Scanner in production edit.
                 </td>
               </tr>
@@ -232,12 +234,13 @@ export default async function AdminWeekDetailPage({ params }: Props) {
                 <th>Title</th>
                 <th>Status</th>
                 <th>Filming Start</th>
+                <th>Updated</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {supplementProductions.map((p: any) => (
-                <ProductionRow key={p.id} p={p} showFilmingDate />
+                <ProductionRow key={p.id} p={p} />
               ))}
             </tbody>
           </table>

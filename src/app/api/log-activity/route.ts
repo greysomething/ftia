@@ -20,9 +20,12 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
+    // For password_reset, the user isn't logged in so use the email from metadata
+    const email = user?.email ?? (eventType === 'password_reset' && metadata?.email ? metadata.email : null)
+
     await logActivity({
       userId: user?.id ?? null,
-      email: user?.email ?? null,
+      email,
       eventType,
       metadata: metadata ?? {},
       reqHeaders: req.headers,

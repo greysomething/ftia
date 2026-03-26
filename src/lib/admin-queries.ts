@@ -288,7 +288,7 @@ export async function getAdminBlogPosts({ page = 1, q, tab }: { page?: number; q
   }
 
   if (q) query = query.ilike('title', `%${q}%`)
-  query = query.order('id', { ascending: false }).range(from, to)
+  query = query.order('published_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }).range(from, to)
 
   const { data, count, error } = await query
   if (error) throw error

@@ -56,10 +56,14 @@ export async function POST(req: NextRequest) {
 
   let customerId = profile?.stripe_customer_id
 
+  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || undefined
+  const description = fullName && user.email ? `${fullName} (${user.email})` : undefined
+
   if (!customerId) {
     const customer = await stripe.customers.create({
       email: user.email,
-      name: [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || undefined,
+      name: fullName,
+      description,
       metadata: { supabase_user_id: user.id },
     })
     customerId = customer.id
@@ -68,6 +72,12 @@ export async function POST(req: NextRequest) {
       .from('user_profiles')
       .update({ stripe_customer_id: customerId })
       .eq('id', user.id)
+  } else if (fullName) {
+    // Update existing Stripe customer with current name/description
+    await stripe.customers.update(customerId, {
+      name: fullName,
+      description,
+    })
   }
 
   const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://productionlist.com'

@@ -65,6 +65,26 @@ export async function POST(req: NextRequest) {
         await supabase.from('user_memberships').insert(memRow)
       }
 
+      // Update Stripe customer with name & description from profile
+      const stripeCustomerId = typeof session.customer === 'string' ? session.customer : (session.customer as any)?.id
+      if (stripeCustomerId) {
+        const { data: userProfile } = await supabase
+          .from('user_profiles')
+          .select('first_name, last_name, email')
+          .eq('id', userId)
+          .single()
+        if (userProfile) {
+          const name = [userProfile.first_name, userProfile.last_name].filter(Boolean).join(' ')
+          const email = userProfile.email || session.customer_email
+          if (name) {
+            await stripe.customers.update(stripeCustomerId, {
+              name,
+              description: email ? `${name} (${email})` : name,
+            })
+          }
+        }
+      }
+
       // Record order
       await supabase.from('membership_orders').insert({
         user_id: userId,

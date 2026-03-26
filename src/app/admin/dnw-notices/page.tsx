@@ -4,6 +4,7 @@ import { getAdminDnwNotices } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate } from '@/lib/utils'
 import { deleteDnwNotice } from './actions'
+import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
 
 export const metadata: Metadata = { title: 'DNW Notices' }
 
@@ -64,10 +65,7 @@ export default async function AdminDnwNoticesPage({ searchParams }: Props) {
                   <div className="flex items-center justify-end gap-2">
                     <Link href={`/admin/dnw-notices/${n.id}/edit`} className="text-xs btn-outline py-1 px-2">Edit</Link>
                     <form action={async () => { 'use server'; await deleteDnwNotice(n.id) }}>
-                      <button type="submit" className="text-xs btn-danger py-1 px-2"
-                        onClick={(e) => { if (!confirm('Delete this notice?')) e.preventDefault() }}>
-                        Delete
-                      </button>
+                      <ConfirmDeleteButton message="Delete this notice?" />
                     </form>
                   </div>
                 </td>

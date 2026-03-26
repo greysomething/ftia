@@ -53,6 +53,7 @@ export async function saveProduction(prevState: any, formData: FormData) {
     production_date_start, production_date_end,
     production_date_startpost, production_date_endpost,
     computed_status,
+    wp_updated_at: new Date().toISOString(),
   }
 
   let productionId = id
