@@ -285,7 +285,32 @@ export async function POST() {
         : new Date(sub.created * 1000).toISOString()
 
       // Extract card details from default payment method
-      const pm = sub.default_payment_method as any
+      // Fallback: if subscription has no default_payment_method, try
+      // the customer's invoice_settings.default_payment_method or list
+      // the customer's payment methods directly.
+      let pm = sub.default_payment_method as any
+      if (!pm?.card && customer?.id) {
+        try {
+          // Try customer's invoice_settings.default_payment_method
+          const fullCustomer = await stripe.customers.retrieve(customer.id, {
+            expand: ['invoice_settings.default_payment_method'],
+          })
+          const invoicePm = (fullCustomer as any)?.invoice_settings?.default_payment_method
+          if (invoicePm?.card) {
+            pm = invoicePm
+          } else {
+            // Last resort: list the customer's payment methods
+            const pms = await stripe.paymentMethods.list({
+              customer: customer.id,
+              type: 'card',
+              limit: 1,
+            })
+            if (pms.data.length > 0) {
+              pm = pms.data[0]
+            }
+          }
+        } catch { /* ignore — card details are best-effort */ }
+      }
       const card = pm?.card ?? null
       const cardFields = card ? {
         card_type: card.brand ?? null,       // visa, mastercard, amex, etc.

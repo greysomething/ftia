@@ -50,7 +50,31 @@ export async function POST(req: NextRequest) {
         })
         periodEnd = new Date((sub as any).current_period_end * 1000).toISOString()
 
-        const pm = (sub as any).default_payment_method
+        let pm = (sub as any).default_payment_method
+        // Fallback: if subscription has no default_payment_method, check the
+        // customer's invoice_settings or list their payment methods directly
+        if (!pm?.card && session.customer) {
+          try {
+            const custId = typeof session.customer === 'string' ? session.customer : (session.customer as any)?.id
+            if (custId) {
+              const fullCustomer = await stripe.customers.retrieve(custId, {
+                expand: ['invoice_settings.default_payment_method'],
+              })
+              const invoicePm = (fullCustomer as any)?.invoice_settings?.default_payment_method
+              if (invoicePm?.card) {
+                pm = invoicePm
+              } else {
+                const pms = await stripe.paymentMethods.list({
+                  customer: custId,
+                  type: 'card',
+                  limit: 1,
+                })
+                if (pms.data.length > 0) pm = pms.data[0]
+              }
+            }
+          } catch { /* card details are best-effort */ }
+        }
+
         if (pm?.card) {
           cardFields = {
             card_type: pm.card.brand ?? null,
@@ -101,7 +125,9 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Record order (with duplicate check on payment_transaction_id)
+      // Record order (with duplicate check on payment_transaction_id AND
+      // a fallback check for same user+amount within 5 minutes to catch
+      // cases where payment_intent is null on the checkout session)
       const checkoutPiId = session.payment_intent as string | null
       let checkoutAlreadyRecorded = false
       if (checkoutPiId) {
@@ -111,6 +137,21 @@ export async function POST(req: NextRequest) {
           .eq('payment_transaction_id', checkoutPiId)
           .limit(1)
         checkoutAlreadyRecorded = !!(existingCheckout && existingCheckout.length > 0)
+      }
+
+      // Also check for a recent order with the same user and amount
+      // (catches duplicates when payment_intent is null on one side)
+      if (!checkoutAlreadyRecorded) {
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+        const orderTotal = session.amount_total ? (session.amount_total / 100) : 0
+        const { data: recentDup } = await supabase
+          .from('membership_orders')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('total', orderTotal)
+          .gte('timestamp', fiveMinAgo)
+          .limit(1)
+        checkoutAlreadyRecorded = !!(recentDup && recentDup.length > 0)
       }
 
       if (!checkoutAlreadyRecorded) {
