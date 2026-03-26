@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getProductionWeeks } from '@/lib/queries'
 import { SnapshotButton } from './SnapshotButton'
+import { BackfillButton } from './BackfillButton'
 
 export const metadata: Metadata = { title: 'Weekly Lists' }
 
@@ -27,7 +28,10 @@ export default async function AdminWeeklyListsPage() {
             {weeks.length} weeks &middot; {totalProductions.toLocaleString()} total entries
           </p>
         </div>
-        <SnapshotButton />
+        <div className="flex items-center gap-2">
+          <BackfillButton />
+          <SnapshotButton />
+        </div>
       </div>
 
       {/* Info banner */}
@@ -79,7 +83,9 @@ export default async function AdminWeeklyListsPage() {
                     {fmt(mondayDate)} &ndash; {fmt(sundayDate)}
                   </td>
                   <td className="text-center">
-                    <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                    <span className={`inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-full text-xs font-semibold ${
+                      w.count < 40 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'
+                    }`}>
                       {w.count}
                     </span>
                   </td>

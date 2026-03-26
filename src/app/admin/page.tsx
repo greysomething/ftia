@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getAdminStats } from '@/lib/admin-queries'
 import { StatCard } from '@/components/admin/StatCard'
+import { AnalyticsChart } from '@/components/admin/AnalyticsChart'
 
 export const metadata: Metadata = { title: 'Overview' }
 
@@ -73,6 +74,9 @@ export default async function AdminDashboard() {
         <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
         <p className="text-sm text-gray-500 mt-1">Welcome to the Production List admin area.</p>
       </div>
+
+      {/* Analytics Chart */}
+      <AnalyticsChart />
 
       {/* Stats grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
