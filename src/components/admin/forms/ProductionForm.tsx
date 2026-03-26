@@ -5,6 +5,7 @@ import { saveProduction } from '@/app/admin/productions/actions'
 import Link from 'next/link'
 import { ImageScanner } from '@/components/admin/ImageScanner'
 import { EntitySearchInput } from '@/components/admin/EntitySearchInput'
+import { DragHandleRow, reorderArray } from '@/components/admin/DragHandle'
 
 interface LocationRow {
   location: string
@@ -583,7 +584,8 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
           const matches = getCompanyMatchesFor(co.inline_name)
           const isLinked = co.company_id != null
           return (
-            <div key={i} className={`border rounded-lg p-3 space-y-3 ${isLinked ? 'bg-green-50/50 border-green-200' : 'bg-gray-50/50'}`}>
+            <DragHandleRow key={i} index={i} listId="prod-companies" onReorder={(from, to) => setCompanies(prev => reorderArray(prev, from, to))}>
+            <div className={`border rounded-lg p-3 space-y-3 ${isLinked ? 'bg-green-50/50 border-green-200' : 'bg-gray-50/50'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-gray-400 uppercase">Company {i + 1}</span>
@@ -668,6 +670,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
                 </div>
               </div>
             </div>
+            </DragHandleRow>
           )
         })}
       </div>
@@ -695,79 +698,81 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
             const matches = getCrewMatchesFor(c.inline_name)
             const isLinked = c.crew_id != null
             return (
-              <div key={i} className="space-y-1">
-                <div className={`grid grid-cols-12 gap-3 items-center ${isLinked ? 'bg-green-50 rounded-lg px-1 py-1' : ''}`}>
-                  <div className="col-span-3">
-                    <input value={c.role_name} onChange={e => updateCrew(i, 'role_name', e.target.value)}
-                      className="form-input text-sm" placeholder="e.g. Director" />
+              <DragHandleRow key={i} index={i} listId="prod-crew" onReorder={(from, to) => setCrew(prev => reorderArray(prev, from, to))}>
+                <div className="space-y-1">
+                  <div className={`grid grid-cols-12 gap-3 items-center ${isLinked ? 'bg-green-50 rounded-lg px-1 py-1' : ''}`}>
+                    <div className="col-span-3">
+                      <input value={c.role_name} onChange={e => updateCrew(i, 'role_name', e.target.value)}
+                        className="form-input text-sm" placeholder="e.g. Director" />
+                    </div>
+                    <div className="col-span-3 relative">
+                      <EntitySearchInput
+                        type="crew"
+                        value={c.inline_name}
+                        onChange={val => updateCrew(i, 'inline_name', val)}
+                        onSelect={result => linkCrew(i, { ...result, score: 100 })}
+                        isLinked={isLinked}
+                        placeholder="Full name — type to search"
+                        className={`form-input text-sm ${isLinked ? 'bg-green-50 border-green-300 pr-16' : ''}`}
+                      />
+                      {isLinked && (
+                        <span className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 text-[9px] font-medium px-1 py-0.5 rounded bg-green-100 text-green-700 border border-green-300">
+                          <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+                          </svg>
+                          #{c.crew_id}
+                          <button type="button" onClick={() => unlinkCrew(i)} className="hover:text-red-600">x</button>
+                        </span>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <input value={(c.inline_phones ?? []).join(', ')}
+                        onChange={e => updateCrew(i, 'inline_phones', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                        className="form-input text-sm" placeholder="Phone" />
+                    </div>
+                    <div className="col-span-3">
+                      <input value={(c.inline_emails ?? []).join(', ')}
+                        onChange={e => updateCrew(i, 'inline_emails', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                        className="form-input text-sm" placeholder="Email" />
+                    </div>
+                    <div className="col-span-1 text-center">
+                      {crew.length > 1 && (
+                        <button type="button" onClick={() => removeCrew(i)}
+                          className="text-red-400 hover:text-red-600" title="Remove">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="col-span-3 relative">
-                    <EntitySearchInput
-                      type="crew"
-                      value={c.inline_name}
-                      onChange={val => updateCrew(i, 'inline_name', val)}
-                      onSelect={result => linkCrew(i, { ...result, score: 100 })}
-                      isLinked={isLinked}
-                      placeholder="Full name — type to search"
-                      className={`form-input text-sm ${isLinked ? 'bg-green-50 border-green-300 pr-16' : ''}`}
-                    />
-                    {isLinked && (
-                      <span className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 text-[9px] font-medium px-1 py-0.5 rounded bg-green-100 text-green-700 border border-green-300">
-                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-                        </svg>
-                        #{c.crew_id}
-                        <button type="button" onClick={() => unlinkCrew(i)} className="hover:text-red-600">x</button>
-                      </span>
-                    )}
-                  </div>
-                  <div className="col-span-2">
-                    <input value={(c.inline_phones ?? []).join(', ')}
-                      onChange={e => updateCrew(i, 'inline_phones', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-                      className="form-input text-sm" placeholder="Phone" />
-                  </div>
-                  <div className="col-span-3">
-                    <input value={(c.inline_emails ?? []).join(', ')}
-                      onChange={e => updateCrew(i, 'inline_emails', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-                      className="form-input text-sm" placeholder="Email" />
-                  </div>
-                  <div className="col-span-1 text-center">
-                    {crew.length > 1 && (
-                      <button type="button" onClick={() => removeCrew(i)}
-                        className="text-red-400 hover:text-red-600" title="Remove">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
 
-                {/* Crew match suggestions */}
-                {!isLinked && matches.length > 0 && (
-                  <div className="ml-3 bg-blue-50 border border-blue-200 rounded p-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-blue-600 font-medium flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      Match:
-                    </span>
-                    {matches.slice(0, 3).map(m => (
-                      <button key={m.id} type="button" onClick={() => linkCrew(i, m)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-blue-300 bg-white hover:bg-green-50 hover:border-green-400 transition-colors">
-                        <span className={`text-[9px] font-mono font-bold px-1 rounded ${scoreBadge(m.score)}`}>{m.score}%</span>
-                        <span className="font-medium text-gray-800">{m.title}</span>
-                        {m.detail && <span className="text-gray-400 hidden md:inline">{m.detail}</span>}
+                  {/* Crew match suggestions */}
+                  {!isLinked && matches.length > 0 && (
+                    <div className="ml-3 bg-blue-50 border border-blue-200 rounded p-2 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-blue-600 font-medium flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Match:
+                      </span>
+                      {matches.slice(0, 3).map(m => (
+                        <button key={m.id} type="button" onClick={() => linkCrew(i, m)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-blue-300 bg-white hover:bg-green-50 hover:border-green-400 transition-colors">
+                          <span className={`text-[9px] font-mono font-bold px-1 rounded ${scoreBadge(m.score)}`}>{m.score}%</span>
+                          <span className="font-medium text-gray-800">{m.title}</span>
+                          {m.detail && <span className="text-gray-400 hidden md:inline">{m.detail}</span>}
+                        </button>
+                      ))}
+                      <button type="button"
+                        onClick={() => setDismissedCrewMatches(prev => new Set([...prev, c.inline_name]))}
+                        className="text-[10px] text-blue-400 hover:text-blue-600 ml-auto">
+                        dismiss
                       </button>
-                    ))}
-                    <button type="button"
-                      onClick={() => setDismissedCrewMatches(prev => new Set([...prev, c.inline_name]))}
-                      className="text-[10px] text-blue-400 hover:text-blue-600 ml-auto">
-                      dismiss
-                    </button>
-                  </div>
-                )}
-              </div>
+                    </div>
+                  )}
+                </div>
+              </DragHandleRow>
             )
           })}
         </div>

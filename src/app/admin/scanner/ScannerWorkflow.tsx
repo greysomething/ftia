@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useActionState } from 'react'
 import { saveProduction } from '@/app/admin/productions/actions'
 import { EntitySearchInput } from '@/components/admin/EntitySearchInput'
+import { DragHandleRow, reorderArray } from '@/components/admin/DragHandle'
 import Link from 'next/link'
 
 interface TypeOption { id: number; name: string; slug: string }
@@ -1047,7 +1048,8 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                     const matches = crewMatches[c.inline_name] ?? []
                     const linkedFromFuzzy = c.crew_id ? matches.find(m => m.id === c.crew_id) : null
                     return (
-                      <div key={i} className="space-y-1">
+                      <DragHandleRow key={i} index={i} listId="scan-crew" onReorder={(from, to) => setCrew(prev => reorderArray(prev, from, to))}>
+                      <div className="space-y-1">
                         <div className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
                           <div className="flex-1 grid grid-cols-4 gap-2">
                             <input placeholder="Role" value={c.role_name} onChange={e => {
@@ -1101,6 +1103,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                           </div>
                         ) : null}
                       </div>
+                      </DragHandleRow>
                     )
                   })}
                 </div>
@@ -1119,7 +1122,8 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                     const matches = companyMatches[c.inline_name] ?? []
                     const linkedFromFuzzy = c.company_id ? matches.find(m => m.id === c.company_id) : null
                     return (
-                      <div key={i} className="space-y-1">
+                      <DragHandleRow key={i} index={i} listId="scan-companies" onReorder={(from, to) => setCompanies(prev => reorderArray(prev, from, to))}>
+                      <div className="space-y-1">
                         <div className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
                           <div className="flex-1 grid grid-cols-3 gap-2">
                             <EntitySearchInput
@@ -1170,6 +1174,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                           </div>
                         ) : null}
                       </div>
+                      </DragHandleRow>
                     )
                   })}
                 </div>
