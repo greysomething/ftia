@@ -5,6 +5,7 @@ import type { UserSortField, SortDir } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
 import { StripeSyncButton } from './StripeSyncButton'
 import { UsersTableClient } from './UsersTableClient'
+import { RevenueByPlan } from './RevenueByPlan'
 
 export const metadata: Metadata = { title: 'User Management' }
 export const dynamic = 'force-dynamic'
@@ -184,32 +185,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
 
       {/* Plan breakdown (only if memberships exist) */}
       {counts.planStats.length > 0 && (
-        <div className="admin-card mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Revenue by Plan</h3>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {counts.planStats.map(plan => (
-              <div key={plan.name} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3">
-                <div>
-                  <div className="text-sm font-medium text-gray-800">{plan.name}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    {plan.active} active / {plan.total} total
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-bold text-green-600">{fmtMoney(plan.mrr)}/mo</div>
-                  {plan.active > 0 && (
-                    <div className="w-16 h-1.5 rounded-full bg-gray-200 mt-1.5 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-green-500"
-                        style={{ width: `${counts.mrr > 0 ? (plan.mrr / counts.mrr) * 100 : 0}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <RevenueByPlan plans={counts.planStats} totalMrr={counts.mrr} />
       )}
 
       {/* No memberships CTA */}
