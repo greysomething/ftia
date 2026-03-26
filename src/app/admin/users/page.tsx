@@ -3,8 +3,8 @@ import Link from 'next/link'
 import { getAdminUsers, getAdminUserCounts } from '@/lib/admin-queries'
 import type { UserSortField, SortDir } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
-import { formatDate } from '@/lib/utils'
 import { StripeSyncButton } from './StripeSyncButton'
+import { UsersTableClient } from './UsersTableClient'
 
 export const metadata: Metadata = { title: 'User Management' }
 export const dynamic = 'force-dynamic'
@@ -258,104 +258,23 @@ export default async function AdminUsersPage({ searchParams }: Props) {
       </div>
 
       {/* Users table */}
-      <div className="admin-card p-0 overflow-hidden">
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <SortHeader label="Name" field="display_name" currentSort={sort} currentDir={dir}
-                basePath="/admin/users" extraParams={extraParams} />
-              <th>Organization</th>
-              <SortHeader label="Role" field="role" currentSort={sort} currentDir={dir}
-                basePath="/admin/users" extraParams={extraParams} />
-              <th>Membership</th>
-              <th>Country</th>
-              <SortHeader label="Joined" field="created_at" currentSort={sort} currentDir={dir}
-                basePath="/admin/users" extraParams={extraParams} />
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.length === 0 ? (
-              <tr><td colSpan={7} className="text-center text-gray-400 py-10">No users found.</td></tr>
-            ) : users.map((u: any) => {
-              const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.display_name || 'Unknown'
-              const mem = u.user_memberships?.[0]
-              const hasStripe = !!u.user_memberships?.some((m: any) => m.stripe_subscription_id)
-
-              return (
-                <tr key={u.id}>
-                  <td>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">
-                        {(u.first_name?.[0] ?? u.display_name?.[0] ?? '?').toUpperCase()}
-                      </div>
-                      <div>
-                        <Link href={`/admin/users/${u.id}`} className="font-medium text-primary hover:underline text-sm">
-                          {name}
-                        </Link>
-                        {u.email && (
-                          <span className="block text-[11px] text-gray-400">{u.email}</span>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="text-sm text-gray-500 max-w-[150px] truncate">{u.organization_name || '—'}</td>
-                  <td>
-                    <span className={`badge text-[11px] ${
-                      u.role === 'admin' ? 'badge-purple' : 'badge-gray'
-                    }`}>
-                      {u.role ?? u.wp_role ?? 'subscriber'}
-                    </span>
-                  </td>
-                  <td>
-                    {mem ? (
-                      <div>
-                        <div className="flex items-center gap-1">
-                          <span className={`badge text-[11px] ${
-                            mem.status === 'active' ? 'badge-green' :
-                            mem.status === 'cancelled' ? 'badge-yellow' :
-                            'badge-gray'
-                          }`}>
-                            {mem.status}
-                          </span>
-                          {!hasStripe && mem.status === 'active' && (
-                            <span className="badge text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
-                              Manual
-                            </span>
-                          )}
-                        </div>
-                        {mem.membership_levels?.name && (
-                          <span className="block text-[10px] text-gray-400 mt-0.5 truncate max-w-[140px]">
-                            {mem.membership_levels.name}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
-                    )}
-                  </td>
-                  <td className="text-xs text-gray-500">{u.country || '—'}</td>
-                  <td className="text-xs text-gray-500 whitespace-nowrap">{formatDate(u.created_at)}</td>
-                  <td className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {hasStripe && (
-                        <span title="Stripe connected" className="text-[#635BFF]">
-                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-7.076-2.18l-.897 5.555C5.014 22.77 7.718 24 11.51 24c2.624 0 4.862-.649 6.334-1.838 1.588-1.28 2.397-3.178 2.397-5.637 0-4.145-2.543-5.827-6.266-7.376z"/>
-                          </svg>
-                        </span>
-                      )}
-                      <Link href={`/admin/users/${u.id}`} className="text-xs btn-outline py-1 px-2">
-                        Manage
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <UsersTableClient
+        users={users as any}
+        sortHeaders={
+          <>
+            <SortHeader label="Name" field="display_name" currentSort={sort} currentDir={dir}
+              basePath="/admin/users" extraParams={extraParams} />
+            <th>Organization</th>
+            <SortHeader label="Role" field="role" currentSort={sort} currentDir={dir}
+              basePath="/admin/users" extraParams={extraParams} />
+            <th>Membership</th>
+            <th>Country</th>
+            <SortHeader label="Joined" field="created_at" currentSort={sort} currentDir={dir}
+              basePath="/admin/users" extraParams={extraParams} />
+            <th className="text-right">Actions</th>
+          </>
+        }
+      />
 
       <AdminPagination current={page} total={total} perPage={perPage} basePath="/admin/users" extraParams={extraParams} />
     </div>
