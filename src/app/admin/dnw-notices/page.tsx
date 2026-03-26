@@ -64,7 +64,7 @@ export default async function AdminDnwNoticesPage({ searchParams }: Props) {
                 <td className="text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Link href={`/admin/dnw-notices/${n.id}/edit`} className="text-xs btn-outline py-1 px-2">Edit</Link>
-                    <form action={async () => { 'use server'; await deleteDnwNotice(n.id) }}>
+                    <form action={deleteDnwNotice.bind(null, n.id)}>
                       <ConfirmDeleteButton message="Delete this notice?" />
                     </form>
                   </div>

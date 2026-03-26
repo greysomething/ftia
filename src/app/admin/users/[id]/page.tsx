@@ -578,7 +578,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
 
           {/* Recent Activity */}
           {recentActivity && recentActivity.length > 0 && (
-            <div className="admin-card">
+            <div className="admin-card overflow-hidden">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold text-gray-700">Recent Activity</h2>
                 <a href={`/admin/login-log?search=${encodeURIComponent(email || '')}`} className="text-xs text-primary hover:underline">
@@ -600,13 +600,13 @@ export default async function AdminUserDetailPage({ params }: Props) {
                   const evt = eventLabels[entry.event_type] ?? { label: entry.event_type, color: 'bg-gray-100 text-gray-600' }
                   const location = [entry.city, entry.country].filter(Boolean).join(', ')
                   return (
-                    <div key={entry.id} className="flex items-center gap-2 text-xs">
-                      <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${evt.color}`}>
+                    <div key={entry.id} className="flex items-center gap-2 text-xs min-w-0">
+                      <span className={`inline-flex flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${evt.color}`}>
                         {evt.label}
                       </span>
-                      <span className="font-mono text-gray-500">{entry.ip_address ?? '—'}</span>
-                      {location && <span className="text-gray-400">{location}</span>}
-                      <span className="ml-auto text-gray-400 whitespace-nowrap" title={formatDateTime(entry.created_at)}>
+                      <span className="font-mono text-gray-500 truncate flex-shrink min-w-0">{entry.ip_address ?? '—'}</span>
+                      {location && <span className="text-gray-400 truncate flex-shrink min-w-0">{location}</span>}
+                      <span className="ml-auto text-gray-400 whitespace-nowrap flex-shrink-0" title={formatDateTime(entry.created_at)}>
                         {formatDistanceToNow(new Date(entry.created_at), { addSuffix: true })}
                       </span>
                     </div>

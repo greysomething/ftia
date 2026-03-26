@@ -117,16 +117,35 @@ export async function POST(req: NextRequest) {
         .eq('user_id', userId)
         .eq('stripe_subscription_id', subscriptionId)
 
-      if (levelId) {
-        await supabase.from('membership_orders').insert({
-          user_id: userId,
-          level_id: parseInt(levelId, 10),
-          status: 'success',
-          total: invoice.amount_paid ? (invoice.amount_paid / 100) : 0,
-          gateway: 'stripe',
-          payment_transaction_id: invoice.payment_intent as string ?? null,
-          subscription_transaction_id: subscriptionId as string ?? null,
-        })
+      // Only record payment for renewals — the initial payment is already
+      // recorded by checkout.session.completed. Stripe fires both events
+      // for new subscriptions, which was causing duplicate payment records.
+      const isInitialInvoice = invoice.billing_reason === 'subscription_create'
+
+      if (levelId && !isInitialInvoice) {
+        // Also check for duplicate payment_transaction_id to be safe
+        const piId = invoice.payment_intent as string
+        let alreadyRecorded = false
+        if (piId) {
+          const { data: existing } = await supabase
+            .from('membership_orders')
+            .select('id')
+            .eq('payment_transaction_id', piId)
+            .limit(1)
+          alreadyRecorded = !!(existing && existing.length > 0)
+        }
+
+        if (!alreadyRecorded) {
+          await supabase.from('membership_orders').insert({
+            user_id: userId,
+            level_id: parseInt(levelId, 10),
+            status: 'success',
+            total: invoice.amount_paid ? (invoice.amount_paid / 100) : 0,
+            gateway: 'stripe',
+            payment_transaction_id: piId ?? null,
+            subscription_transaction_id: subscriptionId as string ?? null,
+          })
+        }
       }
 
       break
