@@ -106,6 +106,9 @@ export async function POST() {
   const stats = {
     totalSubscriptions: uniqueSubs.length,
     synced: 0,
+    syncedAsActive: 0,
+    syncedAsCancelled: 0,
+    syncedAsExpired: 0,
     usersCreated: 0,
     skipped: 0,
     ordersBackfilled: 0,
@@ -179,12 +182,16 @@ export async function POST() {
       // Stripe still reports status as 'active'. Treat these as 'cancelled'.
       let membershipStatus: string
       if (sub.status === 'active' && sub.cancel_at_period_end) {
+        // User cancelled but still has access until period ends
         membershipStatus = 'cancelled'
       } else {
         switch (sub.status) {
-          case 'active': case 'trialing':
+          case 'active':
+            membershipStatus = 'active'; break
+          case 'trialing':
             membershipStatus = 'active'; break
           case 'past_due':
+            // Payment failed but Stripe hasn't cancelled yet — still has access
             membershipStatus = 'active'; break
           case 'canceled':
             membershipStatus = 'cancelled'; break
@@ -338,6 +345,9 @@ export async function POST() {
       }
 
       stats.synced++
+      if (membershipStatus === 'active') stats.syncedAsActive++
+      else if (membershipStatus === 'cancelled') stats.syncedAsCancelled++
+      else stats.syncedAsExpired++
     } catch (err: any) {
       stats.errors.push(`Sub ${sub.id}: ${err.message}`)
     }
@@ -434,6 +444,13 @@ export async function POST() {
     ok: true,
     ...stats,
     uniqueUsers: bestSubByEmail.size,
-    message: `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total subscriptions (active: ${stats.byStatus.active}, canceled: ${stats.byStatus.canceled}, past_due: ${stats.byStatus.past_due}, trialing: ${stats.byStatus.trialing}, unpaid: ${stats.byStatus.unpaid}). Synced ${stats.synced}. Created ${stats.usersCreated} new accounts. Backfilled ${stats.ordersBackfilled} payment records. ${stats.skipped} skipped.`,
+    message: [
+      `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total Stripe subscriptions.`,
+      `Stripe breakdown: ${stats.byStatus.active} active (${stats.byStatus.active_cancelling} cancelling at period end), ${stats.byStatus.trialing} trialing, ${stats.byStatus.past_due} past due, ${stats.byStatus.canceled} canceled, ${stats.byStatus.unpaid} unpaid.`,
+      `Synced: ${stats.syncedAsActive} active, ${stats.syncedAsCancelled} cancelled, ${stats.syncedAsExpired} expired.`,
+      stats.usersCreated > 0 ? `Created ${stats.usersCreated} new accounts.` : '',
+      stats.ordersBackfilled > 0 ? `Backfilled ${stats.ordersBackfilled} payment records.` : '',
+      stats.skipped > 0 ? `${stats.skipped} skipped.` : '',
+    ].filter(Boolean).join(' '),
   })
 }
