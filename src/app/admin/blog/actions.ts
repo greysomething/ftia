@@ -13,15 +13,31 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
   const id = formData.get('id') ? Number(formData.get('id')) : null
   const title = String(formData.get('title') ?? '').trim()
   const slug = String(formData.get('slug') ?? '').trim() || slugify(title)
-  const status = String(formData.get('status') ?? 'draft')
+  const visibility = String(formData.get('visibility') ?? 'draft')
 
   if (!title) return { error: 'Title is required.' }
 
-  const row = {
-    title, slug, status,
+  const row: Record<string, any> = {
+    title, slug, visibility,
     content: (formData.get('content') as string) || null,
     excerpt: (formData.get('excerpt') as string) || null,
-    published_at: status === 'published' ? new Date().toISOString() : null,
+  }
+
+  // Set published_at when publishing for the first time
+  if (visibility === 'publish') {
+    if (id) {
+      // Only set published_at if it wasn't already set
+      const { data: existing } = await supabase
+        .from('blog_posts')
+        .select('published_at')
+        .eq('id', id)
+        .single()
+      if (!existing?.published_at) {
+        row.published_at = new Date().toISOString()
+      }
+    } else {
+      row.published_at = new Date().toISOString()
+    }
   }
 
   if (id) {

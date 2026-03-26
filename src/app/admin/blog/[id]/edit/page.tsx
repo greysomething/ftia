@@ -17,7 +17,7 @@ export default async function EditBlogPostPage({ params }: Props) {
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-4">Edit Blog Post</h1>
       <StatusBar
-        visibility={(post as any).status === 'published' ? 'publish' : (post as any).status}
+        visibility={(post as any).visibility}
         updatedAt={(post as any).updated_at ?? (post as any).published_at}
         type="blog post"
       />

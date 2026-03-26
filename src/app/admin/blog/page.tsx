@@ -53,7 +53,7 @@ export default async function AdminBlogPage({ searchParams }: Props) {
               <tr key={p.id}>
                 <td className="text-gray-400 text-xs w-16">{p.id}</td>
                 <td>
-                  <Link href={`/blog/${p.slug}`} target="_blank" className="font-medium text-primary hover:underline">
+                  <Link href={`/${p.slug}`} target="_blank" className="font-medium text-primary hover:underline">
                     {p.title}
                   </Link>
                 </td>
