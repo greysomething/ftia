@@ -62,7 +62,7 @@ interface Props {
   initialOverrides: TemplateOverride[]
 }
 
-const TAB_LIST = ['Overview', 'Digest Reports', 'Templates', 'Logs'] as const
+const TAB_LIST = ['Overview', 'Automation', 'Digest Reports', 'Templates', 'Logs'] as const
 type Tab = (typeof TAB_LIST)[number]
 
 const STATUS_COLORS: Record<string, string> = {
@@ -425,6 +425,11 @@ export default function EmailAdminClient({
         </>
       )}
 
+      {/* ===== AUTOMATION TAB ===== */}
+      {tab === 'Automation' && (
+        <AutomationTab />
+      )}
+
       {/* ===== DIGEST REPORTS TAB ===== */}
       {tab === 'Digest Reports' && (
         <DigestReportsTab />
@@ -717,6 +722,271 @@ export default function EmailAdminClient({
         </>
       )}
     </div>
+  )
+}
+
+const DAY_OPTIONS = [
+  { value: 0, label: 'Sunday' },
+  { value: 1, label: 'Monday' },
+  { value: 2, label: 'Tuesday' },
+  { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' },
+  { value: 5, label: 'Friday' },
+  { value: 6, label: 'Saturday' },
+]
+
+const TIMEZONE_OPTIONS = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'America/Vancouver',
+  'Europe/London',
+  'UTC',
+]
+
+const AUDIENCE_OPTIONS = [
+  { value: 'active_members', label: 'Active Members Only' },
+  { value: 'all_subscribers', label: 'All Newsletter Subscribers' },
+  { value: 'active_and_past', label: 'Active + Past Members' },
+]
+
+/**
+ * Automation tab — configure weekly digest cron schedule.
+ */
+function AutomationTab() {
+  const [settings, setSettings] = useState<{
+    enabled: boolean
+    day_of_week: number
+    send_hour: number
+    send_minute: number
+    timezone: string
+    min_productions: number
+    send_to_audience: string
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [testingCron, setTestingCron] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/admin/email?action=digest-settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.settings) {
+          setSettings(data.settings)
+        } else {
+          setSettings({
+            enabled: true,
+            day_of_week: 1,
+            send_hour: 10,
+            send_minute: 0,
+            timezone: 'America/New_York',
+            min_productions: 40,
+            send_to_audience: 'active_members',
+          })
+        }
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function saveSettings() {
+    if (!settings) return
+    setSaving(true)
+    setSaved(false)
+    try {
+      const res = await fetch('/api/admin/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save-digest-settings', ...settings }),
+      })
+      if (res.ok) {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 3000)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function testCronNow() {
+    setTestingCron(true)
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/admin/send-weekly-digest?test=', { method: 'POST' })
+      const data = await res.json()
+      setTestResult(data.message || data.error || 'Check your email')
+    } catch (err: any) {
+      setTestResult(`Error: ${err.message}`)
+    } finally {
+      setTestingCron(false)
+    }
+  }
+
+  if (loading || !settings) {
+    return <div className="admin-card text-center py-10 text-gray-400">Loading settings...</div>
+  }
+
+  const timeLabel = `${DAY_OPTIONS.find(d => d.value === settings.day_of_week)?.label ?? 'Monday'} at ${String(settings.send_hour).padStart(2, '0')}:${String(settings.send_minute).padStart(2, '0')}`
+
+  return (
+    <>
+      {/* Status Banner */}
+      <div className={`rounded-lg px-4 py-3 mb-6 text-sm flex items-center justify-between ${
+        settings.enabled
+          ? 'bg-green-50 border border-green-200 text-green-800'
+          : 'bg-gray-50 border border-gray-200 text-gray-600'
+      }`}>
+        <div className="flex items-center gap-2">
+          <span className={`w-2.5 h-2.5 rounded-full ${settings.enabled ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+          <strong>{settings.enabled ? 'Automation Active' : 'Automation Paused'}</strong>
+          <span className="text-gray-500">—</span>
+          <span>
+            {settings.enabled
+              ? `Next digest sends ${timeLabel} (${settings.timezone.replace('America/', '').replace('_', ' ')})`
+              : 'No digests will be sent automatically'
+            }
+          </span>
+        </div>
+      </div>
+
+      {/* Weekly Digest Settings */}
+      <div className="admin-card mb-6">
+        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <svg className="w-5 h-5 text-[#3ea8c8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Weekly Production Digest Schedule
+        </h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Enabled toggle */}
+          <div className="sm:col-span-2 flex items-center gap-3">
+            <button
+              onClick={() => setSettings({ ...settings, enabled: !settings.enabled })}
+              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              style={{ backgroundColor: settings.enabled ? '#22c55e' : '#d1d5db' }}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.enabled ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
+            <span className="text-sm text-gray-700">
+              {settings.enabled ? 'Enabled — digest sends automatically' : 'Disabled — manual send only'}
+            </span>
+          </div>
+
+          {/* Day of week */}
+          <div>
+            <label className="form-label">Send Day</label>
+            <select
+              className="form-input w-full"
+              value={settings.day_of_week}
+              onChange={e => setSettings({ ...settings, day_of_week: parseInt(e.target.value) })}
+            >
+              {DAY_OPTIONS.map(d => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Time */}
+          <div>
+            <label className="form-label">Send Time</label>
+            <div className="flex gap-2">
+              <select
+                className="form-input flex-1"
+                value={settings.send_hour}
+                onChange={e => setSettings({ ...settings, send_hour: parseInt(e.target.value) })}
+              >
+                {Array.from({ length: 24 }, (_, i) => (
+                  <option key={i} value={i}>
+                    {i === 0 ? '12:00 AM' : i < 12 ? `${i}:00 AM` : i === 12 ? '12:00 PM' : `${i - 12}:00 PM`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Timezone */}
+          <div>
+            <label className="form-label">Timezone</label>
+            <select
+              className="form-input w-full"
+              value={settings.timezone}
+              onChange={e => setSettings({ ...settings, timezone: e.target.value })}
+            >
+              {TIMEZONE_OPTIONS.map(tz => (
+                <option key={tz} value={tz}>{tz.replace('America/', '').replace('_', ' ')}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Min productions */}
+          <div>
+            <label className="form-label">Minimum Productions</label>
+            <input
+              type="number"
+              className="form-input w-full"
+              value={settings.min_productions}
+              onChange={e => setSettings({ ...settings, min_productions: parseInt(e.target.value) || 40 })}
+              min={1}
+              max={100}
+            />
+            <p className="text-xs text-gray-400 mt-1">Won&apos;t send if weekly list has fewer productions</p>
+          </div>
+
+          {/* Audience */}
+          <div className="sm:col-span-2">
+            <label className="form-label">Send To</label>
+            <select
+              className="form-input w-full"
+              value={settings.send_to_audience}
+              onChange={e => setSettings({ ...settings, send_to_audience: e.target.value })}
+            >
+              {AUDIENCE_OPTIONS.map(a => (
+                <option key={a.value} value={a.value}>{a.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Save + Test */}
+        <div className="flex items-center gap-3 mt-6 pt-4 border-t">
+          <button
+            onClick={saveSettings}
+            disabled={saving}
+            className="btn-primary px-6 py-2 flex items-center gap-2"
+          >
+            {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
+          </button>
+          {saved && (
+            <span className="text-sm text-green-600 font-medium">Settings saved successfully</span>
+          )}
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div className="admin-card">
+        <h3 className="font-semibold text-gray-900 mb-3">How Automation Works</h3>
+        <div className="text-sm text-gray-600 space-y-2">
+          <p>
+            A Vercel Cron job runs every hour and checks these settings. When the configured
+            day and time arrive, it automatically triggers the weekly digest email to all
+            recipients in the selected audience.
+          </p>
+          <p><strong>Safety checks:</strong></p>
+          <ul className="list-disc list-inside space-y-1 text-gray-500 ml-2">
+            <li>Won&apos;t send if the weekly production list has fewer than {settings.min_productions} productions</li>
+            <li>Won&apos;t send if the digest was already sent this week (prevents duplicates)</li>
+            <li>Includes <code className="bg-gray-100 px-1 rounded text-xs">List-Unsubscribe</code> headers for Gmail/Yahoo spam compliance</li>
+            <li>Rate-limited to 5 emails per 1.2 seconds to avoid ISP spam filters</li>
+          </ul>
+        </div>
+      </div>
+    </>
   )
 }
 

@@ -72,6 +72,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ audiences })
   }
 
+  if (action === 'digest-settings') {
+    const supabase = createAdminClient()
+    const { data } = await supabase
+      .from('digest_settings')
+      .select('*')
+      .eq('id', 1)
+      .single()
+
+    return NextResponse.json({ settings: data ?? null })
+  }
+
   if (action === 'digest-stats') {
     const supabase = createAdminClient()
 
@@ -256,6 +267,30 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json(result)
+  }
+
+  if (body.action === 'save-digest-settings') {
+    const { enabled, day_of_week, send_hour, send_minute, timezone, min_productions, send_to_audience } = body
+    const supabase = createAdminClient()
+
+    const { error } = await supabase
+      .from('digest_settings')
+      .upsert({
+        id: 1,
+        enabled: enabled ?? true,
+        day_of_week: day_of_week ?? 1,
+        send_hour: send_hour ?? 10,
+        send_minute: send_minute ?? 0,
+        timezone: timezone ?? 'America/New_York',
+        min_productions: min_productions ?? 40,
+        send_to_audience: send_to_audience ?? 'active_members',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ success: true })
   }
 
   if (body.action === 'save-template') {

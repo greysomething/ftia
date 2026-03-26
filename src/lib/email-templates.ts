@@ -146,7 +146,7 @@ export const emailTemplates: EmailTemplate[] = [
   <!-- Header -->
   <tr>
     <td style="background-color:${BRAND.color};padding:24px 32px;text-align:center;">
-      <img src="https://productionlist.com/images/pl-emblem.png" alt="PL" width="40" height="40" style="display:inline-block;vertical-align:middle;margin-right:12px;border-radius:6px;" />
+      <img src="https://productionlist.com/images/pl-emblem.png" alt="PL" width="40" height="40" style="display:inline-block;vertical-align:middle;margin-right:12px;" />
       <span style="display:inline-block;vertical-align:middle;text-align:left;">
         <span style="color:white;font-size:22px;font-weight:700;letter-spacing:0.5px;display:block;">Production List</span>
         <span style="color:rgba(255,255,255,0.7);font-size:11px;text-transform:uppercase;letter-spacing:1px;display:block;">Film &amp; Television Industry Alliance</span>
