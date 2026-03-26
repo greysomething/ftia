@@ -282,8 +282,10 @@ export async function getAdminBlogPosts({ page = 1, q, tab }: { page?: number; q
     query = query.eq('visibility', 'publish').gt('published_at', now)
   } else if (tab === 'trash') {
     query = query.eq('visibility', 'private')
+  } else {
+    // 'all' tab — show everything except trash
+    query = query.neq('visibility', 'private')
   }
-  // 'all' tab = no filter
 
   if (q) query = query.ilike('title', `%${q}%`)
   query = query.order('id', { ascending: false }).range(from, to)
@@ -298,7 +300,7 @@ export async function getAdminBlogCounts() {
   const now = new Date().toISOString()
 
   const [allRes, pubRes, draftRes, schedRes, trashRes] = await Promise.all([
-    supabase.from('blog_posts').select('id', { count: 'exact', head: true }),
+    supabase.from('blog_posts').select('id', { count: 'exact', head: true }).neq('visibility', 'private'),
     supabase.from('blog_posts').select('id', { count: 'exact', head: true })
       .eq('visibility', 'publish').or(`published_at.is.null,published_at.lte.${now}`),
     supabase.from('blog_posts').select('id', { count: 'exact', head: true })
