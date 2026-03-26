@@ -134,8 +134,17 @@ export async function POST(req: NextRequest) {
         case 'planName': sampleVars[v] = 'Annual Professional'; break
         case 'expiresAt': sampleVars[v] = '2026-12-31'; break
         case 'weekDate': sampleVars[v] = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); break
-        case 'productionCount': sampleVars[v] = '24'; break
+        case 'weekEndDate': {
+          const d = new Date(); d.setDate(d.getDate() + 6);
+          sampleVars[v] = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); break
+        }
+        case 'productionCount': sampleVars[v] = '42'; break
         case 'digestUrl': sampleVars[v] = 'https://productionlist.com/production-list'; break
+        case 'productionsHtml': sampleVars[v] = `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;">
+          <tr style="background-color:#ffffff;"><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="#" style="color:#2b7bb9;text-decoration:none;font-weight:600;font-size:14px;">Sample Production</a> <span style="color:#666;font-size:12px;"> Feature Film</span></td><td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#555;font-size:13px;">Los Angeles, CA</td></tr>
+          <tr style="background-color:#f9fafb;"><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="#" style="color:#2b7bb9;text-decoration:none;font-weight:600;font-size:14px;">Another Show</a> <span style="color:#666;font-size:12px;"> Series</span></td><td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#555;font-size:13px;">New York, NY</td></tr>
+          <tr style="background-color:#ffffff;"><td style="padding:8px 12px;border-bottom:1px solid #eee;"><a href="#" style="color:#2b7bb9;text-decoration:none;font-weight:600;font-size:14px;">The Great Pilot</a> <span style="color:#666;font-size:12px;"> Pilot</span></td><td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#555;font-size:13px;">Atlanta, GA</td></tr>
+        </table>`; break
         case 'subject': sampleVars[v] = 'General Inquiry'; break
         default: sampleVars[v] = `[${v}]`
       }

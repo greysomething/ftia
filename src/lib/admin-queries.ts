@@ -375,23 +375,37 @@ export async function getAdminSubscriptions({ page = 1, q, status }: { page?: nu
     .from('user_memberships')
     .select(`
       id, user_id, level_id, status, stripe_customer_id, stripe_subscription_id,
-      card_type, card_last4, startdate, enddate, modified, created_at,
-      membership_levels(name)
+      card_type, card_last4, card_exp_month, card_exp_year,
+      billing_email,
+      startdate, enddate, modified, created_at,
+      membership_levels(name, billing_amount, cycle_period)
     `, { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(from, to)
 
-  if (status) query = query.eq('status', status)
+  if (status) {
+    if (status === 'trialing') {
+      query = query.eq('status', 'trialing')
+    } else if (status === 'past_due') {
+      query = query.eq('status', 'past_due')
+    } else if (status === 'suspended') {
+      query = query.eq('status', 'suspended')
+    } else if (status === 'manual') {
+      query = query.eq('status', 'active').is('stripe_subscription_id', null)
+    } else {
+      query = query.eq('status', status)
+    }
+  }
 
   const { data, count, error } = await query
 
-  // If search query, we need user names — fetch user_profiles for returned memberships
+  // Fetch user profiles for returned memberships
   let subscriptions = data ?? []
   if (subscriptions.length > 0) {
     const userIds = [...new Set(subscriptions.map((s: any) => s.user_id))]
     const { data: profiles } = await supabase
       .from('user_profiles')
-      .select('id, first_name, last_name, display_name')
+      .select('id, first_name, last_name, display_name, email')
       .in('id', userIds)
 
     if (profiles) {
@@ -408,7 +422,7 @@ export async function getAdminSubscriptions({ page = 1, q, status }: { page?: nu
       subscriptions = subscriptions.filter((s: any) => {
         const p = s.user_profile
         if (!p) return false
-        const name = [p.first_name, p.last_name, p.display_name].filter(Boolean).join(' ').toLowerCase()
+        const name = [p.first_name, p.last_name, p.display_name, p.email].filter(Boolean).join(' ').toLowerCase()
         return name.includes(lower)
       })
     }
@@ -421,18 +435,33 @@ export async function getAdminSubscriptionStats() {
   const supabase = createAdminClient()
 
   const [
+    { count: total },
     { count: active },
+    { count: trialing },
+    { count: pastDue },
     { count: cancelled },
     { count: expired },
+    { count: suspended },
     { count: pending },
     { count: totalOrders },
   ] = await Promise.all([
+    supabase.from('user_memberships').select('*', { count: 'exact', head: true }),
     supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'trialing'),
+    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'past_due'),
     supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
     supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'expired'),
+    supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'suspended'),
     supabase.from('user_memberships').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('membership_orders').select('*', { count: 'exact', head: true }),
   ])
+
+  // Count manual memberships (active but no stripe_subscription_id)
+  const { count: manual } = await supabase
+    .from('user_memberships')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'active')
+    .is('stripe_subscription_id', null)
 
   // Get recent revenue (last 30 days)
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -445,36 +474,45 @@ export async function getAdminSubscriptionStats() {
   const recentRevenue = (recentOrders ?? []).reduce((sum: number, o: any) => sum + (o.total ?? 0), 0)
 
   return {
+    total: total ?? 0,
     active: active ?? 0,
+    trialing: trialing ?? 0,
+    pastDue: pastDue ?? 0,
     cancelled: cancelled ?? 0,
     expired: expired ?? 0,
+    suspended: suspended ?? 0,
     pending: pending ?? 0,
+    manual: manual ?? 0,
     totalOrders: totalOrders ?? 0,
     recentRevenue,
   }
 }
 
-export async function getAdminOrders({ page = 1 }: { page?: number } = {}) {
+export async function getAdminOrders({ page = 1, q, status }: { page?: number; q?: string; status?: string } = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
 
-  const { data, count, error } = await supabase
+  let query = supabase
     .from('membership_orders')
     .select(`
       id, user_id, level_id, total, status, gateway, payment_transaction_id,
-      subscription_transaction_id, timestamp, created_at,
+      subscription_transaction_id, notes, timestamp, created_at,
       membership_levels(name)
     `, { count: 'exact' })
     .order('timestamp', { ascending: false })
     .range(from, to)
+
+  if (status) query = query.eq('status', status)
+
+  const { data, count, error } = await query
 
   let orders = data ?? []
   if (orders.length > 0) {
     const userIds = [...new Set(orders.map((o: any) => o.user_id))]
     const { data: profiles } = await supabase
       .from('user_profiles')
-      .select('id, first_name, last_name, display_name')
+      .select('id, first_name, last_name, display_name, email')
       .in('id', userIds)
 
     if (profiles) {
@@ -483,6 +521,16 @@ export async function getAdminOrders({ page = 1 }: { page?: number } = {}) {
         ...o,
         user_profile: profileMap.get(o.user_id) ?? null,
       }))
+    }
+
+    if (q) {
+      const lower = q.toLowerCase()
+      orders = orders.filter((o: any) => {
+        const p = o.user_profile
+        if (!p) return false
+        const name = [p.first_name, p.last_name, p.display_name, p.email].filter(Boolean).join(' ').toLowerCase()
+        return name.includes(lower)
+      })
     }
   }
 

@@ -158,7 +158,10 @@ export default function EmailAdminClient({
   }
 
   async function sendTestEmail(slug: string) {
-    if (!testEmail) return
+    if (!testEmail) {
+      setTestResult({ slug, success: false, message: 'Please enter an email address above first.' })
+      return
+    }
     setTestingSlug(slug)
     setTestResult(null)
     try {
@@ -167,7 +170,14 @@ export default function EmailAdminClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'send-test', templateSlug: slug, to: testEmail }),
       })
-      const data = await res.json()
+      const text = await res.text()
+      let data: any
+      try {
+        data = JSON.parse(text)
+      } catch {
+        setTestResult({ slug, success: false, message: `Server error: ${text.slice(0, 200)}` })
+        return
+      }
       setTestResult({
         slug,
         success: data.success,
@@ -175,6 +185,8 @@ export default function EmailAdminClient({
       })
       // Refresh logs after sending
       if (tab === 'Logs') fetchLogs()
+    } catch (err: any) {
+      setTestResult({ slug, success: false, message: `Network error: ${err.message ?? 'Unknown'}` })
     } finally {
       setTestingSlug(null)
     }
