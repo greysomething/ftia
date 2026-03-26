@@ -79,13 +79,17 @@ export async function POST() {
     }
   } catch { /* stripe_customer_id column may not exist yet */ }
 
-  // 4. Fetch ALL subscriptions from Stripe
+  // 4. Fetch ALL subscriptions from Stripe (with payment method for card details)
   const allSubs: any[] = []
   for (const status of ['active', 'past_due', 'trialing', 'canceled', 'unpaid'] as const) {
     let hasMore = true
     let startingAfter: string | undefined
     while (hasMore) {
-      const params: any = { limit: 100, status, expand: ['data.customer'] }
+      const params: any = {
+        limit: 100,
+        status,
+        expand: ['data.customer', 'data.default_payment_method'],
+      }
       if (startingAfter) params.starting_after = startingAfter
       const batch = await stripe.subscriptions.list(params)
       allSubs.push(...batch.data)
@@ -114,6 +118,7 @@ export async function POST() {
     synced: 0,
     usersCreated: 0,
     skipped: 0,
+    ordersBackfilled: 0,
     errors: [] as string[],
     byStatus: { active: 0, canceled: 0, past_due: 0, trialing: 0, unpaid: 0 },
   }
@@ -194,7 +199,7 @@ export async function POST() {
           }
         } else if (newUser?.user) {
           userId = newUser.user.id
-          emailToUserId.set(email, userId)
+          emailToUserId.set(email, userId!)
           stats.usersCreated++
         }
       }
@@ -224,7 +229,25 @@ export async function POST() {
         ? new Date(sub.start_date * 1000).toISOString()
         : new Date(sub.created * 1000).toISOString()
 
-      const membershipRow = {
+      // Extract card details from default payment method
+      const pm = sub.default_payment_method as any
+      const card = pm?.card ?? null
+      const cardFields = card ? {
+        card_type: card.brand ?? null,       // visa, mastercard, amex, etc.
+        card_last4: card.last4 ?? null,
+        card_exp_month: String(card.exp_month ?? ''),
+        card_exp_year: String(card.exp_year ?? ''),
+      } : {}
+
+      // Billing address from customer or payment method
+      const billingAddress = pm?.billing_details?.address ?? customer?.address ?? null
+
+      // Cancellation details (for cancelled subs)
+      const cancelNotes = sub.cancellation_details?.reason
+        ? `Cancelled: ${sub.cancellation_details.reason}${sub.cancellation_details.comment ? ` — ${sub.cancellation_details.comment}` : ''}`
+        : null
+
+      const membershipRow: Record<string, any> = {
         user_id: userId,
         level_id: levelId,
         status: membershipStatus,
@@ -235,6 +258,15 @@ export async function POST() {
         billing_first_name: customer.name?.split(' ')[0] ?? '',
         billing_last_name: customer.name?.split(' ').slice(1).join(' ') ?? '',
         billing_email: email,
+        modified: new Date().toISOString(),
+        ...cardFields,
+        ...(billingAddress ? {
+          billing_address1: billingAddress.line1 ?? null,
+          billing_city: billingAddress.city ?? null,
+          billing_state: billingAddress.state ?? null,
+          billing_zip: billingAddress.postal_code ?? null,
+          billing_country: billingAddress.country ?? null,
+        } : {}),
       }
 
       // Check if membership already exists for this user
@@ -277,9 +309,96 @@ export async function POST() {
     }
   }
 
+  // 6. Backfill invoice/payment history into membership_orders
+  // Pre-load existing payment_transaction_ids to avoid duplicates
+  const existingTxIds = new Set<string>()
+  let txPage = 0
+  while (true) {
+    const { data } = await supabase
+      .from('membership_orders')
+      .select('payment_transaction_id')
+      .not('payment_transaction_id', 'is', null)
+      .range(txPage * 1000, txPage * 1000 + 999)
+    if (!data || data.length === 0) break
+    for (const row of data) {
+      if (row.payment_transaction_id) existingTxIds.add(row.payment_transaction_id)
+    }
+    if (data.length < 1000) break
+    txPage++
+  }
+
+  // Fetch all paid invoices from Stripe
+  let invoiceStartingAfter: string | undefined
+  let hasMoreInvoices = true
+  while (hasMoreInvoices) {
+    const params: any = { limit: 100, status: 'paid', expand: ['data.charge'] }
+    if (invoiceStartingAfter) params.starting_after = invoiceStartingAfter
+    const batch = await stripe.invoices.list(params)
+
+    for (const rawInv of batch.data) {
+      try {
+        const inv = rawInv as any
+        const piId = inv.payment_intent as string | null
+        if (!piId) continue
+
+        // Skip if already recorded
+        if (existingTxIds.has(piId)) continue
+
+        const custId = typeof inv.customer === 'string' ? inv.customer : (inv.customer as any)?.id
+        const userId = customerToUserId.get(custId ?? '') ?? null
+        if (!userId) continue
+
+        // Determine level from subscription
+        const subId = inv.subscription as string | null
+        const matchedSub = subId ? subMap.get(subId) : null
+        const invPriceId = inv.lines?.data?.[0]?.price?.id
+        let invLevelId = invPriceId ? priceLevelMap[invPriceId] : undefined
+        if (!invLevelId && matchedSub) {
+          const mSubPriceId = matchedSub.items?.data?.[0]?.price?.id
+          invLevelId = mSubPriceId ? priceLevelMap[mSubPriceId] : undefined
+        }
+        if (!invLevelId) invLevelId = 3
+
+        // Extract card info from charge if available
+        const charge = inv.charge as any
+        const invCard = charge?.payment_method_details?.card
+
+        await supabase.from('membership_orders').insert({
+          user_id: userId,
+          level_id: invLevelId,
+          status: 'success',
+          total: inv.amount_paid ? (inv.amount_paid / 100) : 0,
+          subtotal: inv.subtotal ? (inv.subtotal / 100) : null,
+          tax: inv.tax ? (inv.tax / 100) : null,
+          gateway: 'stripe',
+          payment_transaction_id: piId,
+          subscription_transaction_id: subId ?? null,
+          billing_name: inv.customer_name ?? null,
+          billing_email: inv.customer_email ?? null,
+          cardtype: invCard?.brand ?? null,
+          accountnumber: invCard?.last4 ?? null,
+          expirationmonth: invCard?.exp_month ? String(invCard.exp_month) : null,
+          expirationyear: invCard?.exp_year ? String(invCard.exp_year) : null,
+          timestamp: inv.status_transitions?.paid_at
+            ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
+            : new Date((inv.created ?? 0) * 1000).toISOString(),
+          notes: inv.number ? `Invoice ${inv.number}` : null,
+        })
+        existingTxIds.add(piId)
+        stats.ordersBackfilled++
+      } catch (err: any) {
+        // Don't fail the whole sync for individual invoice errors
+        stats.errors.push(`Invoice ${rawInv.id}: ${err.message}`)
+      }
+    }
+
+    hasMoreInvoices = batch.has_more
+    if (batch.data.length > 0) invoiceStartingAfter = batch.data[batch.data.length - 1].id
+  }
+
   return NextResponse.json({
     ok: true,
     ...stats,
-    message: `Synced ${stats.synced} subscriptions. Created ${stats.usersCreated} new user accounts. ${stats.skipped} skipped.`,
+    message: `Synced ${stats.synced} subscriptions. Created ${stats.usersCreated} new user accounts. Backfilled ${stats.ordersBackfilled} payment records. ${stats.skipped} skipped.`,
   })
 }

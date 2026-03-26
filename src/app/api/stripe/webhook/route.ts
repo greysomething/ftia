@@ -239,6 +239,107 @@ export async function POST(req: NextRequest) {
       break
     }
 
+    // ---- Refund handling ----
+    case 'charge.refunded': {
+      const charge = event.data.object
+      const customerId = typeof charge.customer === 'string' ? charge.customer : (charge.customer as any)?.id
+      if (!customerId) break
+
+      // Find user by stripe_customer_id
+      const { data: membershipForRefund } = await supabase
+        .from('user_memberships')
+        .select('id, user_id, level_id')
+        .eq('stripe_customer_id', customerId)
+        .limit(1)
+        .single()
+
+      if (!membershipForRefund) break
+
+      // Calculate refund amount (total refunded - could be partial)
+      const refundAmount = charge.amount_refunded ? (charge.amount_refunded / 100) : 0
+
+      await supabase.from('membership_orders').insert({
+        user_id: membershipForRefund.user_id,
+        level_id: membershipForRefund.level_id,
+        status: 'refunded',
+        total: -refundAmount,
+        gateway: 'stripe',
+        payment_transaction_id: charge.payment_intent as string ?? null,
+        notes: `Refund of $${refundAmount.toFixed(2)}${charge.refunds?.data?.[0]?.reason ? ` — Reason: ${charge.refunds.data[0].reason}` : ''}`,
+      })
+
+      console.log(`[Stripe Webhook] Charge refunded: $${refundAmount} for customer ${customerId}`)
+      break
+    }
+
+    // ---- Subscription updates (plan changes, metadata) ----
+    case 'customer.subscription.updated': {
+      const sub = event.data.object
+      const customerId = typeof sub.customer === 'string' ? sub.customer : (sub.customer as any)?.id
+      if (!customerId) break
+
+      const { data: membershipForUpdate } = await supabase
+        .from('user_memberships')
+        .select('id, user_id')
+        .eq('stripe_customer_id', customerId)
+        .limit(1)
+        .single()
+
+      if (!membershipForUpdate) break
+
+      // Map status
+      let updatedStatus: string
+      switch (sub.status) {
+        case 'active': case 'trialing': case 'past_due':
+          updatedStatus = 'active'; break
+        case 'canceled':
+          updatedStatus = 'cancelled'; break
+        default:
+          updatedStatus = 'expired'; break
+      }
+
+      const periodEnd = sub.current_period_end
+        ? new Date(sub.current_period_end * 1000).toISOString()
+        : null
+
+      // Extract card details if payment method expanded
+      const pm = sub.default_payment_method as any
+      const cardUpdate = pm?.card ? {
+        card_type: pm.card.brand ?? null,
+        card_last4: pm.card.last4 ?? null,
+        card_exp_month: String(pm.card.exp_month ?? ''),
+        card_exp_year: String(pm.card.exp_year ?? ''),
+      } : {}
+
+      // Map price to level
+      const updPriceId = sub.items?.data?.[0]?.price?.id
+      let updLevelId: number | undefined
+      if (updPriceId) {
+        // Look up level by stripe_price_id
+        const { data: matchedLevel } = await supabase
+          .from('membership_levels')
+          .select('id')
+          .eq('stripe_price_id', updPriceId)
+          .single()
+        if (matchedLevel) updLevelId = matchedLevel.id
+      }
+
+      await supabase
+        .from('user_memberships')
+        .update({
+          status: updatedStatus,
+          enddate: periodEnd,
+          stripe_subscription_id: sub.id,
+          modified: new Date().toISOString(),
+          ...cardUpdate,
+          ...(updLevelId ? { level_id: updLevelId } : {}),
+        })
+        .eq('id', membershipForUpdate.id)
+
+      console.log(`[Stripe Webhook] Subscription updated (${sub.id}): status=${sub.status} for customer ${customerId}`)
+      break
+    }
+
     default:
       break
   }
