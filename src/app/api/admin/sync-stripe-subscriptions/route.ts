@@ -99,6 +99,16 @@ export async function POST() {
   for (const sub of allSubs) subMap.set(sub.id, sub)
   const uniqueSubs = Array.from(subMap.values())
 
+  // Pre-build set of emails that have at least one active/trialing/past_due sub
+  // so we only protect those users from status downgrade
+  const emailsWithActiveSub = new Set<string>()
+  for (const sub of uniqueSubs) {
+    if (['active', 'trialing', 'past_due'].includes(sub.status)) {
+      const email = (sub.customer as any)?.email?.toLowerCase()
+      if (email) emailsWithActiveSub.add(email)
+    }
+  }
+
   const stats = {
     totalSubscriptions: uniqueSubs.length,
     synced: 0,
@@ -235,8 +245,9 @@ export async function POST() {
         .single()
 
       if (existingMem) {
-        // Don't overwrite active with cancelled, but still link Stripe IDs
-        if (existingMem.status === 'active' && (membershipStatus === 'cancelled' || membershipStatus === 'expired')) {
+        // Only skip downgrade if this user actually has an active sub in Stripe
+        // (prevents processing order issues when active + cancelled subs both exist)
+        if (existingMem.status === 'active' && (membershipStatus === 'cancelled' || membershipStatus === 'expired') && emailsWithActiveSub.has(email)) {
           await supabase.from('user_memberships')
             .update({
               stripe_customer_id: customer.id,
