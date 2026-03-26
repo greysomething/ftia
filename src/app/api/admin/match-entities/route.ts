@@ -47,10 +47,26 @@ export async function POST(req: NextRequest) {
     for (const name of companies) {
       if (!name?.trim()) continue
       const normalizedName = normalize(name)
+      const nameParts = normalizedName.split(' ').filter(w => w.length > 2)
       const candidates: MatchCandidate[] = []
 
       for (const co of allCompanies ?? []) {
-        const score = fuzzyScore(normalizedName, normalize(co.title))
+        const normalizedDbName = normalize(co.title)
+        let score = fuzzyScore(normalizedName, normalizedDbName)
+
+        // If full match is below threshold, try matching on first significant word
+        // (e.g. "Warner Bros Entertainment" should match "Warner Bros")
+        if (score < 50 && nameParts.length >= 1) {
+          const dbParts = normalizedDbName.split(' ').filter(w => w.length > 2)
+          // Check if the first word matches
+          if (nameParts[0] && dbParts[0] && nameParts[0] === dbParts[0]) {
+            // First word exact match — use word overlap for score
+            const overlap = nameParts.filter(w => dbParts.includes(w)).length
+            const maxWords = Math.max(nameParts.length, dbParts.length)
+            score = Math.max(score, Math.round((overlap / maxWords) * 85))
+          }
+        }
+
         if (score >= 50) {
           candidates.push({
             id: co.id,
@@ -80,11 +96,43 @@ export async function POST(req: NextRequest) {
     for (const name of crew) {
       if (!name?.trim()) continue
       const normalizedName = normalize(name)
+      const nameParts = normalizedName.split(' ').filter(w => w.length > 1)
       const candidates: MatchCandidate[] = []
 
       for (const cm of allCrew ?? []) {
-        const score = fuzzyScore(normalizedName, normalize(cm.name))
-        if (score >= 55) {
+        const normalizedDbName = normalize(cm.name)
+        let score = fuzzyScore(normalizedName, normalizedDbName)
+
+        // If full-name match is below threshold, try last-name match
+        // (handles cases like "Jean Nainchrik" matching "Jean Nainchrik" spelled differently)
+        if (score < 55 && nameParts.length >= 2) {
+          const lastName = nameParts[nameParts.length - 1]
+          const dbParts = normalizedDbName.split(' ').filter(w => w.length > 1)
+          const dbLastName = dbParts[dbParts.length - 1] ?? ''
+
+          // Check if last names are similar
+          if (lastName && dbLastName) {
+            const lastNameScore = fuzzyScore(lastName, dbLastName)
+            if (lastNameScore >= 70) {
+              // Last name matches well — check first name/initial too
+              const firstName = nameParts[0]
+              const dbFirstName = dbParts[0] ?? ''
+              if (firstName && dbFirstName && (
+                firstName === dbFirstName ||
+                firstName.startsWith(dbFirstName) ||
+                dbFirstName.startsWith(firstName)
+              )) {
+                // First name matches or is a prefix — boost score
+                score = Math.max(score, Math.round(lastNameScore * 0.85))
+              } else {
+                // Only last name matches — lower confidence
+                score = Math.max(score, Math.round(lastNameScore * 0.65))
+              }
+            }
+          }
+        }
+
+        if (score >= 50) {
           candidates.push({
             id: cm.id,
             title: cm.name,

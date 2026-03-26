@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useState, useCallback } from 'react'
+import { useActionState, useState, useCallback, useEffect, useRef } from 'react'
 import { saveProduction } from '@/app/admin/productions/actions'
 import Link from 'next/link'
 import { ImageScanner } from '@/components/admin/ImageScanner'
@@ -150,6 +150,24 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
       setMatchLoading(false)
     }
   }, [])
+
+  // Auto-match unlinked crew/companies on form load (existing productions)
+  const hasAutoMatched = useRef(false)
+  useEffect(() => {
+    if (hasAutoMatched.current || !production) return
+    hasAutoMatched.current = true
+
+    const unlinkedCrewNames = existingCrew
+      .filter(c => !c.crew_id && c.inline_name)
+      .map(c => c.inline_name)
+    const unlinkedCompanyNames = existingCompanies
+      .filter(c => !c.company_id && c.inline_name)
+      .map(c => c.inline_name)
+
+    if (unlinkedCrewNames.length > 0 || unlinkedCompanyNames.length > 0) {
+      fetchMatches(unlinkedCompanyNames, unlinkedCrewNames)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleScan = useCallback((data: any) => {
     setScannedData(data)
