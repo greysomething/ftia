@@ -269,36 +269,53 @@ export async function POST(req: NextRequest) {
     past_members: '429350f9-9dd2-4af9-8089-e6c85c428b54',
   }
 
+  const resendApiKey = process.env.RESEND_API_KEY!
+
   async function fetchResendAudience(audienceId: string) {
     try {
       let hasMore = true
       let afterCursor: string | undefined
+      let pageCount = 0
 
       while (hasMore) {
-        const params: any = { audienceId, limit: 100 }
-        if (afterCursor) params.after = afterCursor
+        // Use raw API to avoid SDK response wrapping issues
+        const url = new URL(`https://api.resend.com/audiences/${audienceId}/contacts`)
+        url.searchParams.set('limit', '100')
+        if (afterCursor) url.searchParams.set('after', afterCursor)
 
-        const response = await resend.contacts.list(params)
-        const responseData = response?.data as any
-        const contacts = responseData?.data ?? responseData ?? []
+        const res = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${resendApiKey}` },
+        })
+
+        if (!res.ok) {
+          console.error(`[send-weekly-digest] Resend API error: ${res.status} ${res.statusText}`)
+          break
+        }
+
+        const data = await res.json()
+        const contacts = data.data ?? []
+        pageCount++
+
+        console.log(`[send-weekly-digest] Audience ${audienceId} page ${pageCount}: ${contacts.length} contacts, has_more=${data.has_more}`)
 
         if (!Array.isArray(contacts) || contacts.length === 0) break
 
         for (const contact of contacts) {
           if (contact.email && !contact.unsubscribed) {
             recipientEmails.add(contact.email)
-            if (contact.firstName) emailToName.set(contact.email, contact.firstName)
+            if (contact.first_name) emailToName.set(contact.email, contact.first_name)
           }
         }
 
-        // Check if there are more pages
-        hasMore = responseData?.has_more === true
+        hasMore = data.has_more === true
         if (hasMore && contacts.length > 0) {
           afterCursor = contacts[contacts.length - 1].id
         } else {
           hasMore = false
         }
       }
+
+      console.log(`[send-weekly-digest] Audience ${audienceId} total: ${pageCount} pages fetched`)
     } catch (err) {
       console.error(`[send-weekly-digest] Failed to fetch audience ${audienceId}:`, err)
     }
@@ -315,11 +332,52 @@ export async function POST(req: NextRequest) {
     await fetchResendAudience(AUDIENCE_IDS.past_members)
   }
 
+  console.log(`[send-weekly-digest] Total unique recipients from audience(s): ${recipientEmails.size}`)
+
   if (recipientEmails.size === 0) {
     return NextResponse.json(
       { error: `No contacts found in the "${audience}" audience to send digest to.` },
       { status: 400 }
     )
+  }
+
+  // 8b. Exclude recipients who already received the digest this week
+  //     This prevents double-sends on retry and allows sending to remaining recipients
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Sunday
+  weekStart.setHours(0, 0, 0, 0)
+
+  const alreadySent = new Set<string>()
+  let sentPage = 0
+  while (true) {
+    const { data: sentLogs } = await supabase
+      .from('email_logs')
+      .select('recipient')
+      .eq('template_slug', 'weekly-digest')
+      .not('recipient', 'like', 'bulk:%')
+      .gte('sent_at', weekStart.toISOString())
+      .range(sentPage * 1000, sentPage * 1000 + 999)
+    if (!sentLogs || sentLogs.length === 0) break
+    for (const log of sentLogs) {
+      if (log.recipient) alreadySent.add(log.recipient.toLowerCase())
+    }
+    if (sentLogs.length < 1000) break
+    sentPage++
+  }
+
+  // Remove already-sent recipients
+  for (const email of alreadySent) {
+    recipientEmails.delete(email)
+  }
+
+  console.log(`[send-weekly-digest] After excluding ${alreadySent.size} already sent: ${recipientEmails.size} remaining`)
+
+  if (recipientEmails.size === 0) {
+    return NextResponse.json({
+      success: true,
+      message: `All ${alreadySent.size} recipients already received the digest this week. Nothing new to send.`,
+      stats: { totalRecipients: 0, sent: 0, failed: 0, alreadySent: alreadySent.size, productionCount: prods.length, weekMonday },
+    })
   }
 
   // 9. Send emails in batches

@@ -92,25 +92,29 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 3. Check if we already sent this week (prevent duplicate sends)
-  const weekStart = new Date(now)
-  weekStart.setDate(now.getDate() - now.getDay()) // Sunday
-  weekStart.setHours(0, 0, 0, 0)
+  // 3. Check if we already sent this week (prevent duplicate auto-sends)
+  //    Manual triggers skip this check — the send endpoint itself deduplicates
+  //    at the individual recipient level, so re-sends only go to new recipients.
+  if (!isManualTrigger) {
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - now.getDay()) // Sunday
+    weekStart.setHours(0, 0, 0, 0)
 
-  const { data: recentSend } = await supabase
-    .from('email_logs')
-    .select('id')
-    .eq('template_slug', 'weekly-digest')
-    .like('recipient', 'bulk:%')
-    .gte('sent_at', weekStart.toISOString())
-    .limit(1)
+    const { data: recentSend } = await supabase
+      .from('email_logs')
+      .select('id')
+      .eq('template_slug', 'weekly-digest')
+      .like('recipient', 'bulk:%')
+      .gte('sent_at', weekStart.toISOString())
+      .limit(1)
 
-  if (recentSend && recentSend.length > 0) {
-    return NextResponse.json({
-      skipped: true,
-      reason: 'Digest already sent this week',
-      checkedAt: new Date().toISOString(),
-    })
+    if (recentSend && recentSend.length > 0) {
+      return NextResponse.json({
+        skipped: true,
+        reason: 'Digest already sent this week',
+        checkedAt: new Date().toISOString(),
+      })
+    }
   }
 
   // 4. Check if the current week's production list is ready
