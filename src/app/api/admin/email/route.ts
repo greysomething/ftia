@@ -85,7 +85,9 @@ export async function GET(req: NextRequest) {
 
   if (action === 'digest-history') {
     const supabase = createAdminClient()
-    const { data: logs } = await supabase
+
+    // First try to find bulk summary rows (new format)
+    const { data: bulkLogs } = await supabase
       .from('email_logs')
       .select('id, recipient, subject, status, resend_id, error_message, sent_at')
       .eq('template_slug', 'weekly-digest')
@@ -93,7 +95,67 @@ export async function GET(req: NextRequest) {
       .order('sent_at', { ascending: false })
       .limit(50)
 
-    return NextResponse.json({ logs: logs ?? [] })
+    // Also aggregate individual digest sends by date (for sends before bulk logging)
+    // Group by sent_at date to reconstruct past digest sends
+    const { data: individualLogs } = await supabase
+      .from('email_logs')
+      .select('id, recipient, subject, status, sent_at')
+      .eq('template_slug', 'weekly-digest')
+      .not('recipient', 'like', 'bulk:%')
+      .order('sent_at', { ascending: false })
+      .limit(2000)
+
+    // Group individual sends by date (within a 2-hour window = same digest batch)
+    const batchMap = new Map<string, { count: number; firstId: string; subject: string; sent_at: string; succeeded: number; failed: number }>()
+    for (const log of (individualLogs ?? [])) {
+      const dateHour = log.sent_at ? log.sent_at.slice(0, 13) : 'unknown' // group by YYYY-MM-DDTHH
+      // Round to nearest 2-hour window
+      const d = new Date(log.sent_at)
+      const windowKey = `${log.sent_at.slice(0, 10)}-${Math.floor(d.getHours() / 2)}`
+
+      if (!batchMap.has(windowKey)) {
+        batchMap.set(windowKey, {
+          count: 0,
+          firstId: log.id,
+          subject: log.subject || '',
+          sent_at: log.sent_at,
+          succeeded: 0,
+          failed: 0,
+        })
+      }
+      const batch = batchMap.get(windowKey)!
+      batch.count++
+      if (log.status === 'sent' || log.status === 'delivered') {
+        batch.succeeded++
+      } else {
+        batch.failed++
+      }
+    }
+
+    // Convert batches to the same format as bulk logs
+    const syntheticLogs = Array.from(batchMap.values()).map((batch) => ({
+      id: batch.firstId,
+      recipient: `bulk:${batch.count}`,
+      subject: batch.subject,
+      status: 'sent',
+      resend_id: JSON.stringify({
+        trigger: 'unknown',
+        sent: batch.succeeded,
+        failed: batch.failed,
+      }),
+      error_message: batch.failed > 0 ? `${batch.failed} failed` : null,
+      sent_at: batch.sent_at,
+    }))
+
+    // Merge and deduplicate: bulk logs take priority over synthetic ones for same date
+    const bulkDates = new Set((bulkLogs ?? []).map((l) => l.sent_at?.slice(0, 10)))
+    const filteredSynthetic = syntheticLogs.filter((s) => !bulkDates.has(s.sent_at?.slice(0, 10)))
+
+    const allLogs = [...(bulkLogs ?? []), ...filteredSynthetic]
+      .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
+      .slice(0, 50)
+
+    return NextResponse.json({ logs: allLogs })
   }
 
   if (action === 'digest-stats') {
