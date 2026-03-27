@@ -166,9 +166,17 @@ export async function GET(req: NextRequest) {
       sent_at: batch.sent_at,
     }))
 
-    // Merge and deduplicate: bulk logs take priority over synthetic ones for same date
-    const bulkDates = new Set((bulkLogs ?? []).map((l) => l.sent_at?.slice(0, 10)))
-    const filteredSynthetic = syntheticLogs.filter((s) => !bulkDates.has(s.sent_at?.slice(0, 10)))
+    // Merge: deduplicate by 2-hour time window so bulk logs and synthetic logs
+    // from the same batch don't both appear, but different sends on the same day are kept
+    const bulkWindows = new Set((bulkLogs ?? []).map((l) => {
+      const d = new Date(l.sent_at)
+      return `${l.sent_at?.slice(0, 10)}-${Math.floor(d.getHours() / 2)}`
+    }))
+    const filteredSynthetic = syntheticLogs.filter((s) => {
+      const d = new Date(s.sent_at)
+      const window = `${s.sent_at?.slice(0, 10)}-${Math.floor(d.getHours() / 2)}`
+      return !bulkWindows.has(window)
+    })
 
     const allLogs = [...(bulkLogs ?? []), ...filteredSynthetic]
       .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
