@@ -5,6 +5,7 @@ import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate } from '@/lib/utils'
 import { SubscriptionActions } from './SubscriptionActions'
 import { StripeSyncButton } from '../users/StripeSyncButton'
+import StripeStatsCards from './StripeStatsCards'
 
 export const metadata: Metadata = { title: 'Subscriptions & Payments' }
 
@@ -43,15 +44,6 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 // TABS defined dynamically below with counts
-
-function formatCurrency(amount: number): string {
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function formatCompact(amount: number): string {
-  if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}k`
-  return `$${amount.toFixed(2)}`
-}
 
 export default async function AdminSubscriptionsPage({ searchParams }: Props) {
   const params = await searchParams
@@ -113,88 +105,14 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
         <StripeSyncButton />
       </div>
 
-      {/* Revenue & Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
-        {/* MRR */}
-        <div className="admin-card flex items-center gap-3 border-accent min-w-0">
-          <div className="p-2.5 rounded-lg flex-shrink-0 bg-accent/10 text-accent">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold text-gray-900 truncate">{formatCompact(stats.mrr)}</p>
-            <p className="text-xs text-gray-500">MRR</p>
-          </div>
-        </div>
-
-        {/* Active */}
-        <div className="admin-card flex items-center gap-3 border-accent min-w-0">
-          <div className="p-2.5 rounded-lg flex-shrink-0 bg-green-50 text-green-600">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold text-gray-900">{stats.active.toLocaleString()}</p>
-            <p className="text-xs text-gray-500">Active</p>
-          </div>
-        </div>
-
-        {/* New This Month */}
-        <div className="admin-card flex items-center gap-3 min-w-0">
-          <div className="p-2.5 rounded-lg flex-shrink-0 bg-blue-50 text-blue-600">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold text-gray-900">{stats.newThisMonth.toLocaleString()}</p>
-            <p className="text-xs text-gray-500">New This Month</p>
-          </div>
-        </div>
-
-        {/* 30-Day Revenue */}
-        <div className="admin-card flex items-center gap-3 min-w-0">
-          <div className="p-2.5 rounded-lg flex-shrink-0 bg-emerald-50 text-emerald-600">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold text-gray-900 truncate">{formatCompact(stats.recentRevenue)}</p>
-            <p className="text-xs text-gray-500">30-Day Revenue</p>
-          </div>
-        </div>
-
-        {/* Total Orders */}
-        <div className="admin-card flex items-center gap-3 min-w-0">
-          <div className="p-2.5 rounded-lg flex-shrink-0 bg-gray-100 text-gray-600">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold text-gray-900">{stats.totalOrders.toLocaleString()}</p>
-            <p className="text-xs text-gray-500">Total Orders</p>
-          </div>
-        </div>
-
-        {/* Attention Needed */}
-        <div className="admin-card flex items-center gap-3 min-w-0">
-          <div className={`p-2.5 rounded-lg flex-shrink-0 ${
-            (stats.pastDue + stats.suspended) > 0 ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-400'
-          }`}>
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold text-gray-900">{(stats.pastDue + stats.suspended).toLocaleString()}</p>
-            <p className="text-xs text-gray-500">Needs Attention</p>
-          </div>
-        </div>
-      </div>
+      {/* Revenue & Stats Cards — powered by Stripe API */}
+      <StripeStatsCards
+        activeCount={stats.active}
+        newThisMonth={stats.newThisMonth}
+        needsAttention={stats.pastDue + stats.suspended}
+        totalSubscriptions={stats.total}
+        totalOrders={stats.totalOrders}
+      />
 
       {/* Main Tabs: Subscriptions / Orders */}
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 max-w-sm">
