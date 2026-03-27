@@ -845,12 +845,20 @@ function AutomationTab() {
     setTriggeringDigest(true)
     setDigestResult(null)
     try {
-      const res = await fetch('/api/cron/weekly-digest?force=1')
-      const data = await res.json()
-      if (data.skipped) {
-        setDigestResult({ message: data.reason, type: 'info' })
-      } else if (data.success) {
-        const sent = data.stats?.sent ?? data.sent ?? data.total ?? 0
+      // Call send-weekly-digest directly (carries admin session cookies)
+      const res = await fetch('/api/admin/send-weekly-digest?trigger=manual', {
+        method: 'POST',
+      })
+      const text = await res.text()
+      let data: any
+      try {
+        data = JSON.parse(text)
+      } catch {
+        setDigestResult({ message: `Server error: ${text.slice(0, 200)}`, type: 'error' })
+        return
+      }
+      if (data.success) {
+        const sent = data.stats?.sent ?? data.sent ?? 0
         setDigestResult({ message: `Digest sent successfully to ${sent} recipients.`, type: 'success' })
         fetchDigestHistory() // Refresh log table
       } else {
