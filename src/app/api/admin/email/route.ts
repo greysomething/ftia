@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
       subject: batch.subject,
       status: 'sent',
       resend_id: JSON.stringify({
-        trigger: 'unknown',
+        trigger: 'manual',
         sent: batch.succeeded,
         failed: batch.failed,
       }),
