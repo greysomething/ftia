@@ -4,6 +4,31 @@ import { getTemplate } from '@/lib/email-templates'
 import { logActivity } from '@/lib/activity-log'
 
 const CONTACT_TO = process.env.CONTACT_EMAIL ?? 'hello@support.productionlist.com'
+const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY || ''
+
+// ---------------------------------------------------------------------------
+// Cloudflare Turnstile verification
+// ---------------------------------------------------------------------------
+async function verifyTurnstile(token: string, ip: string | null): Promise<boolean> {
+  if (!TURNSTILE_SECRET) return true // skip if not configured
+
+  try {
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        secret: TURNSTILE_SECRET,
+        response: token,
+        ...(ip ? { remoteip: ip } : {}),
+      }),
+    })
+    const data = await res.json()
+    return data.success === true
+  } catch (err) {
+    console.error('[contact] Turnstile verification error:', err)
+    return false
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,11 +37,29 @@ export async function POST(req: NextRequest) {
     const email = String(formData.get('email') ?? '').trim()
     const subject = String(formData.get('subject') ?? 'general')
     const message = String(formData.get('message') ?? '').trim()
+    const honeypot = String(formData.get('website') ?? '').trim()
+    const turnstileToken = String(formData.get('cf-turnstile-response') ?? '')
+
+    // Honeypot check — real users never fill this in
+    if (honeypot) {
+      // Pretend success so bots think it worked
+      return NextResponse.json({ success: true })
+    }
 
     if (!name || !email || !message) {
-      return NextResponse.redirect(
-        new URL('/contact?error=missing_fields', req.url),
-        303
+      return NextResponse.json(
+        { success: false, error: 'Please fill out all required fields.' },
+        { status: 400 }
+      )
+    }
+
+    // Verify Turnstile CAPTCHA
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+    const turnstileValid = await verifyTurnstile(turnstileToken, ip)
+    if (!turnstileValid) {
+      return NextResponse.json(
+        { success: false, error: 'CAPTCHA verification failed. Please try again.' },
+        { status: 403 }
       )
     }
 
@@ -35,9 +78,9 @@ export async function POST(req: NextRequest) {
 
     if (!teamResult.success) {
       console.error('[contact] Failed to send team email:', teamResult.error)
-      return NextResponse.redirect(
-        new URL('/contact?error=send_failed', req.url),
-        303
+      return NextResponse.json(
+        { success: false, error: 'Failed to send message. Please try again.' },
+        { status: 500 }
       )
     }
 
@@ -58,7 +101,6 @@ export async function POST(req: NextRequest) {
       })
 
       if (!confirmResult.success) {
-        // Log but don't fail — the team already received the message
         console.error('[contact] Failed to send confirmation email:', confirmResult.error)
       }
     }
@@ -71,15 +113,12 @@ export async function POST(req: NextRequest) {
       reqHeaders: req.headers,
     })
 
-    return NextResponse.redirect(
-      new URL('/contact?success=true', req.url),
-      303
-    )
+    return NextResponse.json({ success: true })
   } catch (err) {
     console.error('Contact form error:', err)
-    return NextResponse.redirect(
-      new URL('/contact?error=send_failed', req.url),
-      303
+    return NextResponse.json(
+      { success: false, error: 'Something went wrong. Please try again.' },
+      { status: 500 }
     )
   }
 }

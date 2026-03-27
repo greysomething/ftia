@@ -774,6 +774,29 @@ function AutomationTab() {
   const [saved, setSaved] = useState(false)
   const [triggeringDigest, setTriggeringDigest] = useState(false)
   const [digestResult, setDigestResult] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const [digestHistory, setDigestHistory] = useState<Array<{
+    id: string
+    recipient: string
+    subject: string
+    status: string
+    resend_id: string | null
+    error_message: string | null
+    sent_at: string
+  }>>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+
+  async function fetchDigestHistory() {
+    setHistoryLoading(true)
+    try {
+      const res = await fetch('/api/admin/email?action=digest-history')
+      if (res.ok) {
+        const data = await res.json()
+        setDigestHistory(data.logs ?? [])
+      }
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
 
   useEffect(() => {
     fetch('/api/admin/email?action=digest-settings')
@@ -794,6 +817,8 @@ function AutomationTab() {
         }
       })
       .finally(() => setLoading(false))
+
+    fetchDigestHistory()
   }, [])
 
   async function saveSettings() {
@@ -825,8 +850,9 @@ function AutomationTab() {
       if (data.skipped) {
         setDigestResult({ message: data.reason, type: 'info' })
       } else if (data.success) {
-        const sent = data.sent ?? data.total ?? 0
+        const sent = data.stats?.sent ?? data.sent ?? data.total ?? 0
         setDigestResult({ message: `Digest sent successfully to ${sent} recipients.`, type: 'success' })
+        fetchDigestHistory() // Refresh log table
       } else {
         setDigestResult({ message: data.error || 'Something went wrong', type: 'error' })
       }
@@ -1019,6 +1045,115 @@ function AutomationTab() {
             </span>
           )}
         </div>
+      </div>
+
+      {/* Digest Send History */}
+      <div className="admin-card mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <svg className="w-5 h-5 text-[#3ea8c8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Digest Send Log
+          </h3>
+          <button
+            onClick={fetchDigestHistory}
+            disabled={historyLoading}
+            className="btn-outline text-xs px-3 py-1"
+          >
+            {historyLoading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+
+        {historyLoading && digestHistory.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">Loading digest history...</p>
+        ) : digestHistory.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No digests have been sent yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 uppercase border-b">
+                  <th className="pb-2 pr-4">Date & Time</th>
+                  <th className="pb-2 pr-4">Trigger</th>
+                  <th className="pb-2 pr-4">Recipients</th>
+                  <th className="pb-2 pr-4">Sent</th>
+                  <th className="pb-2 pr-4">Week</th>
+                  <th className="pb-2 pr-4">Productions</th>
+                  <th className="pb-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {digestHistory.map((log) => {
+                  // Parse metadata from resend_id (we store JSON there)
+                  let meta: { trigger?: string; sent?: number; failed?: number; productionCount?: number; weekMonday?: string; audience?: string } = {}
+                  try {
+                    if (log.resend_id && log.resend_id.startsWith('{')) {
+                      meta = JSON.parse(log.resend_id)
+                    }
+                  } catch { /* ignore */ }
+
+                  const recipientCount = log.recipient?.replace('bulk:', '') || '?'
+                  const trigger = meta.trigger || 'unknown'
+                  const sentCount = meta.sent ?? parseInt(recipientCount) || 0
+                  const failedCount = meta.failed ?? 0
+                  const prodCount = meta.productionCount ?? '—'
+                  const weekMonday = meta.weekMonday || '—'
+
+                  return (
+                    <tr key={log.id} className="hover:bg-gray-50">
+                      <td className="py-2.5 pr-4 whitespace-nowrap text-gray-700">
+                        {new Date(log.sent_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}{' '}
+                        <span className="text-gray-400">
+                          {new Date(log.sent_at).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          trigger === 'manual'
+                            ? 'bg-blue-50 text-blue-700'
+                            : trigger === 'auto'
+                            ? 'bg-green-50 text-green-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {trigger === 'manual' ? (
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
+                          ) : (
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          )}
+                          {trigger === 'manual' ? 'Manual' : trigger === 'auto' ? 'Automated' : 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4 text-gray-700">{recipientCount}</td>
+                      <td className="py-2.5 pr-4">
+                        <span className="text-green-600 font-medium">{sentCount}</span>
+                        {failedCount > 0 && (
+                          <span className="text-red-500 ml-1">/ {failedCount} failed</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4 text-gray-500 whitespace-nowrap">{weekMonday !== '—' ? weekMonday : '—'}</td>
+                      <td className="py-2.5 pr-4 text-gray-700">{prodCount}</td>
+                      <td className="py-2.5">
+                        {log.error_message ? (
+                          <span className="badge-yellow text-xs" title={log.error_message}>Partial</span>
+                        ) : (
+                          <span className="badge-green text-xs">Success</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* How it works */}

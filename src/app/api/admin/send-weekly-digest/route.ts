@@ -151,6 +151,7 @@ export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const isPreview = searchParams.get('preview') === 'true'
   const testEmail = searchParams.get('test')
+  const triggerType = searchParams.get('trigger') || (isCron ? 'auto' : 'manual')
 
   // 1. Get current week's Monday
   const weekMonday = getCurrentWeekMonday()
@@ -345,13 +346,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 10. Log summary
+  // 10. Log summary (includes trigger type for audit trail)
   await supabase.from('email_logs').insert({
     recipient: `bulk:${emails.length}`,
     subject: rendered.subject,
     template_slug: 'weekly-digest',
     status: 'sent',
     error_message: errors.length > 0 ? errors.join('; ') : null,
+    resend_id: JSON.stringify({
+      trigger: triggerType,
+      sent: sent,
+      failed: failed,
+      productionCount: prods.length,
+      weekMonday,
+      audience,
+    }),
     sent_at: new Date().toISOString(),
   })
 

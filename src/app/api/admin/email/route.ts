@@ -83,6 +83,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ settings: data ?? null })
   }
 
+  if (action === 'digest-history') {
+    const supabase = createAdminClient()
+    const { data: logs } = await supabase
+      .from('email_logs')
+      .select('id, recipient, subject, status, resend_id, error_message, sent_at')
+      .eq('template_slug', 'weekly-digest')
+      .like('recipient', 'bulk:%')
+      .order('sent_at', { ascending: false })
+      .limit(50)
+
+    return NextResponse.json({ logs: logs ?? [] })
+  }
+
   if (action === 'digest-stats') {
     const supabase = createAdminClient()
 

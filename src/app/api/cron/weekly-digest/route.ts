@@ -141,7 +141,8 @@ export async function GET(req: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://productionlist.com'
 
   try {
-    const res = await fetch(`${baseUrl}/api/admin/send-weekly-digest`, {
+    const trigger = isManualTrigger ? 'manual' : 'auto'
+    const res = await fetch(`${baseUrl}/api/admin/send-weekly-digest?trigger=${trigger}`, {
       method: 'POST',
       headers: {
         'x-cron-secret': cronSecret || '',
