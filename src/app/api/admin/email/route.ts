@@ -51,18 +51,37 @@ export async function GET(req: NextRequest) {
     const audiences = await Promise.all(
       audienceConfigs.map(async (aud) => {
         try {
-          // Fetch contacts list to get actual count
-          const res = await fetch(`https://api.resend.com/audiences/${aud.id}/contacts`, {
-            headers: { Authorization: `Bearer ${apiKey}` },
-          })
-          if (res.ok) {
+          // Paginate through all contacts to get accurate total count
+          let totalCount = 0
+          let afterCursor: string | undefined
+          let hasMore = true
+
+          while (hasMore) {
+            const url = new URL(`https://api.resend.com/audiences/${aud.id}/contacts`)
+            url.searchParams.set('limit', '100')
+            if (afterCursor) url.searchParams.set('after', afterCursor)
+
+            const res = await fetch(url.toString(), {
+              headers: { Authorization: `Bearer ${apiKey}` },
+            })
+            if (!res.ok) break
+
             const data = await res.json()
             const contacts = data.data ?? []
-            return {
-              id: aud.id,
-              label: aud.label,
-              contactCount: contacts.length,
+            totalCount += contacts.length
+
+            hasMore = data.has_more === true
+            if (hasMore && contacts.length > 0) {
+              afterCursor = contacts[contacts.length - 1].id
+            } else {
+              hasMore = false
             }
+          }
+
+          return {
+            id: aud.id,
+            label: aud.label,
+            contactCount: totalCount,
           }
         } catch { /* skip */ }
         return { id: aud.id, label: aud.label, contactCount: 0 }

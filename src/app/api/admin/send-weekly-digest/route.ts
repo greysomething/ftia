@@ -271,12 +271,32 @@ export async function POST(req: NextRequest) {
 
   async function fetchResendAudience(audienceId: string) {
     try {
-      const { data } = await resend.contacts.list({ audienceId })
-      const contacts = (data as any)?.data ?? data ?? []
-      for (const contact of contacts) {
-        if (contact.email && !contact.unsubscribed) {
-          recipientEmails.add(contact.email)
-          if (contact.firstName) emailToName.set(contact.email, contact.firstName)
+      let hasMore = true
+      let afterCursor: string | undefined
+
+      while (hasMore) {
+        const params: any = { audienceId, limit: 100 }
+        if (afterCursor) params.after = afterCursor
+
+        const response = await resend.contacts.list(params)
+        const responseData = response?.data as any
+        const contacts = responseData?.data ?? responseData ?? []
+
+        if (!Array.isArray(contacts) || contacts.length === 0) break
+
+        for (const contact of contacts) {
+          if (contact.email && !contact.unsubscribed) {
+            recipientEmails.add(contact.email)
+            if (contact.firstName) emailToName.set(contact.email, contact.firstName)
+          }
+        }
+
+        // Check if there are more pages
+        hasMore = responseData?.has_more === true
+        if (hasMore && contacts.length > 0) {
+          afterCursor = contacts[contacts.length - 1].id
+        } else {
+          hasMore = false
         }
       }
     } catch (err) {
