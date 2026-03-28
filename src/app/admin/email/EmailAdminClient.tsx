@@ -103,6 +103,7 @@ export default function EmailAdminClient({
   const [logPage, setLogPage] = useState(1)
   const [logStatus, setLogStatus] = useState('')
   const [logTemplate, setLogTemplate] = useState('')
+  const [logSearch, setLogSearch] = useState('')
   const [logsLoading, setLogsLoading] = useState(false)
 
   // Test email state
@@ -139,12 +140,13 @@ export default function EmailAdminClient({
     }
   }
 
-  async function fetchLogs(page = 1, status = logStatus, template = logTemplate) {
+  async function fetchLogs(page = 1, status = logStatus, template = logTemplate, search = logSearch) {
     setLogsLoading(true)
     try {
       const params = new URLSearchParams({ action: 'logs', page: String(page) })
       if (status) params.set('status', status)
       if (template) params.set('template', template)
+      if (search.trim()) params.set('search', search.trim())
       const res = await fetch(`/api/admin/email?${params}`)
       if (res.ok) {
         const data = await res.json()
@@ -611,6 +613,17 @@ export default function EmailAdminClient({
           {/* Filters */}
           <div className="admin-card mb-4">
             <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[200px]">
+                <label className="form-label">Search</label>
+                <input
+                  type="text"
+                  className="form-input text-sm w-full"
+                  placeholder="Search by email or subject..."
+                  value={logSearch}
+                  onChange={(e) => setLogSearch(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') fetchLogs(1, logStatus, logTemplate, logSearch) }}
+                />
+              </div>
               <div>
                 <label className="form-label">Status</label>
                 <select
@@ -639,7 +652,7 @@ export default function EmailAdminClient({
                 </select>
               </div>
               <button
-                onClick={() => fetchLogs(logPage, logStatus, logTemplate)}
+                onClick={() => fetchLogs(logPage, logStatus, logTemplate, logSearch)}
                 disabled={logsLoading}
                 className="btn-outline text-sm px-3 py-1.5"
               >

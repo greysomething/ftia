@@ -286,6 +286,7 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const statusFilter = req.nextUrl.searchParams.get('status')
   const templateFilter = req.nextUrl.searchParams.get('template')
+  const searchFilter = req.nextUrl.searchParams.get('search')
   const page = parseInt(req.nextUrl.searchParams.get('page') ?? '1', 10)
   const pageSize = 50
 
@@ -300,6 +301,9 @@ export async function GET(req: NextRequest) {
   }
   if (templateFilter) {
     query = query.eq('template_slug', templateFilter)
+  }
+  if (searchFilter) {
+    query = query.or(`recipient.ilike.%${searchFilter}%,subject.ilike.%${searchFilter}%`)
   }
 
   const { data: logs, count, error } = await query
