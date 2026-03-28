@@ -871,8 +871,12 @@ function AutomationTab() {
         return
       }
       if (data.success) {
-        const sent = data.stats?.sent ?? data.sent ?? 0
-        setDigestResult({ message: `Digest sent successfully to ${sent} recipients.`, type: 'success' })
+        const stats = data.stats ?? {}
+        const sent = stats.sent ?? data.sent ?? 0
+        const audienceInfo = stats.audienceFetched != null
+          ? ` (${stats.audienceFetched} in audience, ${stats.alreadySentCount ?? 0} already sent this week)`
+          : ''
+        setDigestResult({ message: `Digest sent successfully to ${sent} recipients.${audienceInfo}`, type: sent > 0 ? 'success' : 'info' })
         fetchDigestHistory() // Refresh log table
       } else {
         setDigestResult({ message: data.error || 'Something went wrong', type: 'error' })
@@ -1116,7 +1120,7 @@ function AutomationTab() {
 
                   const recipientCount = log.recipient?.replace('bulk:', '') || '?'
                   const trigger = meta.trigger || 'unknown'
-                  const sentCount = meta.sent ?? parseInt(recipientCount) || 0
+                  const sentCount = meta.sent ?? (parseInt(recipientCount) || 0)
                   const failedCount = meta.failed ?? 0
                   const prodCount = meta.productionCount ?? '—'
                   const weekMonday = meta.weekMonday || '—'

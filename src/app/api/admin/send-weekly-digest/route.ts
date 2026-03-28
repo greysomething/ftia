@@ -259,11 +259,11 @@ export async function POST(req: NextRequest) {
   const recipientEmails = new Set<string>()
   const emailToName = new Map<string, string>()
 
-  // Helper: fetch contacts from a Resend audience
+  // Use env vars for audience IDs (same as audience-counts endpoint)
   const AUDIENCE_IDS: Record<string, string> = {
-    newsletter: '4eaf097c-c05c-4f20-b5c6-064a5e7630fe',
-    active_members: '90a19517-19e0-44ac-90ea-847ef90c97a7',
-    past_members: '429350f9-9dd2-4af9-8089-e6c85c428b54',
+    newsletter: process.env.RESEND_AUDIENCE_ID ?? '',
+    active_members: process.env.RESEND_AUDIENCE_MEMBERS_ID ?? '',
+    past_members: process.env.RESEND_AUDIENCE_PAST_MEMBERS_ID ?? '',
   }
 
   const resendApiKey = process.env.RESEND_API_KEY!
@@ -330,7 +330,8 @@ export async function POST(req: NextRequest) {
     await fetchResendAudience(AUDIENCE_IDS.past_members)
   }
 
-  console.log(`[send-weekly-digest] Total unique recipients from audience(s): ${recipientEmails.size}`)
+  const totalFetchedFromAudience = recipientEmails.size
+  console.log(`[send-weekly-digest] Total unique recipients from audience(s): ${totalFetchedFromAudience}`)
 
   if (recipientEmails.size === 0) {
     return NextResponse.json(
@@ -375,12 +376,15 @@ export async function POST(req: NextRequest) {
   if (recipientEmails.size === 0) {
     return NextResponse.json({
       success: true,
-      message: `All ${alreadySent.size} recipients already received the digest this week. Nothing new to send.`,
-      stats: { totalRecipients: 0, sent: 0, failed: 0, alreadySent: alreadySent.size, productionCount: prods.length, weekMonday },
+      message: `All ${alreadySent.size} recipients already received the digest this week. Nothing new to send. (Audience "${audience}" had ${totalFetchedFromAudience} contacts total.)`,
+      stats: { totalRecipients: 0, sent: 0, failed: 0, alreadySent: alreadySent.size, productionCount: prods.length, weekMonday, audienceFetched: totalFetchedFromAudience, audienceUsed: audience },
     })
   }
 
-  // 9. Send emails in batches using Resend batch API (up to 100 per request)
+  // 9. Send emails in batches using Resend SDK batch API (up to 100 per request)
+  const { Resend } = await import('resend')
+  const resend = new Resend(resendApiKey)
+
   let sent = 0
   let failed = 0
   const errors: string[] = []
@@ -400,7 +404,7 @@ export async function POST(req: NextRequest) {
 
       return {
         from: fromAddress,
-        to: email,
+        to: [email],
         subject: personalRendered.subject,
         html: personalRendered.html,
         headers: {
@@ -411,23 +415,31 @@ export async function POST(req: NextRequest) {
     })
 
     try {
-      const batchRes = await fetch('https://api.resend.com/emails/batch', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(emailPayloads),
-      })
+      const { data: batchData, error: batchError } = await resend.batch.send(emailPayloads)
 
-      if (batchRes.ok) {
-        const batchData = await batchRes.json()
-        const results = batchData.data ?? []
+      if (batchError) {
+        console.error(`[send-weekly-digest] Batch SDK error:`, batchError)
+        failed += batch.length
+        if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`)
+
+        // Log failures
+        const failEntries = batch.map((email, idx) => ({
+          recipient: email,
+          subject: emailPayloads[idx].subject,
+          template_slug: 'weekly-digest',
+          status: 'failed',
+          resend_id: null,
+          error_message: batchError.message,
+          sent_at: new Date().toISOString(),
+        }))
+        await supabase.from('email_logs').insert(failEntries)
+      } else {
+        const results = batchData?.data ?? []
         sent += results.length
         const batchFailed = batch.length - results.length
         failed += batchFailed
 
-        // Log individual sends to email_logs for per-recipient tracking
+        // Log individual sends for per-recipient tracking
         const logEntries = batch.map((email, idx) => ({
           recipient: email,
           subject: emailPayloads[idx].subject,
@@ -438,23 +450,6 @@ export async function POST(req: NextRequest) {
           sent_at: new Date().toISOString(),
         }))
         await supabase.from('email_logs').insert(logEntries)
-      } else {
-        const errText = await batchRes.text()
-        console.error(`[send-weekly-digest] Batch API error: ${batchRes.status} ${errText}`)
-        failed += batch.length
-        if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${errText.slice(0, 200)}`)
-
-        // Log failures for each recipient in this batch
-        const failEntries = batch.map((email, idx) => ({
-          recipient: email,
-          subject: emailPayloads[idx].subject,
-          template_slug: 'weekly-digest',
-          status: 'failed',
-          resend_id: null,
-          error_message: `Batch API error: ${batchRes.status}`,
-          sent_at: new Date().toISOString(),
-        }))
-        await supabase.from('email_logs').insert(failEntries)
       }
     } catch (err: any) {
       failed += batch.length
@@ -496,6 +491,9 @@ export async function POST(req: NextRequest) {
       failed,
       productionCount: prods.length,
       weekMonday,
+      audienceFetched: totalFetchedFromAudience,
+      alreadySentCount: alreadySent.size,
+      audienceUsed: audience,
     },
     ...(errors.length > 0 ? { errors } : {}),
   })
