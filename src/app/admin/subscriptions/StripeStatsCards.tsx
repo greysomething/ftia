@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 interface StripeStats {
   grossVolume: number
   netVolume: number
+  totalFees: number
   paymentCount: number
   failedCount: number
   failedVolume: number
@@ -164,8 +165,11 @@ export default function StripeStatsCards({ activeCount, newThisMonth, needsAtten
           {loading ? <div className={shimmer} /> : (
             <p className="text-2xl font-bold text-gray-900">{formatCompact(stats?.netVolume ?? 0)}</p>
           )}
-          {!loading && stats && stats.refundCount > 0 && (
-            <p className="text-xs text-red-400 mt-0.5">{stats.refundCount} refund{stats.refundCount !== 1 ? 's' : ''}: -{formatCurrency(stats.refundVolume)}</p>
+          {!loading && stats && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              Fees: -{formatCurrency(stats.totalFees ?? 0)}
+              {stats.refundCount > 0 && <> | Refunds: -{formatCurrency(stats.refundVolume)}</>}
+            </p>
           )}
         </div>
 

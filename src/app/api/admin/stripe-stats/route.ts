@@ -82,58 +82,85 @@ export async function GET(request: NextRequest) {
   const createdGte = Math.floor(start.getTime() / 1000)
 
   try {
-    // ── Paginate through ALL charges in the period ──
+    // ── Volume from balance_transactions (matches Stripe dashboard exactly) ──
     let grossVolume = 0
     let netVolume = 0
-    let paymentCount = 0
-    let failedCount = 0
-    let failedVolume = 0
-    let refundCount = 0
+    let totalFees = 0
     let refundVolume = 0
+    let refundCount = 0
+    let paymentCount = 0
 
-    let hasMore = true
-    let startingAfter: string | undefined
+    let btHasMore = true
+    let btStartingAfter: string | undefined
 
-    while (hasMore) {
-      const params: Stripe.ChargeListParams = {
+    while (btHasMore) {
+      const btParams: Stripe.BalanceTransactionListParams = {
         created: { gte: createdGte },
         limit: 100,
       }
-      if (startingAfter) {
-        params.starting_after = startingAfter
+      if (btStartingAfter) btParams.starting_after = btStartingAfter
+
+      const txns = await stripe.balanceTransactions.list(btParams)
+
+      for (const txn of txns.data) {
+        if (txn.type === 'charge' || txn.type === 'payment') {
+          grossVolume += txn.amount
+          totalFees += txn.fee
+          netVolume += txn.net
+          paymentCount++
+        } else if (txn.type === 'refund') {
+          // Refund amounts are negative in balance_transactions
+          refundVolume += Math.abs(txn.amount)
+          netVolume += txn.net // negative net
+          refundCount++
+        } else if (txn.type === 'adjustment' || txn.type === 'stripe_fee' || txn.type === 'payment_refund') {
+          netVolume += txn.net
+        }
       }
 
-      const charges = await stripe.charges.list(params)
+      btHasMore = txns.has_more
+      if (txns.data.length > 0) {
+        btStartingAfter = txns.data[txns.data.length - 1].id
+      } else {
+        btHasMore = false
+      }
+    }
+
+    // ── Failed charges (not in balance_transactions, need charges API) ──
+    let failedCount = 0
+    let failedVolume = 0
+    let chHasMore = true
+    let chStartingAfter: string | undefined
+
+    while (chHasMore) {
+      const chParams: Stripe.ChargeListParams = {
+        created: { gte: createdGte },
+        limit: 100,
+      }
+      if (chStartingAfter) chParams.starting_after = chStartingAfter
+
+      const charges = await stripe.charges.list(chParams)
 
       for (const charge of charges.data) {
-        if (charge.status === 'succeeded') {
-          paymentCount++
-          grossVolume += charge.amount
-          // Net = charge amount minus any refunds applied
-          const refunded = charge.amount_refunded || 0
-          netVolume += charge.amount - refunded
-
-          if (refunded > 0) {
-            refundCount++
-            refundVolume += refunded
-          }
-        } else if (charge.status === 'failed') {
+        if (charge.status === 'failed') {
           failedCount++
           failedVolume += charge.amount
         }
       }
 
-      hasMore = charges.has_more
+      chHasMore = charges.has_more
       if (charges.data.length > 0) {
-        startingAfter = charges.data[charges.data.length - 1].id
+        chStartingAfter = charges.data[charges.data.length - 1].id
       } else {
-        hasMore = false
+        chHasMore = false
       }
     }
 
     const avgTransaction = paymentCount > 0 ? Math.round(grossVolume / paymentCount) : 0
 
     // ── Calculate MRR from active subscriptions ──
+    // Exclude subscriptions set to cancel at period end (churning)
+    // Account for coupon/discount on each subscription
     let stripeMrr = 0
     let subHasMore = true
     let subStartingAfter: string | undefined
@@ -142,6 +169,7 @@ export async function GET(request: NextRequest) {
       const subParams: Stripe.SubscriptionListParams = {
         status: 'active',
         limit: 100,
+        expand: ['data.discount', 'data.discounts'],
       }
       if (subStartingAfter) {
         subParams.starting_after = subStartingAfter
@@ -150,22 +178,40 @@ export async function GET(request: NextRequest) {
       const subs = await stripe.subscriptions.list(subParams)
 
       for (const sub of subs.data) {
+        // Skip subscriptions that are canceling — they won't renew
+        if (sub.cancel_at_period_end) continue
+
         const item = sub.items.data[0]
         if (!item?.price) continue
 
-        const unitAmount = item.price.unit_amount || 0
+        let unitAmount = item.price.unit_amount || 0
         const quantity = item.quantity || 1
         const interval = item.price.recurring?.interval
 
-        if (interval === 'month') {
-          stripeMrr += unitAmount * quantity
-        } else if (interval === 'year') {
-          stripeMrr += Math.round((unitAmount * quantity) / 12)
-        } else if (interval === 'week') {
-          stripeMrr += Math.round((unitAmount * quantity * 52) / 12)
-        } else if (interval === 'day') {
-          stripeMrr += Math.round((unitAmount * quantity * 365) / 12)
+        // Account for subscription-level discounts
+        const discounts = (sub as any).discounts ?? (sub as any).discount ? [(sub as any).discount] : []
+        for (const d of Array.isArray(discounts) ? discounts : []) {
+          const coupon = d?.coupon
+          if (!coupon) continue
+          if (coupon.percent_off) {
+            unitAmount = Math.round(unitAmount * (1 - coupon.percent_off / 100))
+          } else if (coupon.amount_off) {
+            unitAmount = Math.max(0, unitAmount - coupon.amount_off)
+          }
         }
+
+        let monthlyAmount = 0
+        if (interval === 'month') {
+          monthlyAmount = unitAmount * quantity
+        } else if (interval === 'year') {
+          monthlyAmount = Math.round((unitAmount * quantity) / 12)
+        } else if (interval === 'week') {
+          monthlyAmount = Math.round((unitAmount * quantity * 52) / 12)
+        } else if (interval === 'day') {
+          monthlyAmount = Math.round((unitAmount * quantity * 365) / 12)
+        }
+
+        stripeMrr += monthlyAmount
       }
 
       subHasMore = subs.has_more
@@ -179,6 +225,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       grossVolume,
       netVolume,
+      totalFees,
       paymentCount,
       failedCount,
       failedVolume,
