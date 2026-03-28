@@ -136,7 +136,7 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
 }
 
-export const maxDuration = 300 // 5 minutes for bulk sends
+export const maxDuration = 300 // 5 minutes — Vercel Pro max for serverless functions
 
 export async function POST(req: NextRequest) {
   // Auth: either admin user session OR cron secret
@@ -260,9 +260,6 @@ export async function POST(req: NextRequest) {
   const emailToName = new Map<string, string>()
 
   // Helper: fetch contacts from a Resend audience
-  const { Resend } = await import('resend')
-  const resend = new Resend(process.env.RESEND_API_KEY)
-
   const AUDIENCE_IDS: Record<string, string> = {
     newsletter: '4eaf097c-c05c-4f20-b5c6-064a5e7630fe',
     active_members: '90a19517-19e0-44ac-90ea-847ef90c97a7',
@@ -302,8 +299,9 @@ export async function POST(req: NextRequest) {
 
         for (const contact of contacts) {
           if (contact.email && !contact.unsubscribed) {
-            recipientEmails.add(contact.email)
-            if (contact.first_name) emailToName.set(contact.email, contact.first_name)
+            const normalizedEmail = contact.email.toLowerCase()
+            recipientEmails.add(normalizedEmail)
+            if (contact.first_name) emailToName.set(normalizedEmail, contact.first_name)
           }
         }
 
@@ -341,11 +339,13 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // 8b. Exclude recipients who already received the digest this week
-  //     This prevents double-sends on retry and allows sending to remaining recipients
-  const weekStart = new Date()
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Sunday
-  weekStart.setHours(0, 0, 0, 0)
+  // 8b. Exclude recipients who already received the digest for this weekMonday
+  //     This prevents double-sends on retry and allows resuming to send to remaining recipients.
+  //     Uses weekMonday (not calendar week) so the dedup boundary matches the digest content.
+  const weekMondayStart = new Date(weekMonday + 'T00:00:00Z')
+  // Look back from the Monday to catch any early sends, and forward to cover the full week
+  const dedupWindowStart = new Date(weekMondayStart)
+  dedupWindowStart.setDate(dedupWindowStart.getDate() - 1) // Sunday before
 
   const alreadySent = new Set<string>()
   let sentPage = 0
@@ -355,7 +355,7 @@ export async function POST(req: NextRequest) {
       .select('recipient')
       .eq('template_slug', 'weekly-digest')
       .not('recipient', 'like', 'bulk:%')
-      .gte('sent_at', weekStart.toISOString())
+      .gte('sent_at', dedupWindowStart.toISOString())
       .range(sentPage * 1000, sentPage * 1000 + 999)
     if (!sentLogs || sentLogs.length === 0) break
     for (const log of sentLogs) {
@@ -365,7 +365,7 @@ export async function POST(req: NextRequest) {
     sentPage++
   }
 
-  // Remove already-sent recipients
+  // Remove already-sent recipients (recipientEmails is already lowercase)
   for (const email of alreadySent) {
     recipientEmails.delete(email)
   }
@@ -380,48 +380,93 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // 9. Send emails in batches
+  // 9. Send emails in batches using Resend batch API (up to 100 per request)
   let sent = 0
   let failed = 0
   const errors: string[] = []
   const emails = Array.from(recipientEmails)
+  const BATCH_SIZE = 100
+  const fromAddress = `Production List <${process.env.EMAIL_FROM ?? 'noreply@productionlist.com'}>`
 
-  // Send individually so we can personalize with firstName
-  for (const email of emails) {
-    const firstName = emailToName.get(email) || ''
-    const personalVars = { ...vars, firstName, recipientEmail: email }
-    const personalRendered = template.render(personalVars)
+  for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+    const batch = emails.slice(i, i + BATCH_SIZE)
 
-    try {
+    // Build per-recipient email objects with personalization
+    const emailPayloads = batch.map((email) => {
+      const firstName = emailToName.get(email) || ''
+      const personalVars = { ...vars, firstName, recipientEmail: email }
+      const personalRendered = template.render(personalVars)
       const unsubUrl = `https://productionlist.com/unsubscribe?email=${encodeURIComponent(email)}`
-      const result = await sendEmail({
+
+      return {
+        from: fromAddress,
         to: email,
         subject: personalRendered.subject,
         html: personalRendered.html,
-        templateSlug: 'weekly-digest',
         headers: {
           'List-Unsubscribe': `<${unsubUrl}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
         },
+      }
+    })
+
+    try {
+      const batchRes = await fetch('https://api.resend.com/emails/batch', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(emailPayloads),
       })
 
-      if (result.success) {
-        sent++
+      if (batchRes.ok) {
+        const batchData = await batchRes.json()
+        const results = batchData.data ?? []
+        sent += results.length
+        const batchFailed = batch.length - results.length
+        failed += batchFailed
+
+        // Log individual sends to email_logs for per-recipient tracking
+        const logEntries = batch.map((email, idx) => ({
+          recipient: email,
+          subject: emailPayloads[idx].subject,
+          template_slug: 'weekly-digest',
+          status: idx < results.length ? 'sent' : 'failed',
+          resend_id: results[idx]?.id ?? null,
+          error_message: null,
+          sent_at: new Date().toISOString(),
+        }))
+        await supabase.from('email_logs').insert(logEntries)
       } else {
-        failed++
-        if (errors.length < 10) errors.push(`${email}: ${result.error}`)
+        const errText = await batchRes.text()
+        console.error(`[send-weekly-digest] Batch API error: ${batchRes.status} ${errText}`)
+        failed += batch.length
+        if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${errText.slice(0, 200)}`)
+
+        // Log failures for each recipient in this batch
+        const failEntries = batch.map((email, idx) => ({
+          recipient: email,
+          subject: emailPayloads[idx].subject,
+          template_slug: 'weekly-digest',
+          status: 'failed',
+          resend_id: null,
+          error_message: `Batch API error: ${batchRes.status}`,
+          sent_at: new Date().toISOString(),
+        }))
+        await supabase.from('email_logs').insert(failEntries)
       }
     } catch (err: any) {
-      failed++
-      if (errors.length < 10) errors.push(`${email}: ${err.message}`)
+      failed += batch.length
+      if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${err.message}`)
     }
 
-    // Rate limiting — Resend allows 2/sec on free, 10/sec on Pro.
-    // Send in bursts of 5 with 1s pause to stay well under limits
-    // and avoid triggering ISP spam filters with too many rapid sends.
-    if ((sent + failed) % 5 === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 1200))
+    // Brief pause between batches to respect rate limits
+    if (i + BATCH_SIZE < emails.length) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
     }
+
+    console.log(`[send-weekly-digest] Progress: ${sent + failed}/${emails.length} (${sent} sent, ${failed} failed)`)
   }
 
   // 10. Log summary (includes trigger type for audit trail)
