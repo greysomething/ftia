@@ -484,7 +484,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    message: `Weekly digest sent to ${sent} members (${failed} failed). ${prods.length} productions listed.`,
+    message: `Digest sent to ${sent} of ${emails.length} recipients (${failed} failed). ${totalFetchedFromAudience} in audience, ${alreadySent.size} already sent this week.`,
     stats: {
       totalRecipients: emails.length,
       sent,

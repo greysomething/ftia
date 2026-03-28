@@ -871,12 +871,8 @@ function AutomationTab() {
         return
       }
       if (data.success) {
-        const stats = data.stats ?? {}
-        const sent = stats.sent ?? data.sent ?? 0
-        const audienceInfo = stats.audienceFetched != null
-          ? ` (${stats.audienceFetched} in audience, ${stats.alreadySentCount ?? 0} already sent this week)`
-          : ''
-        setDigestResult({ message: `Digest sent successfully to ${sent} recipients.${audienceInfo}`, type: sent > 0 ? 'success' : 'info' })
+        const sent = data.stats?.sent ?? 0
+        setDigestResult({ message: data.message || `Digest sent successfully to ${sent} recipients.`, type: sent > 0 ? 'success' : 'info' })
         fetchDigestHistory() // Refresh log table
       } else {
         setDigestResult({ message: data.error || 'Something went wrong', type: 'error' })
