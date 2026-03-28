@@ -187,6 +187,7 @@ export async function GET(request: NextRequest) {
         let unitAmount = item.price.unit_amount || 0
         const quantity = item.quantity || 1
         const interval = item.price.recurring?.interval
+        const intervalCount = item.price.recurring?.interval_count || 1
 
         // Account for subscription-level discounts
         const discounts = (sub as any).discounts ?? (sub as any).discount ? [(sub as any).discount] : []
@@ -200,15 +201,18 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        // Convert to monthly equivalent, accounting for interval_count
+        // e.g. $150 every 3 months = $50/month, $579 every 1 year = $48.25/month
+        const chargeAmount = unitAmount * quantity
         let monthlyAmount = 0
         if (interval === 'month') {
-          monthlyAmount = unitAmount * quantity
+          monthlyAmount = Math.round(chargeAmount / intervalCount)
         } else if (interval === 'year') {
-          monthlyAmount = Math.round((unitAmount * quantity) / 12)
+          monthlyAmount = Math.round(chargeAmount / (12 * intervalCount))
         } else if (interval === 'week') {
-          monthlyAmount = Math.round((unitAmount * quantity * 52) / 12)
+          monthlyAmount = Math.round((chargeAmount * 52) / (12 * intervalCount))
         } else if (interval === 'day') {
-          monthlyAmount = Math.round((unitAmount * quantity * 365) / 12)
+          monthlyAmount = Math.round((chargeAmount * 365) / (12 * intervalCount))
         }
 
         stripeMrr += monthlyAmount
