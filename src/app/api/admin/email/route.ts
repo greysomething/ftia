@@ -152,19 +152,37 @@ export async function GET(req: NextRequest) {
     }
 
     // Convert batches to the same format as bulk logs
-    const syntheticLogs = Array.from(batchMap.values()).map((batch) => ({
-      id: batch.firstId,
-      recipient: `bulk:${batch.count}`,
-      subject: batch.subject,
-      status: 'sent',
-      resend_id: JSON.stringify({
-        trigger: 'manual',
-        sent: batch.succeeded,
-        failed: batch.failed,
-      }),
-      error_message: batch.failed > 0 ? `${batch.failed} failed` : null,
-      sent_at: batch.sent_at,
-    }))
+    // Parse subject line for week/production metadata:
+    //   "Weekly Digest: 40 Productions This Week — Mar 23, 2026"
+    const syntheticLogs = Array.from(batchMap.values()).map((batch) => {
+      let productionCount: number | undefined
+      let weekMonday: string | undefined
+      const countMatch = batch.subject.match(/Weekly Digest:\s*(\d+)\s*Productions/)
+      if (countMatch) productionCount = parseInt(countMatch[1], 10)
+      const dateMatch = batch.subject.match(/—\s*(.+)$/)
+      if (dateMatch) {
+        const parsed = new Date(dateMatch[1].trim())
+        if (!isNaN(parsed.getTime())) {
+          weekMonday = parsed.toISOString().slice(0, 10)
+        }
+      }
+
+      return {
+        id: batch.firstId,
+        recipient: `bulk:${batch.count}`,
+        subject: batch.subject,
+        status: 'sent',
+        resend_id: JSON.stringify({
+          trigger: 'manual',
+          sent: batch.succeeded,
+          failed: batch.failed,
+          ...(productionCount !== undefined ? { productionCount } : {}),
+          ...(weekMonday ? { weekMonday } : {}),
+        }),
+        error_message: batch.failed > 0 ? `${batch.failed} failed` : null,
+        sent_at: batch.sent_at,
+      }
+    })
 
     // Merge: deduplicate by 2-hour time window so bulk logs and synthetic logs
     // from the same batch don't both appear, but different sends on the same day are kept
