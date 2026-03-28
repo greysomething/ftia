@@ -11,6 +11,7 @@ import {
   assignMembership,
   updateProfile,
 } from '../actions'
+import ViewAsButton from './ViewAsButton'
 
 export const metadata: Metadata = { title: 'User Detail' }
 
@@ -146,6 +147,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
         {!activeMembership && !suspendedMembership && !hasStripe && user.user_memberships?.length === 0 && (
           <span className="badge badge-gray">Free User</span>
         )}
+        <ViewAsButton userId={user.id} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
