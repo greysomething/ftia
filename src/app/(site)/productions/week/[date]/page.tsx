@@ -258,9 +258,12 @@ export default async function WeeklyListPage({ params }: Props) {
                                     <div key={link.id} className="bg-white border border-gray-100 rounded-md p-3">
                                       <Link
                                         href={`/production-contact/${company.slug}`}
-                                        className="font-semibold text-sm text-primary hover:underline"
+                                        className="font-semibold text-sm text-primary hover:underline inline-flex items-center gap-1 group"
                                       >
                                         {company.title}
+                                        <svg className="w-3 h-3 text-primary/40 group-hover:text-primary transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
                                       </Link>
                                       {(() => {
                                         const addrs = parsePhpSerialized(company.addresses)
@@ -328,8 +331,11 @@ export default async function WeeklyListPage({ params }: Props) {
                                         </td>
                                         <td className="py-1.5 px-3 text-gray-800">
                                           {role.crew_members ? (
-                                            <Link href={`/production-role/${role.crew_members.slug}`} className="text-primary hover:underline">
+                                            <Link href={`/production-role/${role.crew_members.slug}`} className="text-primary hover:underline inline-flex items-center gap-1 group">
                                               {role.crew_members.name}
+                                              <svg className="w-3 h-3 text-primary/40 group-hover:text-primary transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                              </svg>
                                             </Link>
                                           ) : (
                                             role.inline_name ?? '—'
