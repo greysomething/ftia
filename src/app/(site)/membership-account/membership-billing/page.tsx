@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
+import { BillingPortalButton } from './BillingPortalButton'
 
 export const metadata: Metadata = { title: 'Billing | Production List' }
 
@@ -17,6 +18,8 @@ export default async function BillingPage() {
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
+
+  const hasStripeCustomer = !!membership?.stripe_customer_id
 
   return (
     <div className="page-wrap py-8 max-w-2xl">
@@ -47,12 +50,26 @@ export default async function BillingPage() {
             </div>
           )}
           {membership.card_type && (
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center">
               <span className="text-gray-600">Payment method:</span>
-              <span>{membership.card_type} ending {membership.card_last4}</span>
+              <div className="flex items-center gap-3">
+                <span>{membership.card_type} ending {membership.card_last4}</span>
+                {hasStripeCustomer && (
+                  <BillingPortalButton label="Update" />
+                )}
+              </div>
             </div>
           )}
-          <div className="pt-4 border-t flex gap-3">
+          {!membership.card_type && hasStripeCustomer && (
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Payment method:</span>
+              <BillingPortalButton label="Add Payment Method" />
+            </div>
+          )}
+          <div className="pt-4 border-t flex flex-wrap gap-3">
+            {hasStripeCustomer && (
+              <BillingPortalButton label="Manage Billing" variant="outline" />
+            )}
             <Link href="/membership-account/membership-cancel" className="btn-outline text-sm text-red-600 border-red-200 hover:bg-red-50 hover:text-red-600">
               Cancel Membership
             </Link>
