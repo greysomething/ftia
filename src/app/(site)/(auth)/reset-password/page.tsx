@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tokenHash = searchParams.get('token_hash')
@@ -85,57 +85,67 @@ export default function ResetPasswordPage() {
   }
 
   return (
+    <div className="white-bg p-8">
+      <h1 className="text-2xl font-bold text-primary text-center mb-6">Set New Password</h1>
+
+      {success ? (
+        <div className="text-center">
+          <p className="text-green-700 bg-green-50 border border-green-200 rounded p-4 text-sm">
+            Your password has been updated successfully. Redirecting to login...
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <p className="text-red-600 bg-red-50 border border-red-200 rounded p-3 text-sm">
+              {error}
+            </p>
+          )}
+
+          <div>
+            <label className="form-label">New Password</label>
+            <input
+              type="password"
+              required
+              className="form-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              minLength={8}
+            />
+          </div>
+
+          <div>
+            <label className="form-label">Confirm Password</label>
+            <input
+              type="password"
+              required
+              className="form-input"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter your password"
+              minLength={8}
+            />
+          </div>
+
+          <button type="submit" disabled={loading} className="btn-primary w-full justify-center">
+            {loading ? 'Updating...' : 'Update Password'}
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
     <div className="min-h-[70vh] flex items-center justify-center py-12 px-4">
       <div className="w-full max-w-md">
-        <div className="white-bg p-8">
-          <h1 className="text-2xl font-bold text-primary text-center mb-6">Set New Password</h1>
-
-          {success ? (
-            <div className="text-center">
-              <p className="text-green-700 bg-green-50 border border-green-200 rounded p-4 text-sm">
-                Your password has been updated successfully. Redirecting to login...
-              </p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <p className="text-red-600 bg-red-50 border border-red-200 rounded p-3 text-sm">
-                  {error}
-                </p>
-              )}
-
-              <div>
-                <label className="form-label">New Password</label>
-                <input
-                  type="password"
-                  required
-                  className="form-input"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 8 characters"
-                  minLength={8}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Confirm Password</label>
-                <input
-                  type="password"
-                  required
-                  className="form-input"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter your password"
-                  minLength={8}
-                />
-              </div>
-
-              <button type="submit" disabled={loading} className="btn-primary w-full justify-center">
-                {loading ? 'Updating...' : 'Update Password'}
-              </button>
-            </form>
-          )}
-        </div>
+        <Suspense fallback={
+          <div className="white-bg p-8 text-center text-gray-500">Loading...</div>
+        }>
+          <ResetPasswordForm />
+        </Suspense>
       </div>
     </div>
   )
