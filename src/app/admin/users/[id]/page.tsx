@@ -12,6 +12,7 @@ import {
   updateProfile,
 } from '../actions'
 import ViewAsButton from './ViewAsButton'
+import SendResetButton from './SendResetButton'
 
 export const metadata: Metadata = { title: 'User Detail' }
 
@@ -182,7 +183,10 @@ export default async function AdminUserDetailPage({ params }: Props) {
                     className="form-input" placeholder="Display name" />
                 </div>
                 <div>
-                  <label className="form-label">Email</label>
+                  <div className="flex items-center justify-between">
+                    <label className="form-label">Email</label>
+                    {email && <SendResetButton email={email} />}
+                  </div>
                   <input type="email" disabled value={email || '—'}
                     className="form-input bg-gray-50 text-gray-500 cursor-not-allowed" />
                 </div>
