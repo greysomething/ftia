@@ -39,13 +39,16 @@ export default async function AdminLoginLogPage({
 
     const userIds = matchingProfiles?.map((p: any) => p.id) ?? []
 
-    if (userIds.length > 0) {
-      // Search by email OR ip OR user_id (for events logged without email)
-      const userIdFilters = userIds.map((id: string) => `user_id.eq.${id}`).join(',')
-      query = query.or(`email.ilike.%${search}%,ip_address.ilike.%${search}%,${userIdFilters}`)
-    } else {
-      query = query.or(`email.ilike.%${search}%,ip_address.ilike.%${search}%`)
+    // Build OR filters — ip_address is inet type so use eq (exact match) only for IP-like input
+    const isIpLike = /^\d{1,3}[\.\d]*/.test(search)
+    const parts: string[] = [`email.ilike.%${search}%`]
+    if (isIpLike) {
+      parts.push(`ip_address.eq.${search}`)
     }
+    if (userIds.length > 0) {
+      userIds.forEach((id: string) => parts.push(`user_id.eq.${id}`))
+    }
+    query = query.or(parts.join(','))
   }
   if (fromDate) {
     query = query.gte('created_at', fromDate + 'T00:00:00')
