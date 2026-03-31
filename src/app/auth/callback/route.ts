@@ -5,47 +5,88 @@ import { logActivity } from '@/lib/activity-log'
 /**
  * GET /auth/callback
  * Handles Supabase auth redirects — password reset, email confirmation, magic links.
- * Exchanges the code for a session, then redirects to the `next` param or /productions.
  *
- * Uses createRawClient() (not createClient) because:
- * 1. Auth callback must use real session cookies (not impersonation-aware client)
- * 2. The admin client (service-role) can't exchange auth codes — it has no session context
+ * Supports TWO flows:
+ *
+ * 1. **PKCE code flow** (legacy / client-initiated):
+ *    ?code=XXX&next=/reset-password
+ *    Exchanges the code for a session. Requires same browser.
+ *
+ * 2. **Token hash flow** (server-initiated, cross-browser safe):
+ *    ?token_hash=XXX&type=recovery&next=/reset-password
+ *    Verifies the OTP token hash directly. Works from ANY browser.
+ *
+ * Uses createRawClient() (not createClient) because auth callbacks must use
+ * the real session cookies, not the impersonation-aware client.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type') as 'recovery' | 'signup' | 'email' | null
   const next = searchParams.get('next') ?? '/productions'
   const redirectUrl = new URL(next, req.url)
   const isPasswordReset = next.includes('reset-password')
 
-  if (code) {
-    const supabase = await createRawClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+  const supabase = await createRawClient()
+
+  // ── Flow 1: Token hash (cross-browser safe) ──────────────────────
+  if (tokenHash && type) {
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type,
+    })
+
     if (!error) {
-      // Log successful callback (get the user from the new session)
       const { data: { user } } = await supabase.auth.getUser()
       if (user && isPasswordReset) {
         logActivity({
           userId: user.id,
           email: user.email,
           eventType: 'password_reset',
-          metadata: { step: 'link_verified', next },
+          metadata: { step: 'link_verified', method: 'token_hash', next },
           reqHeaders: req.headers,
         }).catch(() => {})
       }
       return NextResponse.redirect(redirectUrl)
     }
-    console.error('[auth/callback] Code exchange failed:', error.message)
 
-    // Log the failure
+    console.error('[auth/callback] Token hash verification failed:', error.message)
     logActivity({
       eventType: 'password_reset_failed',
-      metadata: { error: error.message, next },
+      metadata: { error: error.message, method: 'token_hash', next },
+      reqHeaders: req.headers,
+    }).catch(() => {})
+
+    // Fall through to error redirect below
+  }
+
+  // ── Flow 2: PKCE code exchange (same-browser only) ───────────────
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user && isPasswordReset) {
+        logActivity({
+          userId: user.id,
+          email: user.email,
+          eventType: 'password_reset',
+          metadata: { step: 'link_verified', method: 'pkce', next },
+          reqHeaders: req.headers,
+        }).catch(() => {})
+      }
+      return NextResponse.redirect(redirectUrl)
+    }
+
+    console.error('[auth/callback] Code exchange failed:', error.message)
+    logActivity({
+      eventType: 'password_reset_failed',
+      metadata: { error: error.message, method: 'pkce', next },
       reqHeaders: req.headers,
     }).catch(() => {})
   }
 
-  // If no code or exchange failed, redirect to login with error
+  // If no valid auth params or exchange/verification failed → login with error
   const loginUrl = new URL('/login', req.url)
   loginUrl.searchParams.set('error', 'auth_callback_failed')
   return NextResponse.redirect(loginUrl)

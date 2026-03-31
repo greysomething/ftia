@@ -1,18 +1,6 @@
 'use client'
 
-// PASSWORD RESET: Currently uses Supabase's built-in resetPasswordForEmail()
-// which sends Supabase's default email template. This is intentional because
-// Supabase handles secure token generation and the magic-link flow.
-//
-// To customize the password reset email appearance:
-// 1. Go to Supabase Dashboard > Authentication > Email Templates
-// 2. Edit the "Reset Password" template with branded HTML
-// 3. The 'password-reset' template in src/lib/email-templates.ts is ready
-//    to use if we switch to a fully custom flow in the future.
-
-import type { Metadata } from 'next'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -22,16 +10,14 @@ export default function ForgotPasswordPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    const supabase = createClient()
-    await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-    })
 
-    // Log password reset request (fire-and-forget)
-    fetch('/api/log-activity', {
+    // Use our server-side API which generates a token_hash link
+    // instead of client-side resetPasswordForEmail() which uses PKCE
+    // (PKCE fails when user opens the link in a different browser/email app)
+    await fetch('/api/auth/forgot-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventType: 'password_reset', metadata: { step: 'reset_requested', email } }),
+      body: JSON.stringify({ email }),
     }).catch(() => {})
 
     setSent(true)
@@ -49,6 +35,9 @@ export default function ForgotPasswordPage() {
               <p className="text-green-700 bg-green-50 border border-green-200 rounded p-4 text-sm">
                 If an account with that email exists, we&apos;ve sent a password reset link.
                 Check your inbox.
+              </p>
+              <p className="text-xs text-gray-500 mt-3">
+                Tip: The link works from any browser or device.
               </p>
               <a href="/login" className="btn-primary mt-6 inline-flex">Back to Login</a>
             </div>
