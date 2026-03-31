@@ -642,6 +642,96 @@ export async function POST() {
     if (batch.data.length > 0) invoiceStartingAfter = batch.data[batch.data.length - 1].id
   }
 
+  // 6b. Backfill from Stripe charges (catches checkout session payments not tied to invoices).
+  // The invoice backfill above only fetches paid invoices, but some payments come through
+  // checkout sessions (shown as "Order #XXX" in Stripe) which don't create invoice records.
+  send({ phase: 'backfilling_orders', detail: 'Fetching charges from Stripe...', current: invoicesFetched })
+
+  let chargeStartingAfter: string | undefined
+  let hasMoreCharges = true
+  let chargesFetched = 0
+  while (hasMoreCharges) {
+    const params: any = { limit: 100, expand: ['data.payment_intent'] }
+    if (chargeStartingAfter) params.starting_after = chargeStartingAfter
+    const batch = await stripe.charges.list(params)
+    chargesFetched += batch.data.length
+    send({ phase: 'backfilling_orders', detail: `Processing charges... (${stats.ordersBackfilled} orders total)`, current: invoicesFetched + chargesFetched })
+
+    for (const rawCharge of batch.data) {
+      try {
+        const charge = rawCharge as any
+        if (charge.status !== 'succeeded') continue
+        if (charge.refunded) continue // Skip fully refunded charges
+
+        const piId = charge.payment_intent
+          ? (typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id)
+          : null
+        if (!piId) continue
+
+        // Skip if already recorded
+        if (existingTxIds.has(piId)) continue
+
+        const custId = typeof charge.customer === 'string' ? charge.customer : (charge.customer as any)?.id
+        let userId = customerToUserId.get(custId ?? '') ?? null
+
+        // Fallback: resolve by email
+        if (!userId && charge.billing_details?.email) {
+          userId = emailToUserId.get(charge.billing_details.email.toLowerCase()) ?? null
+          if (userId && custId) customerToUserId.set(custId, userId)
+        }
+
+        if (!userId) continue
+
+        // Try to match price/level from payment intent metadata or subscription
+        const pi = typeof charge.payment_intent === 'object' ? charge.payment_intent : null
+        const piLevelId = pi?.metadata?.level_id ? parseInt(pi.metadata.level_id, 10) : undefined
+        const chargeLevelId = piLevelId || 3 // Fallback
+
+        const chargeCard = charge.payment_method_details?.card
+
+        const orderRow = {
+          user_id: userId,
+          level_id: chargeLevelId,
+          status: 'success',
+          total: charge.amount ? (charge.amount / 100) : 0,
+          gateway: 'stripe',
+          payment_transaction_id: piId,
+          subscription_transaction_id: pi?.metadata?.subscription_id ?? null,
+          billing_name: charge.billing_details?.name ?? null,
+          billing_email: charge.billing_details?.email ?? null,
+          cardtype: chargeCard?.brand ?? null,
+          accountnumber: chargeCard?.last4 ?? null,
+          expirationmonth: chargeCard?.exp_month ? String(chargeCard.exp_month) : null,
+          expirationyear: chargeCard?.exp_year ? String(chargeCard.exp_year) : null,
+          timestamp: new Date(charge.created * 1000).toISOString(),
+          notes: charge.description || null,
+          billing_reason: 'charge',
+        }
+
+        // Double-check for duplicates
+        const { data: existingOrder } = await supabase
+          .from('membership_orders')
+          .select('id')
+          .eq('payment_transaction_id', piId)
+          .limit(1)
+
+        if (existingOrder && existingOrder.length > 0) {
+          existingTxIds.add(piId)
+          continue
+        }
+
+        await supabase.from('membership_orders').insert(orderRow)
+        existingTxIds.add(piId)
+        stats.ordersBackfilled++
+      } catch (err: any) {
+        stats.errors.push(`Charge ${rawCharge.id}: ${err.message}`)
+      }
+    }
+
+    hasMoreCharges = batch.has_more
+    if (batch.data.length > 0) chargeStartingAfter = batch.data[batch.data.length - 1].id
+  }
+
   send({ phase: 'backfilling_customers', detail: 'Checking Stripe customer names...', current: 0 })
 
   // 7. Backfill Stripe customer name/description from user_profiles
