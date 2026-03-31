@@ -110,11 +110,8 @@ export async function POST(req: NextRequest) {
     subscriptionData.trial_settings = {
       end_behavior: { missing_payment_method: 'cancel' },
     }
-  } else {
-    // No trial — explicitly set to 0 to override any trial on the Stripe Price.
-    // Also use trial_settings to make absolutely sure no trial is applied.
-    subscriptionData.trial_period_days = 0
   }
+  // If no trial, don't set trial_period_days at all — Stripe rejects 0
 
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
