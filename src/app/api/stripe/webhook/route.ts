@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
 import { addToActiveMembers, addToPastMembers, moveToPastMember } from '@/lib/resend-audiences'
+import { logActivity } from '@/lib/activity-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,10 +91,32 @@ export async function POST(req: NextRequest) {
       const { data: existingMem } = await supabase
         .from('user_memberships').select('id').eq('user_id', userId).single()
 
+      // Determine the real membership status from the Stripe subscription.
+      // If Stripe says 'trialing' but the plan has no trial configured
+      // (trial_limit = 0), treat it as 'active' — the user paid, the trial
+      // flag is a legacy bug. Only set 'trialing' for plans that genuinely
+      // offer a trial period.
+      let memStatus: 'active' | 'trialing' = 'active'
+      if (subscriptionId) {
+        try {
+          const subCheck = await stripe.subscriptions.retrieve(subscriptionId as string)
+          if ((subCheck as any).status === 'trialing') {
+            // Check if this plan actually has a trial configured
+            const { data: levelCheck } = await supabase
+              .from('membership_levels')
+              .select('trial_limit')
+              .eq('id', parseInt(levelId, 10))
+              .single()
+            const hasLegitTrial = levelCheck && (levelCheck.trial_limit ?? 0) > 0
+            memStatus = hasLegitTrial ? 'trialing' : 'active'
+          }
+        } catch { /* fall back to active */ }
+      }
+
       const memRow = {
         user_id: userId,
         level_id: parseInt(levelId, 10),
-        status: 'active' as const,
+        status: memStatus,
         stripe_subscription_id: subscriptionId as string ?? null,
         enddate: periodEnd,
         startdate: new Date().toISOString(),
@@ -104,6 +127,23 @@ export async function POST(req: NextRequest) {
         await supabase.from('user_memberships').update(memRow).eq('id', existingMem.id)
       } else {
         await supabase.from('user_memberships').insert(memRow)
+      }
+
+      // Log membership change to activity_log
+      {
+        const { data: prof } = await supabase.from('user_profiles').select('email').eq('id', userId).single()
+        logActivity({
+          userId,
+          email: prof?.email ?? session.customer_email ?? null,
+          eventType: 'membership_changed',
+          metadata: {
+            action: existingMem ? 'renewed' : 'created',
+            status: memStatus,
+            level_id: parseInt(levelId, 10),
+            stripe_subscription_id: subscriptionId ?? null,
+          },
+          reqHeaders: req.headers,
+        }).catch(() => {})
       }
 
       // Update Stripe customer with name & description from profile
@@ -275,6 +315,18 @@ export async function POST(req: NextRequest) {
         .update({ status: 'expired' })
         .eq('user_id', userId)
         .eq('stripe_subscription_id', sub.id)
+
+      // Log membership expiry
+      {
+        const { data: prof } = await supabase.from('user_profiles').select('email').eq('id', userId).single()
+        logActivity({
+          userId,
+          email: prof?.email ?? null,
+          eventType: 'membership_changed',
+          metadata: { action: 'expired', stripe_subscription_id: sub.id },
+          reqHeaders: req.headers,
+        }).catch(() => {})
+      }
 
       // Move to Past Members audience (fire-and-forget)
       {
@@ -493,19 +545,34 @@ export async function POST(req: NextRequest) {
 
       if (!membershipForUpdate) break
 
-      // Map status — keep trialing and past_due as distinct statuses
+      // Map status — if Stripe says 'trialing', check if the plan actually has
+      // a trial configured. If not, the user paid and the trial flag is a legacy
+      // bug — treat as 'active'.
       let updatedStatus: string
-      switch (sub.status) {
-        case 'active':
-          updatedStatus = sub.cancel_at_period_end ? 'cancelled' : 'active'; break
-        case 'trialing':
-          updatedStatus = 'trialing'; break
-        case 'past_due':
-          updatedStatus = 'past_due'; break
-        case 'canceled':
-          updatedStatus = 'cancelled'; break
-        default:
-          updatedStatus = 'expired'; break
+      if (sub.status === 'trialing') {
+        // Look up the membership's level to check trial_limit
+        const subPriceId = sub.items?.data?.[0]?.price?.id
+        let hasLegitTrial = false
+        if (subPriceId) {
+          const { data: lvl } = await supabase
+            .from('membership_levels')
+            .select('trial_limit')
+            .eq('stripe_price_id', subPriceId)
+            .single()
+          hasLegitTrial = lvl ? (lvl.trial_limit ?? 0) > 0 : false
+        }
+        updatedStatus = hasLegitTrial ? 'trialing' : 'active'
+      } else {
+        switch (sub.status) {
+          case 'active':
+            updatedStatus = sub.cancel_at_period_end ? 'cancelled' : 'active'; break
+          case 'past_due':
+            updatedStatus = 'past_due'; break
+          case 'canceled':
+            updatedStatus = 'cancelled'; break
+          default:
+            updatedStatus = 'expired'; break
+        }
       }
 
       const periodEnd = sub.current_period_end
@@ -561,6 +628,20 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+
+      // Log membership status change
+      logActivity({
+        userId: membershipForUpdate.user_id,
+        eventType: 'membership_changed',
+        metadata: {
+          action: 'status_changed',
+          status: updatedStatus,
+          stripe_status: sub.status,
+          stripe_subscription_id: sub.id,
+          cancel_at_period_end: sub.cancel_at_period_end ?? false,
+        },
+        reqHeaders: req.headers,
+      }).catch(() => {})
 
       console.log(`[Stripe Webhook] Subscription updated (${sub.id}): status=${sub.status} for customer ${customerId}`)
       break

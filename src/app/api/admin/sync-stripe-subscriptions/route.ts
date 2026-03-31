@@ -36,16 +36,50 @@ export async function POST() {
     return NextResponse.json({ error: `Stripe key invalid: ${err.message}` }, { status: 400 })
   }
 
+  // Set up Server-Sent Events stream for progress reporting
+  const encoder = new TextEncoder()
+  const startTime = Date.now()
+  let controller: ReadableStreamDefaultController<Uint8Array> | null = null
+
+  function send(data: Record<string, any>) {
+    if (!controller) return
+    try {
+      const payload = JSON.stringify({ ...data, elapsed: Date.now() - startTime })
+      controller.enqueue(encoder.encode(`data: ${payload}\n\n`))
+    } catch { /* stream may be closed */ }
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) { controller = c },
+  })
+
+  // Run the sync in the background while streaming progress
+  ;(async () => {
+    try {
+      await runSync()
+    } catch (err: any) {
+      send({ phase: 'error', message: `Sync failed: ${err.message}` })
+    } finally {
+      try { controller?.close() } catch {}
+    }
+  })()
+
+  async function runSync() {
+
   const supabase = createAdminClient()
 
+  send({ phase: 'init', detail: 'Loading membership plans...' })
+
   // 1. Build price → level mapping from DB
-  const { data: levels } = await supabase.from('membership_levels').select('id, name, stripe_price_id, billing_amount, cycle_period')
+  const { data: levels } = await supabase.from('membership_levels').select('id, name, stripe_price_id, billing_amount, cycle_period, trial_limit')
   const priceLevelMap: Record<string, number> = {}
   for (const l of levels ?? []) {
     if (l.stripe_price_id && l.stripe_price_id.startsWith('price_')) {
       priceLevelMap[l.stripe_price_id] = l.id
     }
   }
+
+  send({ phase: 'loading_users', detail: 'Loading auth users...' })
 
   // 2. Pre-load all auth users into an email→id map (paginated)
   const emailToUserId = new Map<string, string>()
@@ -60,6 +94,8 @@ export async function POST() {
     userPage++
   }
   console.log(`[Stripe Sync] Pre-loaded ${emailToUserId.size} auth users`)
+
+  send({ phase: 'loading_profiles', detail: `Loaded ${emailToUserId.size} auth users. Loading profiles...` })
 
   // 3. Pre-load stripe_customer_id → user_id from profiles (if column exists)
   const customerToUserId = new Map<string, string>()
@@ -80,9 +116,12 @@ export async function POST() {
     }
   } catch { /* stripe_customer_id column may not exist yet */ }
 
+  send({ phase: 'fetching_subscriptions', detail: 'Fetching subscriptions from Stripe...' })
+
   // 4. Fetch ALL subscriptions from Stripe (with payment method for card details)
   const allSubs: any[] = []
-  for (const status of ['active', 'past_due', 'trialing', 'canceled', 'unpaid'] as const) {
+  const statusTypes = ['active', 'past_due', 'trialing', 'canceled', 'unpaid'] as const
+  for (const status of statusTypes) {
     let hasMore = true
     let startingAfter: string | undefined
     while (hasMore) {
@@ -96,6 +135,7 @@ export async function POST() {
       allSubs.push(...batch.data)
       hasMore = batch.has_more
       if (batch.data.length > 0) startingAfter = batch.data[batch.data.length - 1].id
+      send({ phase: 'fetching_subscriptions', detail: `Fetching ${status} subscriptions...`, current: allSubs.length })
     }
   }
 
@@ -164,6 +204,7 @@ export async function POST() {
   }
 
   console.log(`[Stripe Sync] ${uniqueSubs.length} total subs → ${bestSubByEmail.size} unique users. Active: ${stats.byStatus.active}, Cancelling: ${stats.byStatus.active_cancelling}, Canceled: ${stats.byStatus.canceled}`)
+  send({ phase: 'processing_subscriptions', detail: `Found ${bestSubByEmail.size} unique users from ${uniqueSubs.length} subscriptions`, current: 0, total: bestSubByEmail.size, percent: 0 })
 
   // 5b. RESET: Delete ALL existing membership records before re-importing.
   // This prevents duplicate rows from accumulating across syncs.
@@ -176,7 +217,19 @@ export async function POST() {
   console.log(`[Stripe Sync] Cleared ${deletedCount ?? 'all'} existing membership records`)
 
   // 5c. Process the single best subscription per user
+  let processedCount = 0
+  const totalToProcess = bestSubByEmail.size
   for (const [email, sub] of bestSubByEmail) {
+    processedCount++
+    if (processedCount % 25 === 0 || processedCount === totalToProcess) {
+      send({
+        phase: 'processing_subscriptions',
+        detail: `Processing ${email}...`,
+        current: processedCount,
+        total: totalToProcess,
+        percent: Math.round((processedCount / totalToProcess) * 100),
+      })
+    }
     try {
       const customer = sub.customer as any
       if (!email) { stats.skipped++; continue }
@@ -188,12 +241,27 @@ export async function POST() {
       if (sub.status === 'active' && sub.cancel_at_period_end) {
         // User cancelled but still has access until period ends
         membershipStatus = 'cancelled'
+      } else if (sub.status === 'trialing') {
+        // Check if this "trial" is legitimate or a mislabeled paid subscription.
+        // Many subscriptions were set to "trialing" due to a legacy bug, but the
+        // user actually paid. We check: does this membership level have a real
+        // trial period configured (trial_limit > 0)? If not, it's a paid member
+        // that was incorrectly flagged — treat as 'active'.
+        const trialPriceId = sub.items?.data?.[0]?.price?.id
+        const matchedLevel = (levels ?? []).find((l: any) => l.stripe_price_id === trialPriceId)
+        const hasLegitTrial = matchedLevel && (matchedLevel as any).trial_limit > 0
+
+        if (hasLegitTrial) {
+          membershipStatus = 'trialing'
+        } else {
+          // No trial configured for this plan — user paid, treat as active
+          membershipStatus = 'active'
+          console.log(`[Stripe Sync] Correcting trialing→active for ${email} (plan has no trial configured)`)
+        }
       } else {
         switch (sub.status) {
           case 'active':
             membershipStatus = 'active'; break
-          case 'trialing':
-            membershipStatus = 'trialing'; break
           case 'past_due':
             membershipStatus = 'past_due'; break
           case 'canceled':
@@ -449,6 +517,8 @@ export async function POST() {
     }
   }
 
+  send({ phase: 'backfilling_orders', detail: 'Loading existing payment records...', current: 0, percent: 0 })
+
   // 6. Backfill invoice/payment history into membership_orders
   // Pre-load existing payment_transaction_ids to avoid duplicates
   const existingTxIds = new Set<string>()
@@ -467,13 +537,18 @@ export async function POST() {
     txPage++
   }
 
+  send({ phase: 'backfilling_orders', detail: 'Fetching paid invoices from Stripe...', current: 0 })
+
   // Fetch all paid invoices from Stripe (auto-paginate through ALL pages)
   let invoiceStartingAfter: string | undefined
   let hasMoreInvoices = true
+  let invoicesFetched = 0
   while (hasMoreInvoices) {
     const params: any = { limit: 100, status: 'paid', expand: ['data.charge'] }
     if (invoiceStartingAfter) params.starting_after = invoiceStartingAfter
     const batch = await stripe.invoices.list(params)
+    invoicesFetched += batch.data.length
+    send({ phase: 'backfilling_orders', detail: `Processing invoices... (${stats.ordersBackfilled} new)`, current: invoicesFetched })
 
     for (const rawInv of batch.data) {
       try {
@@ -579,6 +654,8 @@ export async function POST() {
     if (batch.data.length > 0) invoiceStartingAfter = batch.data[batch.data.length - 1].id
   }
 
+  send({ phase: 'backfilling_customers', detail: 'Checking Stripe customer names...', current: 0 })
+
   // 7. Backfill Stripe customer name/description from user_profiles
   // For any Stripe customer that has no name set, populate it from the
   // first_name/last_name stored in user_profiles so Stripe's dashboard
@@ -633,6 +710,8 @@ export async function POST() {
     stats.errors.push(`Stripe customer name backfill failed: ${err.message}`)
   }
 
+  send({ phase: 'syncing_audiences', detail: 'Syncing email marketing audiences...' })
+
   // 8. Sync Resend audiences — bulk-add active members and move cancelled/expired to Past Members
   let audienceSynced = 0
   let audienceErrors = 0
@@ -665,22 +744,35 @@ export async function POST() {
     stats.errors.push(`Audience sync failed: ${err.message}`)
   }
 
-  return NextResponse.json({
+  const message = [
+    `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total Stripe subscriptions.`,
+    `Stripe breakdown: ${stats.byStatus.active} active (${stats.byStatus.active_cancelling} cancelling at period end), ${stats.byStatus.trialing} trialing, ${stats.byStatus.past_due} past due, ${stats.byStatus.canceled} canceled, ${stats.byStatus.unpaid} unpaid.`,
+    `Synced: ${stats.syncedAsActive} active, ${stats.syncedAsTrialing} trialing, ${stats.syncedAsPastDue} past due, ${stats.syncedAsCancelled} cancelled, ${stats.syncedAsExpired} expired.`,
+    stats.usersCreated > 0 ? `Created ${stats.usersCreated} new accounts.` : '',
+    stats.levelsCreated > 0 ? `Auto-created ${stats.levelsCreated} new membership levels for unmapped Stripe prices.` : '',
+    stats.ordersBackfilled > 0 ? `Backfilled ${stats.ordersBackfilled} payment records.` : '',
+    stripeCustomersBackfilled > 0 ? `Backfilled name on ${stripeCustomersBackfilled} Stripe customers.` : '',
+    stats.skipped > 0 ? `${stats.skipped} skipped.` : '',
+  ].filter(Boolean).join(' ')
+
+  send({
+    phase: 'done',
     ok: true,
+    message,
     ...stats,
     stripeCustomersBackfilled,
     audienceSynced,
     audienceErrors,
     uniqueUsers: bestSubByEmail.size,
-    message: [
-      `Processed ${bestSubByEmail.size} unique users from ${stats.totalSubscriptions} total Stripe subscriptions.`,
-      `Stripe breakdown: ${stats.byStatus.active} active (${stats.byStatus.active_cancelling} cancelling at period end), ${stats.byStatus.trialing} trialing, ${stats.byStatus.past_due} past due, ${stats.byStatus.canceled} canceled, ${stats.byStatus.unpaid} unpaid.`,
-      `Synced: ${stats.syncedAsActive} active, ${stats.syncedAsTrialing} trialing, ${stats.syncedAsPastDue} past due, ${stats.syncedAsCancelled} cancelled, ${stats.syncedAsExpired} expired.`,
-      stats.usersCreated > 0 ? `Created ${stats.usersCreated} new accounts.` : '',
-      stats.levelsCreated > 0 ? `Auto-created ${stats.levelsCreated} new membership levels for unmapped Stripe prices.` : '',
-      stats.ordersBackfilled > 0 ? `Backfilled ${stats.ordersBackfilled} payment records.` : '',
-      stripeCustomersBackfilled > 0 ? `Backfilled name on ${stripeCustomersBackfilled} Stripe customers.` : '',
-      stats.skipped > 0 ? `${stats.skipped} skipped.` : '',
-    ].filter(Boolean).join(' '),
+  })
+
+  } // end runSync()
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
   })
 }

@@ -400,7 +400,12 @@ async function attachProfiles(supabase: any, records: any[]): Promise<any[]> {
   }))
 }
 
-export async function getAdminSubscriptions({ page = 1, q, status }: { page?: number; q?: string; status?: string } = {}) {
+export type SubSortField = 'created_at' | 'startdate' | 'enddate' | 'modified'
+export const VALID_SUB_SORTS: SubSortField[] = ['created_at', 'startdate', 'enddate', 'modified']
+
+export async function getAdminSubscriptions({ page = 1, q, status, sort = 'startdate', dir = 'desc' }: {
+  page?: number; q?: string; status?: string; sort?: SubSortField; dir?: SortDir
+} = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
@@ -415,9 +420,9 @@ export async function getAdminSubscriptions({ page = 1, q, status }: { page?: nu
       card_type, card_last4, card_exp_month, card_exp_year,
       billing_email,
       startdate, enddate, modified, created_at,
-      membership_levels(name, billing_amount, cycle_period)
+      membership_levels(name, billing_amount, cycle_number, cycle_period)
     `, { count: 'exact' })
-    .order('created_at', { ascending: false })
+    .order(sort, { ascending: dir === 'asc' })
 
   if (status) {
     if (status === 'manual') {
@@ -445,19 +450,44 @@ export async function getAdminSubscriptions({ page = 1, q, status }: { page?: nu
 export async function getAdminSubscriptionStats() {
   const supabase = createAdminClient()
 
-  // Fetch all memberships with their plan info in a single query
-  const { data: allMemberships } = await supabase
-    .from('user_memberships')
-    .select('status, stripe_subscription_id, level_id, membership_levels(billing_amount, cycle_period)')
+  // Fetch ALL memberships with pagination (Supabase caps at 1000 per query)
+  let allMemberships: any[] = []
+  let memOffset = 0
+  const memBatch = 1000
+  while (true) {
+    const { data } = await supabase
+      .from('user_memberships')
+      .select('status, stripe_subscription_id, user_id, level_id, membership_levels(billing_amount, cycle_number, cycle_period)')
+      .range(memOffset, memOffset + memBatch - 1)
+    if (!data || data.length === 0) break
+    allMemberships = allMemberships.concat(data)
+    if (data.length < memBatch) break
+    memOffset += memBatch
+  }
 
-  const memberships = allMemberships ?? []
+  const memberships = allMemberships
+
+  // Deduplicate: only count one membership per user (best status wins)
+  const statusPri: Record<string, number> = {
+    active: 6, trialing: 5, past_due: 4, pending: 3, cancelled: 2, expired: 1,
+  }
+  const bestByUser = new Map<string, any>()
+  for (const m of memberships) {
+    const uid = (m as any).user_id
+    if (!uid) continue
+    const existing = bestByUser.get(uid)
+    if (!existing || (statusPri[m.status ?? ''] ?? 0) > (statusPri[existing.status ?? ''] ?? 0)) {
+      bestByUser.set(uid, m)
+    }
+  }
+  const dedupedMemberships = Array.from(bestByUser.values())
 
   // Count statuses
   const counts: Record<string, number> = {}
   let manual = 0
   let mrr = 0
 
-  for (const m of memberships) {
+  for (const m of dedupedMemberships) {
     const s = m.status || 'unknown'
     counts[s] = (counts[s] || 0) + 1
 
@@ -465,13 +495,14 @@ export async function getAdminSubscriptionStats() {
       manual++
     }
 
-    // Calculate MRR from active subscriptions
+    // Calculate MRR from active subscriptions (accounting for cycle_number)
     if (s === 'active') {
       const level = m.membership_levels as any
       const amount = parseFloat(level?.billing_amount || '0')
       const period = (level?.cycle_period || '').toLowerCase()
-      if (period === 'month') mrr += amount
-      else if (period === 'year') mrr += amount / 12
+      const cycleNum = level?.cycle_number ?? 1
+      if (period === 'month') mrr += amount / cycleNum          // e.g. $293.70 / 6 = $48.95/mo
+      else if (period === 'year') mrr += amount / (12 * cycleNum)
     }
   }
 
@@ -482,16 +513,9 @@ export async function getAdminSubscriptionStats() {
   thisMonthStart.setHours(0, 0, 0, 0)
 
   const [
-    { data: recentOrders },
     { count: totalOrders },
     { count: newThisMonth },
-    { data: orderStatusCounts },
   ] = await Promise.all([
-    supabase
-      .from('membership_orders')
-      .select('total')
-      .gte('timestamp', thirtyDaysAgo)
-      .eq('status', 'success'),
     supabase.from('membership_orders').select('*', { count: 'exact', head: true }),
     // Count new signups this month using startdate (not created_at which reflects sync date)
     supabase
@@ -499,22 +523,43 @@ export async function getAdminSubscriptionStats() {
       .select('*', { count: 'exact', head: true })
       .gte('startdate', thisMonthStart.toISOString())
       .not('status', 'in', '(expired,pending)'),
-    supabase
-      .from('membership_orders')
-      .select('status'),
   ])
 
-  const recentRevenue = (recentOrders ?? []).reduce((sum: number, o: any) => sum + (o.total ?? 0), 0)
+  // Fetch recent orders with pagination (can exceed 1000 in 30 days)
+  let recentRevenue = 0
+  let revOffset = 0
+  while (true) {
+    const { data } = await supabase
+      .from('membership_orders')
+      .select('total')
+      .gte('timestamp', thirtyDaysAgo)
+      .eq('status', 'success')
+      .range(revOffset, revOffset + 999)
+    if (!data || data.length === 0) break
+    for (const o of data) recentRevenue += (o.total ?? 0)
+    if (data.length < 1000) break
+    revOffset += 1000
+  }
 
-  // Count order statuses
+  // Count order statuses with pagination
   const orderCounts: Record<string, number> = {}
-  for (const o of (orderStatusCounts ?? [])) {
-    const s = o.status || 'unknown'
-    orderCounts[s] = (orderCounts[s] || 0) + 1
+  let ocOffset = 0
+  while (true) {
+    const { data } = await supabase
+      .from('membership_orders')
+      .select('status')
+      .range(ocOffset, ocOffset + 999)
+    if (!data || data.length === 0) break
+    for (const o of data) {
+      const s = o.status || 'unknown'
+      orderCounts[s] = (orderCounts[s] || 0) + 1
+    }
+    if (data.length < 1000) break
+    ocOffset += 1000
   }
 
   return {
-    total: memberships.length,
+    total: dedupedMemberships.length,
     active: counts['active'] ?? 0,
     trialing: counts['trialing'] ?? 0,
     pastDue: counts['past_due'] ?? 0,
@@ -531,7 +576,12 @@ export async function getAdminSubscriptionStats() {
   }
 }
 
-export async function getAdminOrders({ page = 1, q, status }: { page?: number; q?: string; status?: string } = {}) {
+export type OrderSortField = 'timestamp' | 'total' | 'created_at'
+export const VALID_ORDER_SORTS: OrderSortField[] = ['timestamp', 'total', 'created_at']
+
+export async function getAdminOrders({ page = 1, q, status, sort = 'timestamp', dir = 'desc' }: {
+  page?: number; q?: string; status?: string; sort?: OrderSortField; dir?: SortDir
+} = {}) {
   const supabase = createAdminClient()
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
@@ -546,7 +596,7 @@ export async function getAdminOrders({ page = 1, q, status }: { page?: number; q
       subscription_transaction_id, billing_reason, notes, timestamp, created_at,
       membership_levels(name)
     `, { count: 'exact' })
-    .order('timestamp', { ascending: false })
+    .order(sort, { ascending: dir === 'asc' })
 
   if (status) query = query.eq('status', status)
 
@@ -721,7 +771,7 @@ export async function getAdminUserCounts() {
   while (true) {
     const { data } = await supabase
       .from('user_memberships')
-      .select('user_id, status, level_id, membership_levels(name, billing_amount, cycle_period)')
+      .select('user_id, status, level_id, membership_levels(name, billing_amount, cycle_number, cycle_period)')
       .range(offset, offset + batchSize - 1)
     if (!data || data.length === 0) break
     mems = mems.concat(data)
@@ -734,7 +784,23 @@ export async function getAdminUserCounts() {
   const planBreakdown: Record<string, { name: string; active: number; total: number; mrr: number }> = {}
   const uniqueUserIds = new Set<string>()
 
+  // Deduplicate: only count one membership per user (the best one)
+  // This prevents inflated numbers from duplicate rows
+  const bestMemByUser = new Map<string, any>()
+  const statusPriority: Record<string, number> = {
+    active: 6, trialing: 5, past_due: 4, pending: 3, cancelled: 2, expired: 1,
+  }
   for (const m of mems) {
+    const uid = (m as any).user_id
+    if (!uid) continue
+    const existing = bestMemByUser.get(uid)
+    if (!existing || (statusPriority[m.status] ?? 0) > (statusPriority[existing.status] ?? 0)) {
+      bestMemByUser.set(uid, m)
+    }
+  }
+  const dedupedMems = Array.from(bestMemByUser.values())
+
+  for (const m of dedupedMems) {
     if (m.status in memCounts) (memCounts as any)[m.status]++
     if ((m as any).user_id) uniqueUserIds.add((m as any).user_id)
 
@@ -749,11 +815,12 @@ export async function getAdminUserCounts() {
       planBreakdown[planName].active++
       const amount = parseFloat(level?.billing_amount ?? 0)
       const period = level?.cycle_period
+      const cycleNum = level?.cycle_number ?? 1
       let monthly = 0
-      if (period === 'Month') monthly = amount
-      else if (period === 'Year') monthly = amount / 12
-      else if (period === 'Week') monthly = amount * 4.33
-      else if (period === 'Day') monthly = amount * 30
+      if (period === 'Month') monthly = amount / cycleNum       // e.g. $293.70 / 6 months = $48.95/mo
+      else if (period === 'Year') monthly = amount / (12 * cycleNum)
+      else if (period === 'Week') monthly = (amount / cycleNum) * 4.33
+      else if (period === 'Day') monthly = (amount / cycleNum) * 30
       mrr += monthly
       planBreakdown[planName].mrr += monthly
     }
@@ -773,7 +840,7 @@ export async function getAdminUserCounts() {
     expiredMemberships: memCounts.expired,
     pendingMemberships: memCounts.pending,
     noMembership: (totalCount ?? 0) - usersWithMembership,
-    totalMemberships: mems.length,
+    totalMemberships: dedupedMems.length,
     mrr,
     arr: mrr * 12,
     planStats,

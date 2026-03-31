@@ -7,6 +7,7 @@ import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getTemplate, replaceVars } from '@/lib/email-templates'
 import type { TemplateOverride, ResolvedTemplate } from '@/lib/email-templates'
+import { logActivity } from '@/lib/activity-log'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const EMAIL_FROM = process.env.EMAIL_FROM ?? 'noreply@productionlist.com'
@@ -66,6 +67,17 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
       status: 'sent',
       resend_id: data?.id ?? null,
     })
+
+    // Also log to activity_log so it shows on the user detail page
+    logActivity({
+      email: opts.to,
+      eventType: 'email_sent',
+      metadata: {
+        subject: opts.subject,
+        template: opts.templateSlug ?? null,
+        resend_id: data?.id ?? null,
+      },
+    }).catch(() => {})
 
     return { success: true, emailId: data?.id }
   } catch (err: any) {

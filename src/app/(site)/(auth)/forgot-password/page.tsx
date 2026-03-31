@@ -31,7 +31,7 @@ export default function ForgotPasswordPage() {
     fetch('/api/log-activity', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventType: 'password_reset', metadata: { email } }),
+      body: JSON.stringify({ eventType: 'password_reset', metadata: { step: 'reset_requested', email } }),
     }).catch(() => {})
 
     setSent(true)

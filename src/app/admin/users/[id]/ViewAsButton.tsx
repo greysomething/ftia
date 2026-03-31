@@ -6,7 +6,7 @@ export default function ViewAsButton({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(false)
 
   async function handleViewAs() {
-    if (!confirm('This will sign you in as this user in the current tab. You can exit back from the banner at the top.')) return
+    if (!confirm('This will let you browse the site as this user. Your admin session stays active — click "Exit to Admin" in the banner to return.')) return
     setLoading(true)
     try {
       const res = await fetch('/api/admin/impersonate', {
@@ -15,14 +15,15 @@ export default function ViewAsButton({ userId }: { userId: string }) {
         body: JSON.stringify({ userId }),
       })
       const data = await res.json()
-      if (data.actionLink) {
-        window.location.href = data.actionLink
+      if (data.success) {
+        // Full page navigation to pick up the new cookie server-side
+        window.location.href = data.redirectTo || '/membership-account'
       } else {
-        alert(data.error || 'Failed to impersonate user')
+        alert(data.error || 'Failed to start impersonation')
         setLoading(false)
       }
     } catch {
-      alert('Failed to impersonate user')
+      alert('Failed to start impersonation')
       setLoading(false)
     }
   }

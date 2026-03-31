@@ -7,7 +7,11 @@ export const metadata: Metadata = {
 }
 
 interface Props {
-  searchParams: Promise<{ redirect?: string; message?: string }>
+  searchParams: Promise<{ redirect?: string; message?: string; error?: string; registered?: string }>
+}
+
+const ERROR_MESSAGES: Record<string, string> = {
+  auth_callback_failed: 'Your password reset link has expired or was already used. Please request a new one below.',
 }
 
 export default async function LoginPage({ searchParams }: Props) {
@@ -43,9 +47,20 @@ export default async function LoginPage({ searchParams }: Props) {
             </div>
           </div>
 
+          {params.error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+              {ERROR_MESSAGES[params.error] ?? 'An error occurred. Please try again.'}
+              {params.error === 'auth_callback_failed' && (
+                <a href="/forgot-password" className="block mt-2 font-semibold text-red-800 underline">
+                  Request a new password reset link
+                </a>
+              )}
+            </div>
+          )}
+
           {params.message && (
             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-              {params.message}
+              {decodeURIComponent(params.message)}
             </div>
           )}
 

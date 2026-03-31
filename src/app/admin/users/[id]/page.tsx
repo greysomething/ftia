@@ -37,20 +37,21 @@ export default async function AdminUserDetailPage({ params }: Props) {
   const supabase = createAdminClient()
   const { data: levels } = await supabase
     .from('membership_levels')
-    .select('id, name, is_active, billing_amount, cycle_period')
+    .select('id, name, is_active, billing_amount, cycle_number, cycle_period')
     .order('id')
 
   // Fetch user's auth email
   const { data: { user: authUser } } = await supabase.auth.admin.getUserById(id)
   const email = authUser?.email ?? null
 
-  // Fetch recent activity
+  // Fetch recent activity — search by user_id OR email so we catch
+  // events logged before the user was authenticated (e.g., password resets, failed logins)
   const { data: recentActivity } = await supabase
     .from('activity_log')
-    .select('id, event_type, ip_address, country, city, created_at')
-    .eq('user_id', id)
+    .select('id, event_type, ip_address, country, city, metadata, created_at')
+    .or(`user_id.eq.${id}${email ? `,email.eq.${email}` : ''}`)
     .order('created_at', { ascending: false })
-    .limit(10)
+    .limit(25)
 
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.display_name || 'Unknown'
   const activeMembership = user.user_memberships?.find((m: any) => m.status === 'active')
@@ -354,27 +355,37 @@ export default async function AdminUserDetailPage({ params }: Props) {
                   <label className="form-label">Plan</label>
                   <select name="levelId" required className="form-input text-sm">
                     <option value="">Select a plan...</option>
-                    {levels?.filter((l: any) => l.is_active).map((l: any) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name} — ${l.billing_amount}/{l.cycle_period}
-                      </option>
-                    ))}
-                    <optgroup label="Inactive Plans">
-                      {levels?.filter((l: any) => !l.is_active).map((l: any) => (
+                    {levels?.filter((l: any) => l.is_active).map((l: any) => {
+                      const cn = l.cycle_number ?? 1
+                      const per = (l.cycle_period ?? 'Month').toLowerCase()
+                      const interval = cn > 1 ? `${cn} ${per}` : per === 'month' ? 'mo' : per === 'year' ? 'yr' : per
+                      return (
                         <option key={l.id} value={l.id}>
-                          {l.name} — ${l.billing_amount}/{l.cycle_period}
+                          {l.name} — ${l.billing_amount}/{interval}
                         </option>
-                      ))}
+                      )
+                    })}
+                    <optgroup label="Inactive Plans">
+                      {levels?.filter((l: any) => !l.is_active).map((l: any) => {
+                        const cn = l.cycle_number ?? 1
+                        const per = (l.cycle_period ?? 'Month').toLowerCase()
+                        const interval = cn > 1 ? `${cn} ${per}` : per === 'month' ? 'mo' : per === 'year' ? 'yr' : per
+                        return (
+                          <option key={l.id} value={l.id}>
+                            {l.name} — ${l.billing_amount}/{interval}
+                          </option>
+                        )
+                      })}
                     </optgroup>
                   </select>
                 </div>
                 <div className="w-[130px]">
                   <label className="form-label">Duration</label>
-                  <select name="duration" className="form-input text-sm">
+                  <select name="duration" defaultValue="1y" className="form-input text-sm">
                     <option value="1m">1 Month</option>
                     <option value="3m">3 Months</option>
                     <option value="6m">6 Months</option>
-                    <option value="1y" selected>1 Year</option>
+                    <option value="1y">1 Year</option>
                     <option value="lifetime">Lifetime</option>
                   </select>
                 </div>
@@ -580,33 +591,64 @@ export default async function AdminUserDetailPage({ params }: Props) {
           </div>
 
           {/* Recent Activity */}
-          {recentActivity && recentActivity.length > 0 && (
-            <div className="admin-card overflow-hidden">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="font-semibold text-gray-700">Recent Activity</h2>
-                <a href={`/admin/login-log?search=${encodeURIComponent(email || '')}`} className="text-xs text-primary hover:underline">
-                  View All
-                </a>
-              </div>
+          <div className="admin-card overflow-hidden">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700">Recent Activity</h2>
+              <a href={`/admin/login-log?search=${encodeURIComponent(email || '')}`} className="text-xs text-primary hover:underline">
+                View All
+              </a>
+            </div>
+            {!recentActivity || recentActivity.length === 0 ? (
+              <p className="text-sm text-gray-400 py-2">No activity recorded for this user.</p>
+            ) : (
               <div className="space-y-2">
                 {recentActivity.map((entry: any) => {
                   const eventLabels: Record<string, { label: string; color: string }> = {
                     login: { label: 'Login', color: 'bg-green-100 text-green-800' },
-                    login_failed: { label: 'Failed', color: 'bg-red-100 text-red-800' },
-                    register: { label: 'Register', color: 'bg-blue-100 text-blue-800' },
-                    password_reset: { label: 'Reset', color: 'bg-yellow-100 text-yellow-800' },
-                    pdf_download: { label: 'PDF', color: 'bg-purple-100 text-purple-800' },
-                    profile_update: { label: 'Profile', color: 'bg-indigo-100 text-indigo-800' },
+                    login_failed: { label: 'Login Failed', color: 'bg-red-100 text-red-800' },
+                    register: { label: 'Registered', color: 'bg-blue-100 text-blue-800' },
+                    password_reset: { label: 'Reset Requested', color: 'bg-yellow-100 text-yellow-800' },
+                    password_reset_complete: { label: 'Password Changed', color: 'bg-green-100 text-green-800' },
+                    password_reset_failed: { label: 'Reset Failed', color: 'bg-red-100 text-red-800' },
+                    email_sent: { label: 'Email Sent', color: 'bg-sky-100 text-sky-800' },
+                    membership_changed: { label: 'Membership', color: 'bg-orange-100 text-orange-800' },
+                    pdf_download: { label: 'PDF Download', color: 'bg-purple-100 text-purple-800' },
+                    profile_update: { label: 'Profile Update', color: 'bg-indigo-100 text-indigo-800' },
                     logout: { label: 'Logout', color: 'bg-gray-100 text-gray-600' },
-                    contact_form: { label: 'Contact', color: 'bg-teal-100 text-teal-800' },
+                    contact_form: { label: 'Contact Form', color: 'bg-teal-100 text-teal-800' },
                   }
                   const evt = eventLabels[entry.event_type] ?? { label: entry.event_type, color: 'bg-gray-100 text-gray-600' }
                   const location = [entry.city, entry.country].filter(Boolean).join(', ')
+                  const meta = entry.metadata as Record<string, any> | null
+                  // Build a meaningful detail string from metadata
+                  let detail: string | null = null
+                  if (entry.event_type === 'password_reset' && meta?.step) {
+                    const stepLabels: Record<string, string> = {
+                      reset_requested: 'Requested',
+                      link_verified: 'Link verified',
+                      password_changed: 'Password changed',
+                      change_failed: meta?.error ?? 'Failed',
+                    }
+                    detail = stepLabels[meta.step] ?? meta.step
+                  } else if (entry.event_type === 'membership_changed' && meta?.action) {
+                    const actionLabels: Record<string, string> = {
+                      created: 'New membership',
+                      renewed: 'Renewed',
+                      expired: 'Expired',
+                      status_changed: `→ ${meta.status ?? 'unknown'}`,
+                    }
+                    detail = actionLabels[meta.action] ?? meta.action
+                  } else if (entry.event_type === 'email_sent' && meta?.subject) {
+                    detail = meta.subject
+                  } else {
+                    detail = meta?.reason || meta?.error || meta?.template || null
+                  }
                   return (
                     <div key={entry.id} className="flex items-center gap-2 text-xs min-w-0">
                       <span className={`inline-flex flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${evt.color}`}>
                         {evt.label}
                       </span>
+                      {detail && <span className="text-gray-500 truncate flex-shrink min-w-0" title={String(detail)}>{String(detail)}</span>}
                       <span className="font-mono text-gray-500 truncate flex-shrink min-w-0">{entry.ip_address ?? '—'}</span>
                       {location && <span className="text-gray-400 truncate flex-shrink min-w-0">{location}</span>}
                       <span className="ml-auto text-gray-400 whitespace-nowrap flex-shrink-0" title={formatDateTime(entry.created_at)}>
@@ -616,8 +658,8 @@ export default async function AdminUserDetailPage({ params }: Props) {
                   )
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

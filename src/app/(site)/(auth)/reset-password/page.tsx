@@ -33,14 +33,27 @@ export default function ResetPasswordPage() {
     if (updateError) {
       setError(updateError.message)
       setLoading(false)
+      // Log failed password change
+      fetch('/api/log-activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventType: 'password_reset', metadata: { step: 'change_failed', error: updateError.message } }),
+      }).catch(() => {})
       return
     }
+
+    // Log successful password change
+    fetch('/api/log-activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType: 'password_reset', metadata: { step: 'password_changed' } }),
+    }).catch(() => {})
 
     setSuccess(true)
     setLoading(false)
 
-    // Redirect to account page after brief delay
-    setTimeout(() => router.push('/my-account'), 2000)
+    // Redirect to productions after brief delay
+    setTimeout(() => router.push('/productions'), 2000)
   }
 
   return (

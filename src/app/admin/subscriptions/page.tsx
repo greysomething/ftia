@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getAdminSubscriptions, getAdminSubscriptionStats, getAdminOrders, getAdminMembershipPlans } from '@/lib/admin-queries'
+import { getAdminSubscriptions, getAdminSubscriptionStats, getAdminOrders, getAdminMembershipPlans, VALID_SUB_SORTS, VALID_ORDER_SORTS } from '@/lib/admin-queries'
+import type { SubSortField, OrderSortField, SortDir } from '@/lib/admin-queries'
 import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate } from '@/lib/utils'
 import { SubscriptionActions } from './SubscriptionActions'
@@ -10,7 +11,53 @@ import StripeStatsCards from './StripeStatsCards'
 export const metadata: Metadata = { title: 'Subscriptions & Payments' }
 
 interface Props {
-  searchParams: Promise<{ page?: string; q?: string; status?: string; tab?: string; order_status?: string }>
+  searchParams: Promise<{
+    page?: string; q?: string; status?: string; tab?: string; order_status?: string
+    sort?: string; dir?: string
+  }>
+}
+
+function SortableHeader({ label, field, currentSort, currentDir, buildHref, className }: {
+  label: string; field: string; currentSort: string; currentDir: string
+  buildHref: (sort: string, dir: string) => string; className?: string
+}) {
+  const isActive = currentSort === field
+  const nextDir = isActive && currentDir === 'desc' ? 'asc' : 'desc'
+
+  return (
+    <th className={className}>
+      <Link
+        href={buildHref(field, nextDir)}
+        className="inline-flex items-center gap-1 hover:text-primary transition-colors group"
+      >
+        {label}
+        <span className={`text-[10px] ${isActive ? 'text-primary' : 'text-gray-300 group-hover:text-gray-400'}`}>
+          {isActive ? (currentDir === 'asc' ? '\u25B2' : '\u25BC') : '\u21C5'}
+        </span>
+      </Link>
+    </th>
+  )
+}
+
+/**
+ * Format billing amount with proper interval.
+ * e.g. $58.95/month, $293.70/6 mo, $467.40/year
+ */
+function formatBillingAmount(level: any): string {
+  if (!level?.billing_amount) return '—'
+  const amount = parseFloat(level.billing_amount)
+  const cycleNum = level.cycle_number ?? 1
+  const period = (level.cycle_period ?? 'Month').toLowerCase()
+
+  const amountStr = `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  // Abbreviate period labels
+  const periodLabel = period === 'month' ? 'mo' : period === 'year' ? 'yr' : period
+
+  if (cycleNum === 1) {
+    return `${amountStr}/${periodLabel}`
+  }
+  return `${amountStr}/${cycleNum} ${periodLabel}`
 }
 
 const STATUS_BADGES: Record<string, string> = {
@@ -49,14 +96,19 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
   const params = await searchParams
   const page = parseInt(params.page || '1', 10) || 1
   const q = params.q ?? ''
-  const statusFilter = params.status ?? ''
+  const statusFilter = params.status ?? (params.tab === 'orders' ? '' : 'active')
   const orderStatus = params.order_status ?? ''
   const tab = params.tab ?? 'subscriptions'
 
+  // Sort params — default to most recent first
+  const subSort = (VALID_SUB_SORTS.includes(params.sort as SubSortField) ? params.sort : 'startdate') as SubSortField
+  const orderSort = (VALID_ORDER_SORTS.includes(params.sort as OrderSortField) ? params.sort : 'timestamp') as OrderSortField
+  const sortDir = (params.dir === 'asc' ? 'asc' : 'desc') as SortDir
+
   const [stats, subsResult, ordersResult, plans] = await Promise.all([
     getAdminSubscriptionStats(),
-    getAdminSubscriptions({ page, q, status: statusFilter || undefined }),
-    getAdminOrders({ page, q, status: orderStatus || undefined }),
+    getAdminSubscriptions({ page, q, status: statusFilter || undefined, sort: subSort, dir: sortDir }),
+    getAdminOrders({ page, q, status: orderStatus || undefined, sort: orderSort, dir: sortDir }),
     getAdminMembershipPlans(),
   ])
 
@@ -151,7 +203,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
               return (
                 <Link
                   key={st.key}
-                  href={`/admin/subscriptions${st.key ? `?status=${st.key}` : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
+                  href={`/admin/subscriptions?status=${st.key}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
                   className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-full transition-colors ${
                     isActive
                       ? 'bg-[#1B2A4A] text-white'
@@ -196,8 +248,34 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                   <th>Status</th>
                   <th>Amount</th>
                   <th>Card</th>
-                  <th>Started</th>
-                  <th>{statusFilter === 'cancelled' || statusFilter === 'expired' ? 'Expires' : 'Renews'}</th>
+                  <SortableHeader
+                    label="Started"
+                    field="startdate"
+                    currentSort={subSort}
+                    currentDir={sortDir}
+                    buildHref={(s, d) => {
+                      const p = new URLSearchParams()
+                      if (statusFilter) p.set('status', statusFilter)
+                      if (q) p.set('q', q)
+                      p.set('sort', s)
+                      p.set('dir', d)
+                      return `/admin/subscriptions?${p.toString()}`
+                    }}
+                  />
+                  <SortableHeader
+                    label={statusFilter === 'cancelled' || statusFilter === 'expired' ? 'Expires' : 'Renews'}
+                    field="enddate"
+                    currentSort={subSort}
+                    currentDir={sortDir}
+                    buildHref={(s, d) => {
+                      const p = new URLSearchParams()
+                      if (statusFilter) p.set('status', statusFilter)
+                      if (q) p.set('q', q)
+                      p.set('sort', s)
+                      p.set('dir', d)
+                      return `/admin/subscriptions?${p.toString()}`
+                    }}
+                  />
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>
@@ -216,12 +294,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                       : 'Unknown'
                     const email = profile?.email || s.billing_email || ''
                     const level = s.membership_levels as any
-                    const amount = level?.billing_amount
-                      ? `$${parseFloat(level.billing_amount).toFixed(2)}`
-                      : '—'
-                    const period = level?.cycle_period
-                      ? `/${level.cycle_period.toLowerCase()}`
-                      : ''
+                    const billingDisplay = formatBillingAmount(level)
                     const isManual = s.status === 'active' && !s.stripe_subscription_id
                     const dateLabel =
                       s.status === 'cancelled' || s.status === 'expired'
@@ -253,7 +326,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                           )}
                         </td>
                         <td className="text-sm font-medium text-gray-700">
-                          {amount}{period}
+                          {billingDisplay}
                         </td>
                         <td className="text-sm text-gray-500">
                           {s.card_last4 ? (
@@ -302,7 +375,15 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
             current={page}
             total={subsResult.total}
             perPage={subsResult.perPage}
-            basePath={`/admin/subscriptions${statusFilter ? `?status=${statusFilter}` : ''}${q ? `${statusFilter ? '&' : '?'}q=${encodeURIComponent(q)}` : ''}`}
+            basePath={(() => {
+              const p = new URLSearchParams()
+              if (statusFilter) p.set('status', statusFilter)
+              if (q) p.set('q', q)
+              if (subSort !== 'startdate') p.set('sort', subSort)
+              if (sortDir !== 'desc') p.set('dir', sortDir)
+              const qs = p.toString()
+              return `/admin/subscriptions${qs ? `?${qs}` : ''}`
+            })()}
           />
         </>
       ) : (
@@ -360,9 +441,35 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
                   <th>Member</th>
                   <th>Plan</th>
                   <th>Type</th>
-                  <th>Amount</th>
+                  <SortableHeader
+                    label="Amount"
+                    field="total"
+                    currentSort={orderSort}
+                    currentDir={sortDir}
+                    buildHref={(s, d) => {
+                      const p = new URLSearchParams({ tab: 'orders' })
+                      if (orderStatus) p.set('order_status', orderStatus)
+                      if (q) p.set('q', q)
+                      p.set('sort', s)
+                      p.set('dir', d)
+                      return `/admin/subscriptions?${p.toString()}`
+                    }}
+                  />
                   <th>Status</th>
-                  <th>Date</th>
+                  <SortableHeader
+                    label="Date"
+                    field="timestamp"
+                    currentSort={orderSort}
+                    currentDir={sortDir}
+                    buildHref={(s, d) => {
+                      const p = new URLSearchParams({ tab: 'orders' })
+                      if (orderStatus) p.set('order_status', orderStatus)
+                      if (q) p.set('q', q)
+                      p.set('sort', s)
+                      p.set('dir', d)
+                      return `/admin/subscriptions?${p.toString()}`
+                    }}
+                  />
                   <th className="text-right">Stripe</th>
                 </tr>
               </thead>
@@ -470,7 +577,14 @@ export default async function AdminSubscriptionsPage({ searchParams }: Props) {
             current={page}
             total={ordersResult.total}
             perPage={ordersResult.perPage}
-            basePath={`/admin/subscriptions?tab=orders${orderStatus ? `&order_status=${orderStatus}` : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
+            basePath={(() => {
+              const p = new URLSearchParams({ tab: 'orders' })
+              if (orderStatus) p.set('order_status', orderStatus)
+              if (q) p.set('q', q)
+              if (orderSort !== 'timestamp') p.set('sort', orderSort)
+              if (sortDir !== 'desc') p.set('dir', sortDir)
+              return `/admin/subscriptions?${p.toString()}`
+            })()}
           />
         </>
       )}

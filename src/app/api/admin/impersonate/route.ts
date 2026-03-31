@@ -1,17 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminUser } from '@/lib/auth'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createRawClient, createAdminClient } from '@/lib/supabase/server'
 
 /**
  * POST /api/admin/impersonate
  * Body: { userId: string }
  *
- * Generates a Supabase magic link for the target user and redirects.
- * Stores the admin's user ID in a cookie so we can show an exit banner.
+ * Cookie-based impersonation: the admin stays logged in as themselves,
+ * but a cookie tells auth functions to return the target user's data.
  */
 export async function POST(req: NextRequest) {
-  const admin = await getAdminUser()
-  if (!admin) {
+  // Verify the real caller is an admin — use raw client to get the real session
+  const supabase = await createRawClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const adminClient = createAdminClient()
+  const { data: adminProfile } = await adminClient
+    .from('user_profiles')
+    .select('id, role, first_name, last_name')
+    .eq('id', user.id)
+    .single()
+
+  if (adminProfile?.role !== 'admin') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -20,51 +32,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'userId is required' }, { status: 400 })
   }
 
-  // Don't allow impersonating yourself
-  if (userId === admin.user.id) {
+  if (userId === user.id) {
     return NextResponse.json({ error: 'Cannot impersonate yourself' }, { status: 400 })
   }
 
-  const supabase = createAdminClient()
-
-  // Get the target user's email
-  const { data: { user: targetUser }, error: userError } = await supabase.auth.admin.getUserById(userId)
+  // Verify the target user exists
+  const { data: { user: targetUser }, error: userError } = await adminClient.auth.admin.getUserById(userId)
   if (userError || !targetUser?.email) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  // Get admin name for the banner
-  const adminName = [admin.profile.first_name, admin.profile.last_name].filter(Boolean).join(' ') || 'Admin'
+  // Get target user's profile for display name
+  const { data: targetProfile } = await adminClient
+    .from('user_profiles')
+    .select('first_name, last_name, display_name')
+    .eq('id', userId)
+    .single()
 
-  // Generate a magic link for the target user
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://productionlist.com'
-  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
-    type: 'magiclink',
-    email: targetUser.email,
-    options: {
-      redirectTo: `${siteUrl}/auth/callback?next=/membership-account`,
-    },
-  })
+  const targetName = targetProfile?.display_name
+    || [targetProfile?.first_name, targetProfile?.last_name].filter(Boolean).join(' ')
+    || targetUser.email
 
-  if (linkError || !linkData?.properties?.action_link) {
-    console.error('[impersonate] Failed to generate link:', linkError)
-    return NextResponse.json({ error: 'Failed to generate impersonation link' }, { status: 500 })
-  }
+  const adminName = [adminProfile.first_name, adminProfile.last_name].filter(Boolean).join(' ') || 'Admin'
 
-  // Return the action link — client will redirect to it
-  // Set the impersonation cookie so we can show the exit banner
-  const response = NextResponse.json({
-    actionLink: linkData.properties.action_link,
+  // Redirect to /productions if user has an active membership, otherwise /membership-account
+  let redirectTo = '/membership-account'
+  const { data: membership } = await adminClient
+    .from('user_memberships')
+    .select('status')
+    .eq('user_id', userId)
+    .in('status', ['active', 'trialing', 'past_due'])
+    .limit(1)
+    .single()
+  if (membership) redirectTo = '/productions'
+
+  const response = NextResponse.json({ success: true, redirectTo })
+
+  // Set impersonation cookie — readable by both server and client
+  response.cookies.set('impersonate_uid', JSON.stringify({
+    targetId: userId,
     targetEmail: targetUser.email,
-  })
-
-  response.cookies.set('impersonating_from', JSON.stringify({
-    adminId: admin.user.id,
+    targetName,
+    adminId: user.id,
     adminName,
-    targetEmail: targetUser.email,
   }), {
     path: '/',
-    httpOnly: false, // needs to be readable by client-side banner
+    httpOnly: false, // must be readable by client-side banner
     sameSite: 'lax',
     maxAge: 60 * 60 * 4, // 4 hours
   })
@@ -74,10 +87,29 @@ export async function POST(req: NextRequest) {
 
 /**
  * DELETE /api/admin/impersonate
- * Clears the impersonation cookie and signs out.
+ * Clears the impersonation cookie and returns the admin user ID
+ * so the client can redirect back to the admin user page.
  */
-export async function DELETE() {
-  const response = NextResponse.json({ success: true })
-  response.cookies.delete('impersonating_from')
+export async function DELETE(req: NextRequest) {
+  // Read the cookie to get the admin's user detail page URL
+  const cookieValue = req.cookies.get('impersonate_uid')?.value
+  let targetId: string | null = null
+  try {
+    if (cookieValue) {
+      const parsed = JSON.parse(cookieValue)
+      targetId = parsed.targetId
+    }
+  } catch { /* ignore */ }
+
+  const response = NextResponse.json({
+    success: true,
+    redirectTo: targetId ? `/admin/users/${targetId}` : '/admin',
+  })
+
+  response.cookies.set('impersonate_uid', '', {
+    path: '/',
+    maxAge: 0,
+  })
+
   return response
 }

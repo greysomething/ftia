@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createRawClient, createAdminClient } from '@/lib/supabase/server'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
+  // Use raw client for auth (createClient may return admin client during impersonation)
+  const supabase = await createRawClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
@@ -17,11 +18,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Level ID is required' }, { status: 400 })
   }
 
-  // Look up the Stripe price ID from the membership_levels table
+  // Look up the plan details from the membership_levels table
   const admin = createAdminClient()
   const { data: level, error: levelError } = await admin
     .from('membership_levels')
-    .select('stripe_price_id, name')
+    .select('stripe_price_id, name, trial_limit, trial_amount')
     .eq('id', parseInt(String(levelId), 10))
     .eq('is_active', true)
     .single()
@@ -34,6 +35,11 @@ export async function POST(req: NextRequest) {
   }
 
   const priceId = level.stripe_price_id
+
+  // Determine trial period from our database (not from Stripe Price defaults).
+  // trial_limit = number of trial days (0 means no trial).
+  // This explicitly overrides any trial_period_days set on the Stripe Price itself.
+  const trialDays = level.trial_limit ?? 0
 
   // Get active Stripe keys (test or live based on admin setting)
   const { secretKey, mode } = await getActiveStripeKeys()
@@ -82,6 +88,28 @@ export async function POST(req: NextRequest) {
 
   const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://productionlist.com'
 
+  // Build subscription_data — explicitly set trial_period_days to override
+  // any trial configured on the Stripe Price itself. Without this, Stripe
+  // applies the Price's default trial, causing paid plans to become free trials.
+  const subscriptionData: any = {
+    metadata: {
+      supabase_user_id: user.id,
+      level_id: String(levelId),
+    },
+  }
+
+  if (trialDays > 0) {
+    // This plan has a trial period configured in our database
+    subscriptionData.trial_period_days = trialDays
+    subscriptionData.trial_settings = {
+      end_behavior: { missing_payment_method: 'cancel' },
+    }
+  } else {
+    // No trial — explicitly set to 0 to override any trial on the Stripe Price.
+    // Also use trial_settings to make absolutely sure no trial is applied.
+    subscriptionData.trial_period_days = 0
+  }
+
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: 'subscription',
@@ -92,12 +120,7 @@ export async function POST(req: NextRequest) {
       supabase_user_id: user.id,
       level_id: String(levelId),
     },
-    subscription_data: {
-      metadata: {
-        supabase_user_id: user.id,
-        level_id: String(levelId),
-      },
-    },
+    subscription_data: subscriptionData,
   })
 
   return NextResponse.json({ url: session.url })
