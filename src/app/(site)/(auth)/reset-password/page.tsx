@@ -1,11 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -27,13 +30,41 @@ export default function ResetPasswordPage() {
     }
 
     setLoading(true)
+
+    // If we have a token_hash, use the server-side verify-and-reset flow
+    // (scanner-proof: token is only consumed on form submit, not on page load)
+    if (tokenHash && type) {
+      try {
+        const res = await fetch('/api/auth/verify-and-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token_hash: tokenHash, type, password }),
+        })
+        const data = await res.json()
+
+        if (!res.ok) {
+          setError(data.error || 'Failed to reset password.')
+          setLoading(false)
+          return
+        }
+
+        setSuccess(true)
+        setLoading(false)
+        setTimeout(() => router.push('/login'), 2000)
+      } catch {
+        setError('Something went wrong. Please try again.')
+        setLoading(false)
+      }
+      return
+    }
+
+    // Fallback: session-based flow (for users who arrived via /auth/callback)
     const supabase = createClient()
     const { error: updateError } = await supabase.auth.updateUser({ password })
 
     if (updateError) {
       setError(updateError.message)
       setLoading(false)
-      // Log failed password change
       fetch('/api/log-activity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -42,7 +73,6 @@ export default function ResetPasswordPage() {
       return
     }
 
-    // Log successful password change
     fetch('/api/log-activity', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -51,8 +81,6 @@ export default function ResetPasswordPage() {
 
     setSuccess(true)
     setLoading(false)
-
-    // Redirect to productions after brief delay
     setTimeout(() => router.push('/productions'), 2000)
   }
 
@@ -65,7 +93,7 @@ export default function ResetPasswordPage() {
           {success ? (
             <div className="text-center">
               <p className="text-green-700 bg-green-50 border border-green-200 rounded p-4 text-sm">
-                Your password has been updated successfully. Redirecting to your account...
+                Your password has been updated successfully. Redirecting to login...
               </p>
             </div>
           ) : (

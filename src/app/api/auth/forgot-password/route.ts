@@ -15,11 +15,13 @@ import { logActivity } from '@/lib/activity-log'
  *
  * 1. Use Supabase Admin API to generate a recovery link (includes token_hash)
  * 2. Extract the token_hash from the generated link
- * 3. Build our own reset URL pointing to /auth/callback?token_hash=X&type=recovery
+ * 3. Build our own reset URL pointing to /reset-password?token_hash=X&type=recovery
  * 4. Send a branded email with our own template via Resend
  *
- * The /auth/callback route then uses verifyOtp({ token_hash, type }) which
- * works from ANY browser — no PKCE code_verifier needed.
+ * The reset-password page collects the new password, then POSTs to
+ * /api/auth/verify-and-reset which verifies the token and sets the password.
+ * This is scanner-proof: email security bots follow GET links but never
+ * submit forms, so the token survives until the real user acts.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -67,7 +69,11 @@ export async function POST(req: NextRequest) {
       ?? process.env.NEXT_PUBLIC_SITE_URL
       ?? 'https://productionlist.com'
 
-    const resetUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=recovery&next=/reset-password`
+    // Send user directly to the reset-password page (NOT /auth/callback).
+    // This prevents email security scanners from consuming the token —
+    // scanners follow GET links but never submit forms. The token is only
+    // verified when the user submits their new password.
+    const resetUrl = `${origin}/reset-password?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`
 
     // Look up the user's first name for a personalized email
     const { data: profile } = await supabase
