@@ -96,22 +96,11 @@ export async function POST(req: NextRequest) {
       // (trial_limit = 0), treat it as 'active' — the user paid, the trial
       // flag is a legacy bug. Only set 'trialing' for plans that genuinely
       // offer a trial period.
-      let memStatus: 'active' | 'trialing' = 'active'
-      if (subscriptionId) {
-        try {
-          const subCheck = await stripe.subscriptions.retrieve(subscriptionId as string)
-          if ((subCheck as any).status === 'trialing') {
-            // Check if this plan actually has a trial configured
-            const { data: levelCheck } = await supabase
-              .from('membership_levels')
-              .select('trial_limit')
-              .eq('id', parseInt(levelId, 10))
-              .single()
-            const hasLegitTrial = levelCheck && (levelCheck.trial_limit ?? 0) > 0
-            memStatus = hasLegitTrial ? 'trialing' : 'active'
-          }
-        } catch { /* fall back to active */ }
-      }
+      // Always set status to 'active' — even if Stripe says 'trialing',
+      // because: (1) no plans currently have trials configured, and
+      // (2) the 'trialing' enum value may not exist in the database yet.
+      // When real trial plans are added, add the enum value first, then update this logic.
+      const memStatus = 'active'
 
       const memRow = {
         user_id: userId,
@@ -545,34 +534,21 @@ export async function POST(req: NextRequest) {
 
       if (!membershipForUpdate) break
 
-      // Map status — if Stripe says 'trialing', check if the plan actually has
-      // a trial configured. If not, the user paid and the trial flag is a legacy
-      // bug — treat as 'active'.
+      // Map Stripe subscription status to our database enum.
+      // Note: 'trialing' and 'past_due' are not yet valid enum values,
+      // so we map them to 'active' and 'expired' respectively for now.
       let updatedStatus: string
-      if (sub.status === 'trialing') {
-        // Look up the membership's level to check trial_limit
-        const subPriceId = sub.items?.data?.[0]?.price?.id
-        let hasLegitTrial = false
-        if (subPriceId) {
-          const { data: lvl } = await supabase
-            .from('membership_levels')
-            .select('trial_limit')
-            .eq('stripe_price_id', subPriceId)
-            .single()
-          hasLegitTrial = lvl ? (lvl.trial_limit ?? 0) > 0 : false
-        }
-        updatedStatus = hasLegitTrial ? 'trialing' : 'active'
-      } else {
-        switch (sub.status) {
-          case 'active':
-            updatedStatus = sub.cancel_at_period_end ? 'cancelled' : 'active'; break
-          case 'past_due':
-            updatedStatus = 'past_due'; break
-          case 'canceled':
-            updatedStatus = 'cancelled'; break
-          default:
-            updatedStatus = 'expired'; break
-        }
+      switch (sub.status) {
+        case 'active':
+          updatedStatus = sub.cancel_at_period_end ? 'cancelled' : 'active'; break
+        case 'trialing':
+          updatedStatus = 'active'; break  // no real trial plans exist yet
+        case 'past_due':
+          updatedStatus = 'active'; break  // keep access while payment retries
+        case 'canceled':
+          updatedStatus = 'cancelled'; break
+        default:
+          updatedStatus = 'expired'; break
       }
 
       const periodEnd = sub.current_period_end

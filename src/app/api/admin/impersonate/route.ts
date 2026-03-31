@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     .from('user_memberships')
     .select('status')
     .eq('user_id', userId)
-    .in('status', ['active', 'trialing', 'past_due'])
+    .eq('status', 'active')
     .limit(1)
     .single()
   if (membership) redirectTo = '/productions'

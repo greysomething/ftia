@@ -33,9 +33,16 @@ export async function POST() {
       billing_email,
       membership_levels(name, trial_limit)
     `)
-    .eq('status', 'trialing')
+    .filter('status', 'eq', 'trialing')
 
   if (fetchError) {
+    // If 'trialing' doesn't exist as an enum value yet, there's nothing to fix
+    if (fetchError.code === '22P02') {
+      return NextResponse.json({
+        message: 'No trialing memberships found (enum value not yet added to database).',
+        totalTrialing: 0, fixed: 0, skipped: 0, results: [],
+      })
+    }
     return NextResponse.json({ error: fetchError.message }, { status: 500 })
   }
 

@@ -96,7 +96,7 @@ export async function requireMembership() {
     .from('user_memberships')
     .select('id, status, enddate, membership_levels(name)')
     .eq('user_id', user.id)
-    .in('status', ['active', 'trialing', 'past_due'])
+    .eq('status', 'active')
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -104,7 +104,7 @@ export async function requireMembership() {
   const m = membership as { id: number; status: string; enddate: string | null } | null
   const hasActive =
     m &&
-    ['active', 'trialing', 'past_due'].includes(m.status) &&
+    m.status === 'active' &&
     (!m.enddate || new Date(m.enddate) > new Date())
 
   if (!hasActive) {
@@ -193,7 +193,7 @@ export async function isMember(userId: string): Promise<boolean> {
       .from('user_memberships')
       .select('id')
       .eq('user_id', userId)
-      .in('status', ['active', 'trialing', 'past_due'])
+      .eq('status', 'active')
       .limit(1)
 
     return (data?.length ?? 0) > 0
@@ -225,7 +225,7 @@ export async function isMember(userId: string): Promise<boolean> {
     .from('user_memberships')
     .select('id')
     .eq('user_id', userId)
-    .in('status', ['active', 'trialing', 'past_due'])
+    .eq('status', 'active')
     .limit(1)
 
   return (data?.length ?? 0) > 0

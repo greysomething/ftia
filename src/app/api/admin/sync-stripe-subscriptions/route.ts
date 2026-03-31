@@ -241,29 +241,17 @@ export async function POST() {
       if (sub.status === 'active' && sub.cancel_at_period_end) {
         // User cancelled but still has access until period ends
         membershipStatus = 'cancelled'
-      } else if (sub.status === 'trialing') {
-        // Check if this "trial" is legitimate or a mislabeled paid subscription.
-        // Many subscriptions were set to "trialing" due to a legacy bug, but the
-        // user actually paid. We check: does this membership level have a real
-        // trial period configured (trial_limit > 0)? If not, it's a paid member
-        // that was incorrectly flagged — treat as 'active'.
-        const trialPriceId = sub.items?.data?.[0]?.price?.id
-        const matchedLevel = (levels ?? []).find((l: any) => l.stripe_price_id === trialPriceId)
-        const hasLegitTrial = matchedLevel && (matchedLevel as any).trial_limit > 0
-
-        if (hasLegitTrial) {
-          membershipStatus = 'trialing'
-        } else {
-          // No trial configured for this plan — user paid, treat as active
-          membershipStatus = 'active'
-          console.log(`[Stripe Sync] Correcting trialing→active for ${email} (plan has no trial configured)`)
-        }
       } else {
+        // Map Stripe status to valid database enum values.
+        // Note: 'trialing' and 'past_due' are not valid enum values in our DB,
+        // so we map them to 'active' (no real trial plans exist; past_due keeps access).
         switch (sub.status) {
           case 'active':
             membershipStatus = 'active'; break
+          case 'trialing':
+            membershipStatus = 'active'; break  // all "trials" are paid members
           case 'past_due':
-            membershipStatus = 'past_due'; break
+            membershipStatus = 'active'; break  // keep access during payment retries
           case 'canceled':
             membershipStatus = 'cancelled'; break
           default:
