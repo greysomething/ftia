@@ -53,17 +53,27 @@ export async function POST(req: NextRequest) {
   const Stripe = (await import('stripe')).default
   const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any })
 
-  // Fetch or create Stripe customer
+  // Fetch profile for name
   const { data: profile } = await admin
     .from('user_profiles')
-    .select('stripe_customer_id, first_name, last_name')
+    .select('first_name, last_name')
     .eq('id', user.id)
     .single()
 
-  let customerId = profile?.stripe_customer_id
-
   const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || undefined
   const description = fullName && user.email ? `${fullName} (${user.email})` : undefined
+
+  // Check for existing Stripe customer ID from memberships
+  const { data: existingMembership } = await admin
+    .from('user_memberships')
+    .select('stripe_customer_id')
+    .eq('user_id', user.id)
+    .not('stripe_customer_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  let customerId = existingMembership?.stripe_customer_id
 
   if (!customerId) {
     const customer = await stripe.customers.create({
@@ -73,11 +83,6 @@ export async function POST(req: NextRequest) {
       metadata: { supabase_user_id: user.id },
     })
     customerId = customer.id
-
-    await admin
-      .from('user_profiles')
-      .update({ stripe_customer_id: customerId })
-      .eq('id', user.id)
   } else if (fullName) {
     // Update existing Stripe customer with current name/description
     await stripe.customers.update(customerId, {
