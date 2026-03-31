@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { formatDateTime } from '@/lib/utils'
 
@@ -63,6 +63,55 @@ function parseUA(ua: string | null): string {
   return ua.substring(0, 30) + '...'
 }
 
+/** Human-readable summary of metadata for the Event column */
+function metadataSummary(eventType: string, metadata: Record<string, unknown>): string | null {
+  if (!metadata || Object.keys(metadata).length === 0) return null
+
+  if (eventType === 'membership_changed') {
+    const action = metadata.action as string | undefined
+    const status = metadata.status as string | undefined
+    const stripeStatus = metadata.stripe_status as string | undefined
+    if (action === 'status_changed' && status) return `Status → ${status}${stripeStatus ? ` (Stripe: ${stripeStatus})` : ''}`
+    if (action === 'created') return 'New subscription'
+    if (action === 'deleted') return 'Subscription deleted'
+    if (action) return action.replace(/_/g, ' ')
+  }
+
+  if (eventType === 'email_sent') {
+    const template = metadata.template as string | undefined
+    const subject = metadata.subject as string | undefined
+    return template || subject || null
+  }
+
+  if (eventType === 'pdf_download') {
+    const title = metadata.title as string | undefined
+    return title || null
+  }
+
+  if (eventType === 'contact_form') {
+    const subject = metadata.subject as string | undefined
+    return subject || null
+  }
+
+  if (eventType === 'login_failed') {
+    const reason = metadata.reason as string | undefined
+    return reason || null
+  }
+
+  return null
+}
+
+/** Format metadata as readable key-value lines */
+function formatMetadata(metadata: Record<string, unknown>): string {
+  return Object.entries(metadata)
+    .map(([k, v]) => {
+      const label = k.replace(/_/g, ' ')
+      const value = typeof v === 'object' ? JSON.stringify(v) : String(v)
+      return `${label}: ${value}`
+    })
+    .join('\n')
+}
+
 export function LoginLogClient({
   logs,
   stats,
@@ -83,6 +132,7 @@ export function LoginLogClient({
   const [search, setSearch] = useState(filters.search)
   const [fromDate, setFromDate] = useState(filters.fromDate)
   const [toDate, setToDate] = useState(filters.toDate)
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const totalPages = Math.ceil(totalCount / perPage)
 
@@ -227,44 +277,62 @@ export function LoginLogClient({
             ) : (
               logs.map(log => {
                 const evt = EVENT_LABELS[log.event_type] ?? { label: log.event_type, color: 'bg-gray-100 text-gray-600' }
+                const summary = metadataSummary(log.event_type, log.metadata)
+                const hasMetadata = log.metadata && Object.keys(log.metadata).length > 0
+                const isExpanded = expandedRow === log.id
                 return (
-                  <tr key={log.id} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${evt.color}`}>
-                        {evt.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {log.user_id ? (
-                        <a href={`/admin/users/${log.user_id}`} className="text-primary hover:underline">
-                          {log.email ?? '—'}
-                        </a>
-                      ) : (
-                        <span className="text-gray-500">{log.email ?? '—'}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                      {log.ip_address ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">
-                      {formatLocation(log)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {parseUA(log.user_agent)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap" title={formatDateTime(log.created_at)}>
-                      {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
-                    </td>
-                    <td className="px-4 py-3">
-                      {log.metadata && Object.keys(log.metadata).length > 0 && (
-                        <span title={JSON.stringify(log.metadata, null, 2)} className="cursor-help text-gray-400">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+                  <Fragment key={log.id}>
+                    <tr className="hover:bg-gray-50/50">
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${evt.color}`}>
+                          {evt.label}
                         </span>
-                      )}
-                    </td>
-                  </tr>
+                        {summary && (
+                          <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">{summary}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {log.user_id ? (
+                          <a href={`/admin/users/${log.user_id}`} className="text-primary hover:underline">
+                            {log.email ?? '—'}
+                          </a>
+                        ) : (
+                          <span className="text-gray-500">{log.email ?? '—'}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                        {log.ip_address ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">
+                        {formatLocation(log)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        {parseUA(log.user_agent)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap" title={formatDateTime(log.created_at)}>
+                        {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
+                      </td>
+                      <td className="px-4 py-3">
+                        {hasMetadata && (
+                          <button
+                            onClick={() => setExpandedRow(isExpanded ? null : log.id)}
+                            className={`text-gray-400 hover:text-gray-600 transition-colors ${isExpanded ? 'text-gray-600' : ''}`}
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded && hasMetadata && (
+                      <tr className="bg-gray-50">
+                        <td colSpan={7} className="px-4 py-3">
+                          <pre className="text-xs text-gray-600 whitespace-pre-wrap font-mono">{formatMetadata(log.metadata)}</pre>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 )
               })
             )}
