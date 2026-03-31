@@ -62,26 +62,42 @@ export async function getProductions({
     }
   }
 
-  // For location filtering, we still need to collect IDs (no direct join filter possible)
-  // but locations are typically fewer than types/statuses
+  // For location filtering, collect matching production IDs.
+  // We avoid .or() because location values can contain commas (e.g. "Vancouver, Canada")
+  // which break PostgREST's .or() parser.
   let locationIds: number[] | null = null
   if (locationFilter) {
-    const allLocLinks: number[] = []
-    let lPage = 0
-    while (true) {
-      let locQuery = supabase.from('production_locations').select('production_id')
-      if (['United States', 'Canada', 'United Kingdom', 'France', 'Germany', 'Australia', 'Mexico'].includes(locationFilter)) {
-        locQuery = locQuery.or(`country.eq.${locationFilter},location.ilike.%${locationFilter}%`)
-      } else {
-        locQuery = locQuery.or(`location.eq.${locationFilter},location.ilike.${locationFilter}%`)
+    const idSet = new Set<number>()
+
+    async function collectIds(filterFn: (q: any) => any) {
+      let lPage = 0
+      while (true) {
+        const q = filterFn(supabase.from('production_locations').select('production_id'))
+        const { data } = await q.range(lPage * 1000, lPage * 1000 + 999)
+        if (!data || data.length === 0) break
+        data.forEach((r: any) => idSet.add(r.production_id))
+        if (data.length < 1000) break
+        lPage++
       }
-      const { data: locLinks } = await locQuery.range(lPage * 1000, lPage * 1000 + 999)
-      if (!locLinks || locLinks.length === 0) break
-      allLocLinks.push(...locLinks.map(l => l.production_id))
-      if (locLinks.length < 1000) break
-      lPage++
     }
-    locationIds = allLocLinks
+
+    const isCountry = ['United States', 'Canada', 'United Kingdom', 'France', 'Germany', 'Australia', 'Mexico'].includes(locationFilter)
+
+    if (isCountry) {
+      // Match by country field OR location containing country name
+      await Promise.all([
+        collectIds(q => q.eq('country', locationFilter)),
+        collectIds(q => q.ilike('location', `%${locationFilter}%`)),
+      ])
+    } else {
+      // Match exact location or location starting with the filter value
+      await Promise.all([
+        collectIds(q => q.eq('location', locationFilter)),
+        collectIds(q => q.ilike('location', `${locationFilter}%`)),
+      ])
+    }
+
+    locationIds = Array.from(idSet)
     if (locationIds.length === 0) {
       return { productions: [], total: 0, page, perPage }
     }
