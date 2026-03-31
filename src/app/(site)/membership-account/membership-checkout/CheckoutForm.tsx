@@ -28,8 +28,8 @@ export function CheckoutForm({ level, userEmail }: Props) {
       } else {
         setError(data.error ?? 'Unable to start checkout. Please try again.')
       }
-    } catch {
-      setError('Network error. Please try again.')
+    } catch (err: any) {
+      setError(err?.message ?? 'Network error. Please try again.')
     } finally {
       setLoading(false)
     }

@@ -3,6 +3,7 @@ import { createRawClient, createAdminClient } from '@/lib/supabase/server'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
 
 export async function POST(req: NextRequest) {
+  try {
   // Use raw client for auth (createClient may return admin client during impersonation)
   const supabase = await createRawClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -129,4 +130,12 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json({ url: session.url })
+
+  } catch (err: any) {
+    console.error('[create-checkout] Error:', err?.message ?? err)
+    return NextResponse.json(
+      { error: err?.message ?? 'An unexpected error occurred. Please try again.' },
+      { status: 500 }
+    )
+  }
 }
