@@ -39,6 +39,9 @@ const EVENT_LABELS: Record<string, { label: string; color: string }> = {
   register: { label: 'Registration', color: 'bg-blue-100 text-blue-800' },
   logout: { label: 'Logout', color: 'bg-gray-100 text-gray-600' },
   password_reset: { label: 'Password Reset', color: 'bg-yellow-100 text-yellow-800' },
+  password_reset_failed: { label: 'Reset Failed', color: 'bg-red-100 text-red-800' },
+  membership_changed: { label: 'Membership', color: 'bg-orange-100 text-orange-800' },
+  email_sent: { label: 'Email Sent', color: 'bg-sky-100 text-sky-800' },
   pdf_download: { label: 'PDF Download', color: 'bg-purple-100 text-purple-800' },
   profile_update: { label: 'Profile Update', color: 'bg-indigo-100 text-indigo-800' },
   contact_form: { label: 'Contact Form', color: 'bg-teal-100 text-teal-800' },
@@ -140,7 +143,7 @@ export function LoginLogClient({
           <div className="flex-1 min-w-[200px]">
             <label className="form-label">Event Type</label>
             <div className="flex flex-wrap gap-1">
-              {['all', 'login', 'login_failed', 'logout', 'register', 'password_reset', 'pdf_download', 'profile_update', 'contact_form'].map(type => (
+              {['all', 'login', 'login_failed', 'logout', 'register', 'password_reset', 'membership_changed', 'email_sent', 'pdf_download', 'profile_update', 'contact_form'].map(type => (
                 <button
                   key={type}
                   onClick={() => router.push(buildUrl({ type, page: '1' }))}

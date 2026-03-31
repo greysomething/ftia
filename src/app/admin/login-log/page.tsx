@@ -29,7 +29,23 @@ export default async function AdminLoginLogPage({
     query = query.eq('event_type', eventType)
   }
   if (search) {
-    query = query.or(`email.ilike.%${search}%,ip_address::text.ilike.%${search}%`)
+    // Search by email, IP, or look up user_id from matching profiles
+    // First, find any user_ids that match the search email
+    const { data: matchingProfiles } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .ilike('email', `%${search}%`)
+      .limit(50)
+
+    const userIds = matchingProfiles?.map((p: any) => p.id) ?? []
+
+    if (userIds.length > 0) {
+      // Search by email OR ip OR user_id (for events logged without email)
+      const userIdFilters = userIds.map((id: string) => `user_id.eq.${id}`).join(',')
+      query = query.or(`email.ilike.%${search}%,ip_address::text.ilike.%${search}%,${userIdFilters}`)
+    } else {
+      query = query.or(`email.ilike.%${search}%,ip_address::text.ilike.%${search}%`)
+    }
   }
   if (fromDate) {
     query = query.gte('created_at', fromDate + 'T00:00:00')

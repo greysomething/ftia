@@ -46,9 +46,21 @@ export async function logActivity(opts: LogActivityOptions): Promise<void> {
 
     const supabase = createAdminClient()
 
+    // If we have a userId but no email, look it up so the activity log
+    // is searchable by email even for server-side events (webhooks, etc.)
+    let email = opts.email ?? null
+    if (!email && opts.userId) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('email')
+        .eq('id', opts.userId)
+        .single()
+      email = (profile as any)?.email ?? null
+    }
+
     await supabase.from('activity_log').insert({
       user_id: opts.userId ?? null,
-      email: opts.email ?? null,
+      email,
       event_type: opts.eventType,
       ip_address: ip,
       user_agent: userAgent,
