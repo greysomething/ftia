@@ -42,9 +42,9 @@ export default async function AdminLoginLogPage({
     if (userIds.length > 0) {
       // Search by email OR ip OR user_id (for events logged without email)
       const userIdFilters = userIds.map((id: string) => `user_id.eq.${id}`).join(',')
-      query = query.or(`email.ilike.%${search}%,ip_address::text.ilike.%${search}%,${userIdFilters}`)
+      query = query.or(`email.ilike.%${search}%,ip_address.ilike.%${search}%,${userIdFilters}`)
     } else {
-      query = query.or(`email.ilike.%${search}%,ip_address::text.ilike.%${search}%`)
+      query = query.or(`email.ilike.%${search}%,ip_address.ilike.%${search}%`)
     }
   }
   if (fromDate) {
