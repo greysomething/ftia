@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import { getUser } from '@/lib/auth'
 import { getActiveStripeKeys } from '@/lib/stripe-settings'
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }
 
-  // Get Stripe customer ID from membership
+  // Get Stripe customer ID from membership (use admin client to bypass RLS during impersonation)
+  const supabase = createAdminClient()
   const { data: membership } = await supabase
     .from('user_memberships')
     .select('stripe_customer_id')
