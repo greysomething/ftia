@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import { createAdminClient } from '@/lib/supabase/server'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -18,16 +19,30 @@ export async function POST(request: Request) {
       )
     }
 
+    const firstName = name.split(' ')[0]
+    const lastName = name.split(' ').slice(1).join(' ') || undefined
+
     // Add contact to Resend audience (mailing list)
     if (AUDIENCE_ID) {
       await resend.contacts.create({
         audienceId: AUDIENCE_ID,
         email,
-        firstName: name.split(' ')[0],
-        lastName: name.split(' ').slice(1).join(' ') || undefined,
+        firstName,
+        lastName,
         unsubscribed: false,
       })
     }
+
+    // Also save to Supabase for fast digest queries
+    const supabase = createAdminClient()
+    await supabase.from('newsletter_subscribers').upsert({
+      email: email.toLowerCase(),
+      first_name: firstName || null,
+      last_name: lastName || null,
+      unsubscribed: false,
+      source: 'website',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'email' }).catch(() => {})
 
     // Also send a welcome / notification email
     await resend.emails.send({

@@ -92,8 +92,16 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // 4. Add user to the Resend newsletter audience
+    // 4. Add user to the Resend newsletter audience + local subscribers table
     void addToNewsletter(email, firstName, lastName ?? '')
+    void supabase.from('newsletter_subscribers').upsert({
+      email: email.toLowerCase(),
+      first_name: firstName || null,
+      last_name: lastName || null,
+      unsubscribed: false,
+      source: 'register',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'email' }).catch(() => {})
 
     // 5. Log registration event
     void logActivity({

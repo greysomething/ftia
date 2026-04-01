@@ -261,74 +261,35 @@ export async function POST(req: NextRequest) {
   const recipientEmails = new Set<string>()
   const emailToName = new Map<string, string>()
 
-  // Use env vars for audience IDs (same as audience-counts endpoint)
-  const AUDIENCE_IDS: Record<string, string> = {
-    newsletter: process.env.RESEND_AUDIENCE_ID ?? '',
-    active_members: process.env.RESEND_AUDIENCE_MEMBERS_ID ?? '',
-    past_members: process.env.RESEND_AUDIENCE_PAST_MEMBERS_ID ?? '',
-  }
-
   const resendApiKey = process.env.RESEND_API_KEY!
 
-  async function fetchResendAudience(audienceId: string) {
-    try {
-      let hasMore = true
-      let afterCursor: string | undefined
-      let pageCount = 0
-
-      while (hasMore) {
-        const url = new URL(`https://api.resend.com/audiences/${audienceId}/contacts`)
-        url.searchParams.set('limit', '100')
-        if (afterCursor) url.searchParams.set('after', afterCursor)
-
-        const res = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${resendApiKey}` },
-        })
-
-        if (!res.ok) {
-          console.error(`[send-weekly-digest] Resend API error: ${res.status} ${res.statusText}`)
-          break
-        }
-
-        const data = await res.json()
-        const contacts = data.data ?? []
-        pageCount++
-
-        if (!Array.isArray(contacts) || contacts.length === 0) break
-
-        for (const contact of contacts) {
-          if (contact.email && !contact.unsubscribed) {
-            const normalizedEmail = contact.email.toLowerCase()
-            recipientEmails.add(normalizedEmail)
-            if (contact.first_name) emailToName.set(normalizedEmail, contact.first_name)
-          }
-        }
-
-        hasMore = data.has_more === true
-        if (hasMore && contacts.length > 0) {
-          afterCursor = contacts[contacts.length - 1].id
-        } else {
-          hasMore = false
+  // Fetch subscribers from Supabase (fast, local query instead of paginating Resend API)
+  async function fetchSubscribersFromSupabase() {
+    let page = 0
+    const PAGE_SIZE = 1000
+    while (true) {
+      const { data } = await supabase
+        .from('newsletter_subscribers')
+        .select('email, first_name')
+        .eq('unsubscribed', false)
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+      if (!data || data.length === 0) break
+      for (const row of data) {
+        if (row.email) {
+          recipientEmails.add(row.email.toLowerCase())
+          if (row.first_name) emailToName.set(row.email.toLowerCase(), row.first_name)
         }
       }
-    } catch (err) {
-      console.error(`[send-weekly-digest] Failed to fetch audience ${audienceId}:`, err)
+      if (data.length < PAGE_SIZE) break
+      page++
     }
   }
 
   // Helper: run the full send pipeline, calling emit() with progress events
   async function runSendPipeline(emit: (event: Record<string, any>) => void) {
-    emit({ phase: 'audience', message: `Fetching "${audience}" audience...` })
+    emit({ phase: 'audience', message: `Fetching "${audience}" subscribers...` })
 
-    if (audience === 'newsletter' || audience === 'all' || audience === 'all_subscribers') {
-      await fetchResendAudience(AUDIENCE_IDS.newsletter)
-    }
-    if (audience === 'active_members' || audience === 'active_and_past' || audience === 'all') {
-      await fetchResendAudience(AUDIENCE_IDS.active_members)
-    }
-    if (audience === 'past_members' || audience === 'active_and_past' || audience === 'all') {
-      await fetchResendAudience(AUDIENCE_IDS.past_members)
-    }
+    await fetchSubscribersFromSupabase()
 
     const totalFetchedFromAudience = recipientEmails.size
 
