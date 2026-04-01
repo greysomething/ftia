@@ -422,17 +422,21 @@ export async function POST(req: NextRequest) {
         failed += batch.length
         if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`)
 
-        // Log failures to email_logs
-        const failEntries = batch.map((email, idx) => ({
-          recipient: email,
-          subject: emailPayloads[idx].subject,
-          template_slug: 'weekly-digest',
-          status: 'failed',
-          resend_id: null,
-          error_message: batchError.message,
-          sent_at: new Date().toISOString(),
-        }))
-        await supabase.from('email_logs').insert(failEntries)
+        // Log failures to email_logs (catch to avoid double-counting in outer catch)
+        try {
+          const failEntries = batch.map((email, idx) => ({
+            recipient: email,
+            subject: emailPayloads[idx].subject,
+            template_slug: 'weekly-digest',
+            status: 'failed',
+            resend_id: null,
+            error_message: batchError.message,
+            sent_at: new Date().toISOString(),
+          }))
+          await supabase.from('email_logs').insert(failEntries)
+        } catch (logErr) {
+          console.error(`[send-weekly-digest] Failed to log email_logs for failed batch:`, logErr)
+        }
 
         // Log failures to activity_log
         const failActivityEntries = batch.map((email, idx) => ({
@@ -459,17 +463,21 @@ export async function POST(req: NextRequest) {
         const batchFailed = batch.length - results.length
         failed += batchFailed
 
-        // Log individual sends for per-recipient tracking
-        const logEntries = batch.map((email, idx) => ({
-          recipient: email,
-          subject: emailPayloads[idx].subject,
-          template_slug: 'weekly-digest',
-          status: idx < results.length ? 'sent' : 'failed',
-          resend_id: results[idx]?.id ?? null,
-          error_message: null,
-          sent_at: new Date().toISOString(),
-        }))
-        await supabase.from('email_logs').insert(logEntries)
+        // Log individual sends for per-recipient tracking (catch errors to avoid double-counting)
+        try {
+          const logEntries = batch.map((email, idx) => ({
+            recipient: email,
+            subject: emailPayloads[idx].subject,
+            template_slug: 'weekly-digest',
+            status: idx < results.length ? 'sent' : 'failed',
+            resend_id: results[idx]?.id ?? null,
+            error_message: null,
+            sent_at: new Date().toISOString(),
+          }))
+          await supabase.from('email_logs').insert(logEntries)
+        } catch (logErr) {
+          console.error(`[send-weekly-digest] Failed to log email_logs for batch:`, logErr)
+        }
 
         // Log to activity_log so digest sends show on user Activity Log pages
         const activityEntries = batch
