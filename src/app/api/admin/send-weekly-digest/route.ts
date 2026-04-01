@@ -152,6 +152,7 @@ export async function POST(req: NextRequest) {
   const isPreview = searchParams.get('preview') === 'true'
   const testEmail = searchParams.get('test')
   const isStream = searchParams.get('stream') === 'true'
+  const isDryRun = searchParams.get('dry_run') === 'true'
   const triggerType = searchParams.get('trigger') || (isCron ? 'auto' : 'manual')
 
   // 1. Get current week's Monday
@@ -387,9 +388,12 @@ export async function POST(req: NextRequest) {
       failed: 0,
     })
 
-    // Send emails in batches
-    const { Resend } = await import('resend')
-    const resend = new Resend(resendApiKey)
+    // Send emails in batches (skip Resend import for dry runs)
+    let resend: any = null
+    if (!isDryRun) {
+      const { Resend } = await import('resend')
+      resend = new Resend(resendApiKey)
+    }
 
     let sent = 0
     let failed = 0
@@ -400,6 +404,23 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < emails.length; i += BATCH_SIZE) {
       const batch = emails.slice(i, i + BATCH_SIZE)
       const batchNum = Math.floor(i / BATCH_SIZE) + 1
+
+      // Dry run: simulate batch without sending or logging
+      if (isDryRun) {
+        sent += batch.length
+        emit({
+          phase: 'batch',
+          batch: batchNum,
+          totalBatches,
+          sent,
+          failed: 0,
+          total: emails.length,
+          processed: Math.min(i + BATCH_SIZE, emails.length),
+          dryRun: true,
+        })
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        continue
+      }
 
       const emailPayloads = batch.map((email) => {
         const firstName = emailToName.get(email) || ''
@@ -519,27 +540,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Log summary
-    await supabase.from('email_logs').insert({
-      recipient: `bulk:${emails.length}`,
-      subject: rendered.subject,
-      template_slug: 'weekly-digest',
-      status: 'sent',
-      error_message: errors.length > 0 ? errors.join('; ') : null,
-      resend_id: JSON.stringify({
-        trigger: triggerType,
-        sent,
-        failed,
-        productionCount: prods.length,
-        weekMonday,
-        audience,
-      }),
-      sent_at: new Date().toISOString(),
-    })
+    // Skip logging for dry runs
+    if (!isDryRun) {
+      await supabase.from('email_logs').insert({
+        recipient: `bulk:${emails.length}`,
+        subject: rendered.subject,
+        template_slug: 'weekly-digest',
+        status: 'sent',
+        error_message: errors.length > 0 ? errors.join('; ') : null,
+        resend_id: JSON.stringify({
+          trigger: triggerType,
+          sent,
+          failed,
+          productionCount: prods.length,
+          weekMonday,
+          audience,
+        }),
+        sent_at: new Date().toISOString(),
+      })
+    }
 
+    const dryLabel = isDryRun ? '[DRY RUN] ' : ''
     const result = {
       success: true,
-      message: `Digest sent to ${sent} of ${emails.length} recipients (${failed} failed). ${totalFetchedFromAudience} in audience, ${alreadySent.size} already sent this week.`,
+      dryRun: isDryRun,
+      message: `${dryLabel}Digest ${isDryRun ? 'would be sent' : 'sent'} to ${sent} of ${emails.length} recipients (${failed} failed). ${totalFetchedFromAudience} in audience, ${alreadySent.size} already sent this week.`,
       stats: {
         totalRecipients: emails.length,
         sent,

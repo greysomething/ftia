@@ -13,6 +13,7 @@ interface ProgressState {
   processed?: number
   error?: string
   success?: boolean
+  dryRun?: boolean
   stats?: Record<string, any>
 }
 
@@ -22,6 +23,7 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info')
   const [showConfirm, setShowConfirm] = useState(false)
   const [progress, setProgress] = useState<ProgressState | null>(null)
+  const [isDryRun, setIsDryRun] = useState(false)
 
   const canSend = currentWeekCount >= 40
 
@@ -36,6 +38,7 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
     setLoading(true)
     setMessage(null)
     setProgress(null)
+    setIsDryRun(false)
     try {
       const res = await fetch(`/api/admin/send-weekly-digest?test=${encodeURIComponent(email)}`, {
         method: 'POST',
@@ -51,14 +54,17 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
     }
   }
 
-  const handleSendAll = useCallback(async () => {
+  const streamSend = useCallback(async (dryRun: boolean) => {
     setShowConfirm(false)
     setLoading(true)
     setMessage(null)
+    setIsDryRun(dryRun)
     setProgress({ phase: 'starting', message: 'Initializing...' })
 
+    const url = `/api/admin/send-weekly-digest?stream=true${dryRun ? '&dry_run=true' : ''}`
+
     try {
-      const res = await fetch('/api/admin/send-weekly-digest?stream=true', { method: 'POST' })
+      const res = await fetch(url, { method: 'POST' })
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({ error: 'Request failed' }))
@@ -114,7 +120,7 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
 
   return (
     <div className="admin-card p-4 mb-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="font-semibold text-gray-900 flex items-center gap-2">
             <svg className="w-5 h-5 text-[#3ea8c8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -146,11 +152,23 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
           >
             Send Test
           </button>
+          <button
+            onClick={() => streamSend(true)}
+            disabled={loading}
+            className="btn-outline text-sm py-1.5 px-3 flex items-center gap-1.5"
+            title="Simulate the full send flow without sending any emails"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Dry Run
+          </button>
           {showConfirm ? (
             <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
               <span className="text-sm text-red-700 font-medium">Send to all members?</span>
               <button
-                onClick={handleSendAll}
+                onClick={() => streamSend(false)}
                 disabled={loading}
                 className="text-sm bg-red-600 text-white px-3 py-1 rounded font-medium hover:bg-red-700"
               >
@@ -169,7 +187,7 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
               disabled={loading || !canSend}
               className="btn-primary text-sm py-1.5 px-4 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (
+              {loading && !isDryRun ? (
                 <>
                   <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -187,11 +205,22 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
 
       {/* Real-time progress panel */}
       {progress && loading && (
-        <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+        <div className={`mt-4 border rounded-lg overflow-hidden ${isDryRun ? 'border-amber-200' : 'border-gray-200'}`}>
+          {/* Dry run banner */}
+          {isDryRun && (
+            <div className="bg-amber-50 border-b border-amber-200 px-3 py-1.5 flex items-center gap-2 text-xs font-medium text-amber-700">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              DRY RUN — No emails will be sent
+            </div>
+          )}
+
           {/* Progress bar */}
           <div className="h-2 bg-gray-100">
             <div
-              className="h-full bg-gradient-to-r from-[#3ea8c8] to-[#2b7bb9] transition-all duration-300 ease-out"
+              className={`h-full transition-all duration-300 ease-out ${isDryRun ? 'bg-gradient-to-r from-amber-400 to-amber-500' : 'bg-gradient-to-r from-[#3ea8c8] to-[#2b7bb9]'}`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -200,51 +229,15 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
             {/* Phase status */}
             <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2 text-gray-700">
-                {progress.phase === 'audience' && (
-                  <>
-                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Fetching audience contacts...
-                  </>
-                )}
-                {progress.phase === 'dedup' && (
-                  <>
-                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    {progress.message}
-                  </>
-                )}
-                {progress.phase === 'sending' && (
-                  <>
-                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    {progress.message}
-                  </>
-                )}
-                {progress.phase === 'batch' && (
-                  <>
-                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Batch {progress.batch} of {progress.totalBatches}
-                  </>
-                )}
-                {progress.phase === 'starting' && (
-                  <>
-                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Initializing...
-                  </>
-                )}
+                <svg className={`w-4 h-4 animate-spin ${isDryRun ? 'text-amber-500' : 'text-[#3ea8c8]'}`} fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                {progress.phase === 'audience' && 'Fetching audience contacts...'}
+                {progress.phase === 'dedup' && progress.message}
+                {progress.phase === 'sending' && progress.message}
+                {progress.phase === 'batch' && `Batch ${progress.batch} of ${progress.totalBatches}`}
+                {progress.phase === 'starting' && 'Initializing...'}
               </div>
 
               {progress.total != null && progress.processed != null && (
@@ -262,7 +255,7 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    {progress.sent} sent
+                    {progress.sent} {isDryRun ? 'would send' : 'sent'}
                   </span>
                 )}
                 {progress.failed != null && progress.failed > 0 && (
