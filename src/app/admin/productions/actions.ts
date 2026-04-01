@@ -134,6 +134,7 @@ export async function saveProduction(prevState: any, formData: FormData) {
       const crew = JSON.parse(crewJson) as Array<{
         role_name: string; inline_name: string; crew_id?: number | null
         inline_phones?: string[]; inline_emails?: string[]; inline_linkedin?: string
+        inline_twitter?: string; inline_instagram?: string; inline_website?: string
       }>
       if (crew.length > 0) {
         await supabase.from('production_crew_roles').insert(
@@ -145,6 +146,9 @@ export async function saveProduction(prevState: any, formData: FormData) {
             inline_phones: c.inline_phones || [],
             inline_emails: c.inline_emails || [],
             inline_linkedin: c.inline_linkedin || null,
+            inline_twitter: c.inline_twitter || null,
+            inline_instagram: c.inline_instagram || null,
+            inline_website: c.inline_website || null,
             sort_order: i,
           }))
         )
@@ -160,7 +164,7 @@ export async function saveProduction(prevState: any, formData: FormData) {
       const companies = JSON.parse(companiesJson) as Array<{
         inline_name: string; inline_address?: string; company_id?: number | null
         inline_phones?: string[]; inline_faxes?: string[]; inline_emails?: string[]
-        inline_linkedin?: string
+        inline_linkedin?: string; inline_twitter?: string; inline_instagram?: string; inline_website?: string
       }>
       if (companies.length > 0) {
         await supabase.from('production_company_links').insert(
@@ -173,6 +177,9 @@ export async function saveProduction(prevState: any, formData: FormData) {
             inline_faxes: c.inline_faxes || [],
             inline_emails: c.inline_emails || [],
             inline_linkedin: c.inline_linkedin || null,
+            inline_twitter: c.inline_twitter || null,
+            inline_instagram: c.inline_instagram || null,
+            inline_website: c.inline_website || null,
             sort_order: i,
           }))
         )

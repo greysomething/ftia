@@ -21,6 +21,9 @@ interface CrewRow {
   inline_phones?: string[]
   inline_emails?: string[]
   inline_linkedin?: string
+  inline_twitter?: string
+  inline_instagram?: string
+  inline_website?: string
 }
 
 interface CompanyRow {
@@ -31,6 +34,9 @@ interface CompanyRow {
   inline_faxes?: string[]
   inline_emails?: string[]
   inline_linkedin?: string
+  inline_twitter?: string
+  inline_instagram?: string
+  inline_website?: string
 }
 
 interface MatchCandidate {
@@ -110,6 +116,9 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
       inline_phones: c.inline_phones ?? [],
       inline_emails: c.inline_emails ?? [],
       inline_linkedin: c.inline_linkedin ?? '',
+      inline_twitter: c.inline_twitter ?? '',
+      inline_instagram: c.inline_instagram ?? '',
+      inline_website: c.inline_website ?? '',
     }))
 
   const existingCompanies: CompanyRow[] = (production?.production_company_links ?? [])
@@ -122,6 +131,9 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
       inline_faxes: c.inline_faxes ?? [],
       inline_emails: c.inline_emails ?? [],
       inline_linkedin: c.inline_linkedin ?? '',
+      inline_twitter: c.inline_twitter ?? '',
+      inline_instagram: c.inline_instagram ?? '',
+      inline_website: c.inline_website ?? '',
     }))
 
   // State for repeatable sections
@@ -334,6 +346,86 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
   const getCrewMatchesFor = (name: string): MatchCandidate[] => {
     if (!name || dismissedCrewMatches.has(name)) return []
     return crewMatches[name] ?? []
+  }
+
+  // State for creating listings inline
+  const [creatingListing, setCreatingListing] = useState<Record<string, boolean>>({})
+
+  // Create a crew member listing from inline data
+  const createCrewListing = async (index: number) => {
+    const c = crew[index]
+    if (!c.inline_name) return
+    const key = `crew-${index}`
+    setCreatingListing(prev => ({ ...prev, [key]: true }))
+    try {
+      const res = await fetch('/api/admin/create-listing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'crew',
+          name: c.inline_name,
+          phones: c.inline_phones,
+          emails: c.inline_emails,
+          linkedin: c.inline_linkedin,
+          twitter: c.inline_twitter,
+          instagram: c.inline_instagram,
+          website: c.inline_website,
+          role_name: c.role_name,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      // Link the crew row to the newly created record
+      setCrew(prev => prev.map((cr, i) => i === index ? { ...cr, crew_id: data.id, inline_name: data.title } : cr))
+    } catch (err: any) {
+      alert(`Failed to create crew listing: ${err.message}`)
+    } finally {
+      setCreatingListing(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
+  // Create a company listing from inline data
+  const createCompanyListing = async (index: number) => {
+    const c = companies[index]
+    if (!c.inline_name) return
+    const key = `company-${index}`
+    setCreatingListing(prev => ({ ...prev, [key]: true }))
+    try {
+      const res = await fetch('/api/admin/create-listing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'company',
+          name: c.inline_name,
+          address: c.inline_address,
+          phones: c.inline_phones,
+          faxes: c.inline_faxes,
+          emails: c.inline_emails,
+          linkedin: c.inline_linkedin,
+          twitter: c.inline_twitter,
+          instagram: c.inline_instagram,
+          website: c.inline_website,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setCompanies(prev => prev.map((co, i) => i === index ? { ...co, company_id: data.id, inline_name: data.title } : co))
+    } catch (err: any) {
+      alert(`Failed to create company listing: ${err.message}`)
+    } finally {
+      setCreatingListing(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
+  // Track which crew/company rows have expanded social fields
+  const [expandedSocial, setExpandedSocial] = useState<Set<string>>(new Set())
+  const toggleSocial = (key: string) => {
+    setExpandedSocial(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   }
 
   return (
@@ -669,6 +761,54 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
                     className="form-input text-sm" placeholder="Comma-separated" />
                 </div>
               </div>
+
+              {/* Social media toggle */}
+              <div className="flex items-center gap-2 mt-1">
+                <button type="button" onClick={() => toggleSocial(`company-${i}`)}
+                  className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
+                  </svg>
+                  {expandedSocial.has(`company-${i}`) ? 'Hide' : 'Show'} Social & Web
+                </button>
+                {!isLinked && co.inline_name && (
+                  <button type="button" onClick={() => createCompanyListing(i)}
+                    disabled={creatingListing[`company-${i}`]}
+                    className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 ml-auto">
+                    {creatingListing[`company-${i}`] ? (
+                      <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
+                    ) : (
+                      <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {expandedSocial.has(`company-${i}`) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-gray-100 mt-1">
+                  <div>
+                    <label className="form-label text-xs">LinkedIn</label>
+                    <input value={co.inline_linkedin ?? ''} onChange={e => updateCompany(i, 'inline_linkedin', e.target.value)}
+                      className="form-input text-sm" placeholder="https://linkedin.com/company/..." />
+                  </div>
+                  <div>
+                    <label className="form-label text-xs">Twitter / X</label>
+                    <input value={co.inline_twitter ?? ''} onChange={e => updateCompany(i, 'inline_twitter', e.target.value)}
+                      className="form-input text-sm" placeholder="https://twitter.com/..." />
+                  </div>
+                  <div>
+                    <label className="form-label text-xs">Instagram</label>
+                    <input value={co.inline_instagram ?? ''} onChange={e => updateCompany(i, 'inline_instagram', e.target.value)}
+                      className="form-input text-sm" placeholder="https://instagram.com/..." />
+                  </div>
+                  <div>
+                    <label className="form-label text-xs">Website</label>
+                    <input value={co.inline_website ?? ''} onChange={e => updateCompany(i, 'inline_website', e.target.value)}
+                      className="form-input text-sm" placeholder="https://..." />
+                  </div>
+                </div>
+              )}
             </div>
             </DragHandleRow>
           )
@@ -746,6 +886,54 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
                       )}
                     </div>
                   </div>
+
+                  {/* Social / Create Listing row */}
+                  <div className="flex items-center gap-2 ml-1 mt-0.5">
+                    <button type="button" onClick={() => toggleSocial(`crew-${i}`)}
+                      className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
+                      </svg>
+                      {expandedSocial.has(`crew-${i}`) ? 'Hide' : 'Show'} Social & Web
+                    </button>
+                    {!isLinked && c.inline_name && (
+                      <button type="button" onClick={() => createCrewListing(i)}
+                        disabled={creatingListing[`crew-${i}`]}
+                        className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 ml-auto">
+                        {creatingListing[`crew-${i}`] ? (
+                          <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
+                        ) : (
+                          <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {expandedSocial.has(`crew-${i}`) && (
+                    <div className="ml-1 grid grid-cols-12 gap-3 pt-1 border-t border-gray-100 mt-0.5">
+                      <div className="col-span-3">
+                        <label className="form-label text-xs">LinkedIn</label>
+                        <input value={c.inline_linkedin ?? ''} onChange={e => updateCrew(i, 'inline_linkedin', e.target.value)}
+                          className="form-input text-sm" placeholder="linkedin.com/in/..." />
+                      </div>
+                      <div className="col-span-3">
+                        <label className="form-label text-xs">Twitter / X</label>
+                        <input value={c.inline_twitter ?? ''} onChange={e => updateCrew(i, 'inline_twitter', e.target.value)}
+                          className="form-input text-sm" placeholder="twitter.com/..." />
+                      </div>
+                      <div className="col-span-3">
+                        <label className="form-label text-xs">Instagram</label>
+                        <input value={c.inline_instagram ?? ''} onChange={e => updateCrew(i, 'inline_instagram', e.target.value)}
+                          className="form-input text-sm" placeholder="instagram.com/..." />
+                      </div>
+                      <div className="col-span-3">
+                        <label className="form-label text-xs">Website</label>
+                        <input value={c.inline_website ?? ''} onChange={e => updateCrew(i, 'inline_website', e.target.value)}
+                          className="form-input text-sm" placeholder="https://..." />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Crew match suggestions */}
                   {!isLinked && matches.length > 0 && (

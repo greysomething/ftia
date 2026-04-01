@@ -79,6 +79,34 @@ export async function POST() {
     }
   }
 
+  // Build amount → level mapping for fallback matching
+  // Group by billing_amount; prefer levels with stripe_price_id set (canonical plans)
+  const amountLevelMap: Record<number, number> = {}
+  const sortedLevels = [...(levels ?? [])].sort((a, b) => {
+    // Prefer levels with stripe_price_id (canonical), then lower ID (original)
+    if (a.stripe_price_id && !b.stripe_price_id) return -1
+    if (!a.stripe_price_id && b.stripe_price_id) return 1
+    return a.id - b.id
+  })
+  for (const l of sortedLevels) {
+    const amt = parseFloat(l.billing_amount)
+    if (amt > 0 && !amountLevelMap[amt]) {
+      amountLevelMap[amt] = l.id
+    }
+  }
+
+  /** Find best level_id for a payment amount, falling back to 3 */
+  function matchLevelByAmount(amountDollars: number): number {
+    if (amountDollars <= 0) return 3
+    // Exact match
+    if (amountLevelMap[amountDollars]) return amountLevelMap[amountDollars]
+    // Close match (within $1 tolerance for rounding)
+    for (const l of levels ?? []) {
+      if (Math.abs(parseFloat(l.billing_amount) - amountDollars) < 1) return l.id
+    }
+    return 3
+  }
+
   send({ phase: 'loading_users', detail: 'Loading auth users...' })
 
   // 2. Pre-load all auth users into an email→id map (paginated)
@@ -571,7 +599,19 @@ export async function POST() {
           const mSubPriceId = matchedSub.items?.data?.[0]?.price?.id
           invLevelId = mSubPriceId ? priceLevelMap[mSubPriceId] : undefined
         }
-        if (!invLevelId) invLevelId = 3 // Fallback for invoices without a matched price
+        // Fallback: look up the user's membership by subscription ID to get their actual level
+        if (!invLevelId && subId) {
+          const { data: subMembership } = await supabase
+            .from('user_memberships')
+            .select('level_id')
+            .eq('stripe_subscription_id', subId)
+            .limit(1)
+            .maybeSingle()
+          if (subMembership?.level_id) invLevelId = subMembership.level_id
+        }
+        // Final fallback: match by invoice amount
+        const invAmountDollars = inv.amount_paid ? (inv.amount_paid / 100) : 0
+        if (!invLevelId) invLevelId = matchLevelByAmount(invAmountDollars)
 
         // Extract card info from charge if available
         const charge = inv.charge as any
@@ -582,7 +622,7 @@ export async function POST() {
           user_id: userId,
           level_id: invLevelId,
           status: 'success',
-          total: inv.amount_paid ? (inv.amount_paid / 100) : 0,
+          total: invAmountDollars,
           subtotal: inv.subtotal ? (inv.subtotal / 100) : null,
           tax: inv.tax ? (inv.tax / 100) : null,
           gateway: 'stripe',
@@ -685,7 +725,19 @@ export async function POST() {
         // Try to match price/level from payment intent metadata or subscription
         const pi = typeof charge.payment_intent === 'object' ? charge.payment_intent : null
         const piLevelId = pi?.metadata?.level_id ? parseInt(pi.metadata.level_id, 10) : undefined
-        const chargeLevelId = piLevelId || 3 // Fallback
+        const chargeAmountDollars = charge.amount ? (charge.amount / 100) : 0
+        let chargeLevelId = piLevelId
+        // Fallback: look up user's membership by subscription to get actual level
+        if (!chargeLevelId && pi?.metadata?.subscription_id) {
+          const { data: subMem } = await supabase
+            .from('user_memberships')
+            .select('level_id')
+            .eq('stripe_subscription_id', pi.metadata.subscription_id)
+            .limit(1)
+            .maybeSingle()
+          if (subMem?.level_id) chargeLevelId = subMem.level_id
+        }
+        if (!chargeLevelId) chargeLevelId = matchLevelByAmount(chargeAmountDollars)
 
         const chargeCard = charge.payment_method_details?.card
 

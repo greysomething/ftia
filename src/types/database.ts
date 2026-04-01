@@ -219,6 +219,8 @@ export interface Company {
   emails: string[]
   linkedin: string | null
   twitter: string | null
+  instagram: string | null
+  website: string | null
   visibility: PostVisibility
   wp_author_id: number | null
   wp_created_at: string | null
@@ -431,6 +433,9 @@ export interface ProductionCompanyLink {
   inline_faxes: string[]
   inline_emails: string[]
   inline_linkedin: string | null
+  inline_twitter: string | null
+  inline_instagram: string | null
+  inline_website: string | null
   sort_order: number
 }
 
@@ -441,6 +446,9 @@ export interface ProductionCrewRole {
   role_name: string
   inline_name: string | null
   inline_linkedin: string | null
+  inline_twitter: string | null
+  inline_instagram: string | null
+  inline_website: string | null
   inline_phones: string[]
   inline_emails: string[]
   sort_order: number

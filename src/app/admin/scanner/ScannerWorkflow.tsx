@@ -20,11 +20,13 @@ interface LocationRow {
 interface CrewRow {
   role_name: string; inline_name: string; crew_id?: number | null
   inline_phones?: string[]; inline_emails?: string[]; inline_linkedin?: string
+  inline_twitter?: string; inline_instagram?: string; inline_website?: string
   confidence?: number; status?: string; source?: string; origin?: 'scan' | 'research'
 }
 interface CompanyRow {
   inline_name: string; inline_address?: string; company_id?: number | null
   inline_phones?: string[]; inline_faxes?: string[]; inline_emails?: string[]; inline_linkedin?: string
+  inline_twitter?: string; inline_instagram?: string; inline_website?: string
   confidence?: number; source?: string; origin?: 'scan' | 'research'
 }
 
@@ -135,6 +137,68 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   // Blog generation state
   const [generatingBlog, setGeneratingBlog] = useState(false)
   const [blogResult, setBlogResult] = useState<{ saved: boolean; blogPostId?: number; title?: string; error?: string } | null>(null)
+
+  // Create listing state
+  const [creatingListing, setCreatingListing] = useState<Record<string, boolean>>({})
+  const [expandedSocial, setExpandedSocial] = useState<Set<string>>(new Set())
+  const toggleSocial = (key: string) => {
+    setExpandedSocial(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const createCrewListing = async (index: number) => {
+    const c = crew[index]
+    if (!c.inline_name) return
+    const key = `crew-${index}`
+    setCreatingListing(prev => ({ ...prev, [key]: true }))
+    try {
+      const res = await fetch('/api/admin/create-listing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'crew', name: c.inline_name, phones: c.inline_phones, emails: c.inline_emails,
+          linkedin: c.inline_linkedin, twitter: c.inline_twitter, instagram: c.inline_instagram,
+          website: c.inline_website, role_name: c.role_name,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setCrew(prev => prev.map((cr, i) => i === index ? { ...cr, crew_id: data.id, inline_name: data.title } : cr))
+    } catch (err: any) {
+      alert(`Failed to create crew listing: ${err.message}`)
+    } finally {
+      setCreatingListing(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
+  const createCompanyListing = async (index: number) => {
+    const c = companies[index]
+    if (!c.inline_name) return
+    const key = `company-${index}`
+    setCreatingListing(prev => ({ ...prev, [key]: true }))
+    try {
+      const res = await fetch('/api/admin/create-listing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'company', name: c.inline_name, address: c.inline_address, phones: c.inline_phones,
+          faxes: c.inline_faxes, emails: c.inline_emails, linkedin: c.inline_linkedin,
+          twitter: c.inline_twitter, instagram: c.inline_instagram, website: c.inline_website,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setCompanies(prev => prev.map((co, i) => i === index ? { ...co, company_id: data.id, inline_name: data.title } : co))
+    } catch (err: any) {
+      alert(`Failed to create company listing: ${err.message}`)
+    } finally {
+      setCreatingListing(prev => ({ ...prev, [key]: false }))
+    }
+  }
 
   // ── Step 1: Upload & Extract ──
   const processFile = useCallback(async (file: File) => {
@@ -1478,6 +1542,41 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                           <OriginBadge origin={c.origin} confidence={c.confidence} status={c.status} />
                           <button type="button" onClick={() => removeCrewRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
                         </div>
+                        {/* Social & Create Listing */}
+                        <div className="flex items-center gap-2 ml-2 mt-0.5">
+                          <button type="button" onClick={() => toggleSocial(`crew-${i}`)}
+                            className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
+                            {expandedSocial.has(`crew-${i}`) ? 'Hide' : 'Social'}
+                          </button>
+                          {!c.crew_id && c.inline_name && (
+                            <button type="button" onClick={() => createCrewListing(i)}
+                              disabled={creatingListing[`crew-${i}`]}
+                              className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 ml-auto">
+                              {creatingListing[`crew-${i}`] ? (
+                                <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
+                              ) : (
+                                <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {expandedSocial.has(`crew-${i}`) && (
+                          <div className="ml-2 grid grid-cols-4 gap-2 pt-1 border-t border-gray-100 mt-0.5">
+                            <input placeholder="LinkedIn" value={c.inline_linkedin || ''} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], inline_linkedin: e.target.value }; setCrew(updated)
+                            }} className="form-input text-xs" />
+                            <input placeholder="Twitter / X" value={c.inline_twitter || ''} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], inline_twitter: e.target.value }; setCrew(updated)
+                            }} className="form-input text-xs" />
+                            <input placeholder="Instagram" value={c.inline_instagram || ''} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], inline_instagram: e.target.value }; setCrew(updated)
+                            }} className="form-input text-xs" />
+                            <input placeholder="Website" value={c.inline_website || ''} onChange={e => {
+                              const updated = [...crew]; updated[i] = { ...updated[i], inline_website: e.target.value }; setCrew(updated)
+                            }} className="form-input text-xs" />
+                          </div>
+                        )}
                         {/* DB match indicator */}
                         {c.crew_id ? (
                           <div className="flex items-center gap-2 ml-2 text-[11px]">
@@ -1549,6 +1648,41 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                           <OriginBadge origin={c.origin} confidence={c.confidence} />
                           <button type="button" onClick={() => removeCompanyRow(i)} className="text-red-400 hover:text-red-600 p-1 text-xs">&times;</button>
                         </div>
+                        {/* Social & Create Listing */}
+                        <div className="flex items-center gap-2 ml-2 mt-0.5">
+                          <button type="button" onClick={() => toggleSocial(`company-${i}`)}
+                            className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
+                            {expandedSocial.has(`company-${i}`) ? 'Hide' : 'Social'}
+                          </button>
+                          {!c.company_id && c.inline_name && (
+                            <button type="button" onClick={() => createCompanyListing(i)}
+                              disabled={creatingListing[`company-${i}`]}
+                              className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 ml-auto">
+                              {creatingListing[`company-${i}`] ? (
+                                <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
+                              ) : (
+                                <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {expandedSocial.has(`company-${i}`) && (
+                          <div className="ml-2 grid grid-cols-4 gap-2 pt-1 border-t border-gray-100 mt-0.5">
+                            <input placeholder="LinkedIn" value={c.inline_linkedin || ''} onChange={e => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], inline_linkedin: e.target.value }; setCompanies(updated)
+                            }} className="form-input text-xs" />
+                            <input placeholder="Twitter / X" value={c.inline_twitter || ''} onChange={e => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], inline_twitter: e.target.value }; setCompanies(updated)
+                            }} className="form-input text-xs" />
+                            <input placeholder="Instagram" value={c.inline_instagram || ''} onChange={e => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], inline_instagram: e.target.value }; setCompanies(updated)
+                            }} className="form-input text-xs" />
+                            <input placeholder="Website" value={c.inline_website || ''} onChange={e => {
+                              const updated = [...companies]; updated[i] = { ...updated[i], inline_website: e.target.value }; setCompanies(updated)
+                            }} className="form-input text-xs" />
+                          </div>
+                        )}
                         {/* DB match indicator */}
                         {c.company_id ? (
                           <div className="flex items-center gap-2 ml-2 text-[11px]">
