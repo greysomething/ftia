@@ -33,7 +33,16 @@ interface DuplicateMatch {
   similarity_score: number; is_same_season: boolean; season_info: string | null
 }
 
-type Step = 'upload' | 'extracting' | 'duplicates' | 'compare' | 'research' | 'review'
+type Step = 'upload' | 'extracting' | 'duplicates' | 'compare' | 'research' | 'review' | 'bulk-results'
+
+interface QueueItem {
+  id: string
+  file: File
+  preview: string
+  status: 'queued' | 'processing' | 'done' | 'error'
+  result?: any  // extracted production data
+  error?: string
+}
 
 interface ExistingProduction {
   id: number; title: string; slug: string; content: string; excerpt: string
@@ -74,6 +83,17 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Input mode state
+  const [inputMode, setInputMode] = useState<'image' | 'text'>('image')
+  const [pasteText, setPasteText] = useState('')
+
+  // Bulk queue state
+  const [queue, setQueue] = useState<QueueItem[]>([])
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [bulkCurrentIndex, setBulkCurrentIndex] = useState(0)
+  const [bulkResults, setBulkResults] = useState<any[]>([])
 
   // Data state
   const [scannedData, setScannedData] = useState<any>(null)
@@ -175,6 +195,134 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
       }
     }
     reader.readAsDataURL(file)
+  }, [typeOptions, statusOptions])
+
+  // ── Text extraction (no vision) ──
+  const processText = useCallback(async (text: string) => {
+    setError(null)
+    setStep('extracting')
+    try {
+      const res = await fetch('/api/admin/scan-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, type: 'production' }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Extraction failed')
+
+      const data = result.data
+      setScannedData(data)
+      populateFromScan(data)
+      matchEntities(data)
+
+      // Check duplicates
+      if (data.title) {
+        const dupRes = await fetch('/api/admin/check-production-duplicates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: data.title }),
+        })
+        const dupResult = await dupRes.json()
+        const matches = dupResult.matches ?? []
+        setDuplicates(matches)
+
+        if (matches.length > 0) {
+          setStep('duplicates')
+        } else {
+          setStep('research')
+        }
+      } else {
+        setStep('research')
+      }
+    } catch (err: any) {
+      setError(err.message || 'Text extraction failed')
+      setStep('upload')
+    }
+  }, [typeOptions, statusOptions])
+
+  // ── Bulk processing ──
+  const addToQueue = useCallback((files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
+      setError('Please upload image files')
+      return
+    }
+
+    const items: QueueItem[] = imageFiles.map(file => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      file,
+      preview: URL.createObjectURL(file),
+      status: 'queued' as const,
+    }))
+
+    setQueue(prev => [...prev, ...items])
+    setBulkMode(true)
+  }, [])
+
+  const removeFromQueue = useCallback((id: string) => {
+    setQueue(prev => {
+      const item = prev.find(q => q.id === id)
+      if (item) URL.revokeObjectURL(item.preview)
+      const remaining = prev.filter(q => q.id !== id)
+      if (remaining.length === 0) setBulkMode(false)
+      return remaining
+    })
+  }, [])
+
+  const processBulkQueue = useCallback(async () => {
+    setBulkProcessing(true)
+    setBulkCurrentIndex(0)
+    const results: any[] = []
+
+    for (let i = 0; i < queue.length; i++) {
+      setBulkCurrentIndex(i)
+      const item = queue[i]
+
+      setQueue(prev => prev.map((q, idx) =>
+        idx === i ? { ...q, status: 'processing' as const } : q
+      ))
+
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(item.file)
+        })
+
+        const res = await fetch('/api/admin/scan-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64, type: 'production' }),
+        })
+        const result = await res.json()
+        if (!res.ok) throw new Error(result.error || 'Scan failed')
+
+        const data = result.data
+        results.push(data)
+
+        setQueue(prev => prev.map((q, idx) =>
+          idx === i ? { ...q, status: 'done' as const, result: data } : q
+        ))
+      } catch (err: any) {
+        setQueue(prev => prev.map((q, idx) =>
+          idx === i ? { ...q, status: 'error' as const, error: err.message } : q
+        ))
+        results.push(null)
+      }
+    }
+
+    setBulkResults(results.filter(Boolean))
+    setBulkProcessing(false)
+    setStep('bulk-results')
+  }, [queue])
+
+  const loadBulkResult = useCallback((data: any) => {
+    setScannedData(data)
+    populateFromScan(data)
+    matchEntities(data)
+    setBulkMode(false)
+    setStep('review')
   }, [typeOptions, statusOptions])
 
   function populateFromScan(data: any) {
@@ -514,9 +662,13 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   // ── Handlers ──
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file) processFile(file)
-  }, [processFile])
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 1) {
+      addToQueue(files)
+    } else if (files.length === 1) {
+      processFile(files[0])
+    }
+  }, [processFile, addToQueue])
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     for (const item of e.clipboardData.items) {
@@ -541,6 +693,10 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     setExistingProduction(null); setFieldDiffs([]); setCrewDiffs({ added: [], acceptedAdded: [] })
     setCompanyDiffs({ added: [], acceptedAdded: [] }); setLocationDiffs({ added: [], acceptedAdded: [] })
     setUpdateMode(false); setBlogResult(null)
+    // Reset new state
+    setInputMode('image'); setPasteText('')
+    queue.forEach(q => URL.revokeObjectURL(q.preview))
+    setQueue([]); setBulkMode(false); setBulkProcessing(false); setBulkCurrentIndex(0); setBulkResults([])
   }
 
   const stepIdx = STEPS.findIndex(s => s.key === step)
@@ -587,25 +743,204 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
 
       {/* ═══ STEP 1: UPLOAD ═══ */}
       {step === 'upload' && (
-        <div className="admin-card border-2 border-dashed border-[#3ea8c8]/30 bg-[#3ea8c8]/5">
-          <div
-            className={`relative rounded-lg p-16 text-center transition-colors cursor-pointer ${
-              dragOver ? 'bg-[#3ea8c8]/10' : 'hover:bg-[#3ea8c8]/5'
-            }`}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f) }} />
-            <svg className="w-16 h-16 text-[#3ea8c8]/40 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-            <p className="text-lg font-semibold text-gray-700 mb-1">Drop a production listing screenshot</p>
-            <p className="text-sm text-gray-400">or click to browse — paste from clipboard with Ctrl+V</p>
+        <div className="space-y-4">
+          {/* Tab toggle */}
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+            <button
+              onClick={() => setInputMode('image')}
+              className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
+                inputMode === 'image'
+                  ? 'bg-white text-[#3ea8c8] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Screenshot
+            </button>
+            <button
+              onClick={() => setInputMode('text')}
+              className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
+                inputMode === 'text'
+                  ? 'bg-white text-[#3ea8c8] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Paste Text
+            </button>
           </div>
+
+          {/* Screenshot mode */}
+          {inputMode === 'image' && !bulkMode && (
+            <div className="admin-card border-2 border-dashed border-[#3ea8c8]/30 bg-[#3ea8c8]/5">
+              <div
+                className={`relative rounded-lg p-16 text-center transition-colors cursor-pointer ${
+                  dragOver ? 'bg-[#3ea8c8]/10' : 'hover:bg-[#3ea8c8]/5'
+                }`}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || [])
+                    if (files.length > 1) {
+                      addToQueue(files)
+                    } else if (files.length === 1) {
+                      processFile(files[0])
+                    }
+                  }} />
+                <svg className="w-16 h-16 text-[#3ea8c8]/40 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <p className="text-lg font-semibold text-gray-700 mb-1">Drop a production listing screenshot</p>
+                <p className="text-sm text-gray-400">or click to browse — paste from clipboard with Ctrl+V</p>
+                <p className="text-xs text-gray-300 mt-2">Drop multiple images to enter bulk mode</p>
+              </div>
+            </div>
+          )}
+
+          {/* Bulk queue */}
+          {inputMode === 'image' && bulkMode && (
+            <div className="admin-card">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-gray-900">
+                  Bulk Upload Queue ({queue.length} {queue.length === 1 ? 'image' : 'images'})
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="btn-outline text-xs py-1 px-3"
+                  >
+                    + Add More
+                  </button>
+                  <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      if (files.length > 0) addToQueue(files)
+                    }} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 mb-4">
+                {queue.map((item) => (
+                  <div key={item.id} className="relative group">
+                    <img
+                      src={item.preview}
+                      alt="Queued"
+                      className={`w-full h-20 object-cover rounded-lg border-2 ${
+                        item.status === 'processing' ? 'border-[#3ea8c8] animate-pulse' :
+                        item.status === 'done' ? 'border-green-400' :
+                        item.status === 'error' ? 'border-red-400' :
+                        'border-gray-200'
+                      }`}
+                    />
+                    {item.status === 'queued' && (
+                      <button
+                        onClick={() => removeFromQueue(item.id)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        &times;
+                      </button>
+                    )}
+                    {item.status === 'done' && (
+                      <div className="absolute inset-0 bg-green-500/20 rounded-lg flex items-center justify-center">
+                        <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                    {item.status === 'processing' && (
+                      <div className="absolute inset-0 bg-white/50 rounded-lg flex items-center justify-center">
+                        <svg className="w-5 h-5 text-[#3ea8c8] animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      </div>
+                    )}
+                    {item.status === 'error' && (
+                      <div className="absolute inset-0 bg-red-500/20 rounded-lg flex items-center justify-center">
+                        <span className="text-red-600 text-lg font-bold">!</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {bulkProcessing && (
+                <div className="mb-4 p-3 bg-[#3ea8c8]/5 border border-[#3ea8c8]/20 rounded-lg">
+                  <div className="flex items-center gap-2 text-[#3ea8c8] text-sm font-semibold">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Processing {bulkCurrentIndex + 1} of {queue.length}...
+                  </div>
+                  <div className="mt-2 w-full bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className="bg-[#3ea8c8] h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${((bulkCurrentIndex + 1) / queue.length) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={processBulkQueue}
+                  disabled={bulkProcessing || queue.length === 0}
+                  className="btn-primary"
+                >
+                  {bulkProcessing ? 'Processing...' : `Process All (${queue.length})`}
+                </button>
+                <button
+                  onClick={() => {
+                    queue.forEach(q => URL.revokeObjectURL(q.preview))
+                    setQueue([])
+                    setBulkMode(false)
+                  }}
+                  disabled={bulkProcessing}
+                  className="btn-outline text-sm"
+                >
+                  Clear Queue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Text paste mode */}
+          {inputMode === 'text' && (
+            <div className="admin-card">
+              <div className="space-y-3">
+                <div>
+                  <label className="form-label">Paste Production Listing Content</label>
+                  <textarea
+                    rows={12}
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    placeholder="Paste production listing content here... Copy text from Production Weekly, industry sites, or any listing source."
+                    className="form-textarea font-mono text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => processText(pasteText)}
+                    disabled={!pasteText.trim()}
+                    className="btn-primary"
+                  >
+                    Extract from Text
+                  </button>
+                  <button
+                    onClick={() => setPasteText('')}
+                    disabled={!pasteText}
+                    className="btn-outline text-sm"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -618,7 +953,9 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            <span className="text-lg font-semibold">AI is reading your screenshot...</span>
+            <span className="text-lg font-semibold">
+              {inputMode === 'text' ? 'AI is analyzing your text...' : 'AI is reading your screenshot...'}
+            </span>
           </div>
           <p className="text-sm text-gray-400">Extracting title, crew, companies, locations, and more</p>
         </div>
@@ -933,6 +1270,69 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                   Skip — Go to Review
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ BULK RESULTS ═══ */}
+      {step === 'bulk-results' && (
+        <div className="space-y-4">
+          <div className="admin-card">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Bulk Extraction Results</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {bulkResults.length} production{bulkResults.length !== 1 ? 's' : ''} extracted. Click any to review and save.
+                </p>
+              </div>
+              <button onClick={resetAll} className="btn-outline text-sm">Start Over</button>
+            </div>
+
+            {/* Error summary */}
+            {queue.filter(q => q.status === 'error').length > 0 && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {queue.filter(q => q.status === 'error').length} image{queue.filter(q => q.status === 'error').length !== 1 ? 's' : ''} failed to process.
+                {queue.filter(q => q.status === 'error').map(q => (
+                  <span key={q.id} className="block text-xs mt-1">{q.file.name}: {q.error}</span>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {bulkResults.map((data, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-[#3ea8c8]/40 hover:bg-[#3ea8c8]/5 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 truncate">{data.title || 'Untitled'}</p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                      {data.production_types?.length > 0 && (
+                        <span>{data.production_types.join(', ')}</span>
+                      )}
+                      {data.crew?.length > 0 && (
+                        <span>{data.crew.length} crew</span>
+                      )}
+                      {data.companies?.length > 0 && (
+                        <span>{data.companies.length} {data.companies.length === 1 ? 'company' : 'companies'}</span>
+                      )}
+                      {data.locations?.length > 0 && (
+                        <span>{data.locations.length} {data.locations.length === 1 ? 'location' : 'locations'}</span>
+                      )}
+                    </div>
+                    {data.excerpt && (
+                      <p className="text-xs text-gray-400 mt-1 truncate">{data.excerpt}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => loadBulkResult(data)}
+                    className="btn-primary text-xs py-1.5 px-4 ml-4 flex-shrink-0"
+                  >
+                    Review &amp; Save
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>

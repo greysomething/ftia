@@ -1,0 +1,197 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/auth'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+// Prompts tailored per entity type — same structure as scan-image but for text input
+const PROMPTS: Record<string, string> = {
+  production: `You are an expert data extractor for film/TV production listings (like those in Production Weekly or similar industry tracking sheets). Analyze this text and extract ALL information into the exact JSON structure below. Be thorough — extract every crew member, every company, every detail visible.
+
+IMPORTANT FIELD MAPPING RULES:
+- "production_types": Match to EXACTLY one or more of these names: "Documentary", "Feature Film", "Film", "Musicals", "Pilot", "Play", "Series", "Short Film", "Student Film", "Theater", "TV", "TV Movie", "Video Game". Pick the best match(es).
+- "production_statuses": Match to EXACTLY one or more of these names: "Announced", "Casting", "Development", "Halted", "Post-Production", "Pre-production", "Production". Pick based on context clues in the listing.
+- "computed_status" (production phase): Must be one of: "in-pre-production", "in-production", "in-post-production", "completed". Infer from status/dates.
+- For dates, always use YYYY-MM-DD format when possible. If only month/year shown, use YYYY-MM-01.
+- For locations, focus on filling "city", "stage" (state/province abbreviation), and "country" fields. Leave "location" blank unless there is a specific place name (e.g. a studio name, venue, or address). Each location is a separate object.
+- For companies, extract ALL contact details: multiple phones, faxes, emails are common.
+- For addresses, format cleanly: spell out abbreviations (Bldg. → Building, Ste. → Suite), use ordinal numbers (Fourth Floor → 4th Floor), no comma before ZIP code (Los Angeles, CA 90064 not Los Angeles, CA, 90064), no trailing periods on abbreviations (Blvd not Blvd.).
+- For crew, extract phone numbers and emails if visible next to their names.
+- For crew roles, use the full role name without abbreviations. For example: "POC" → "Production Coordinator", "UPM" → "Unit Production Manager", "AD" → "Assistant Director", "DP" → "Director of Photography", "EP" → "Executive Producer", "LP" → "Line Producer", "CD" → "Casting Director", "PD" → "Production Designer".
+
+CONTENT/DESCRIPTION RULES:
+- The "content" field should ONLY contain information about the project itself: plot synopsis, storyline, what the show/film is about, where and when it's filming, and who is producing it.
+- Do NOT include metadata like "Type: Television", "Network: ABC", "Genres: Crime / Drama", "Status: Active Development", "Added: August 07, 2023", "Last Update: March 18, 2026" in the content field. That information belongs in the structured fields (production_types, production_statuses, etc.).
+- Do NOT copy posting dates, update dates, or source publication metadata into content.
+- The "excerpt" should be a clean one-line logline about the project.
+
+Return ONLY valid JSON with this structure (use null for missing fields, empty arrays [] if no items):
+{
+  "title": "Production Title - Format (Season XX)",
+  "excerpt": "One-line logline or short description",
+  "content": "Plot synopsis, filming details, and production notes about the project itself",
+  "production_types": ["Series"],
+  "production_statuses": ["Pre-production"],
+  "computed_status": "in-pre-production",
+  "production_date_start": "2026-07-01",
+  "production_date_end": null,
+  "production_date_startpost": null,
+  "production_date_endpost": null,
+  "locations": [
+    {
+      "location": "",
+      "city": "Los Angeles",
+      "stage": "CA",
+      "country": "United States"
+    }
+  ],
+  "companies": [
+    {
+      "inline_name": "Company Name",
+      "inline_address": "123 Main St, Suite 100",
+      "inline_phones": ["310-555-1234", "310-555-5678"],
+      "inline_faxes": ["310-555-9999"],
+      "inline_emails": ["info@company.com", "production@company.com"]
+    }
+  ],
+  "crew": [
+    {
+      "role_name": "Director",
+      "inline_name": "John Smith",
+      "inline_phones": ["310-555-0000"],
+      "inline_emails": ["john@email.com"]
+    },
+    {
+      "role_name": "Producer",
+      "inline_name": "Jane Doe",
+      "inline_phones": [],
+      "inline_emails": []
+    }
+  ]
+}`,
+
+  company: `You are an expert data extractor for entertainment industry company listings. Analyze this text and extract ALL company information.
+
+Return ONLY valid JSON:
+{
+  "title": "Company Name",
+  "address": "Full street address, City, State ZIP",
+  "phone": "phone number or null",
+  "fax": "fax number or null",
+  "email": "email@company.com or null",
+  "linkedin": "LinkedIn URL or null",
+  "twitter": "Twitter handle or null",
+  "content": "Description/notes about the company or null",
+  "staff": [
+    {
+      "name": "Person Name",
+      "position": "Their title/role"
+    }
+  ]
+}`,
+
+  crew: `You are an expert data extractor for entertainment industry crew/talent listings. Analyze this text and extract the person's information.
+
+Return ONLY valid JSON:
+{
+  "name": "Full Name",
+  "email": "email or null",
+  "phone": "phone or null",
+  "linkedin": "LinkedIn URL or null",
+  "twitter": "Twitter handle or null",
+  "roles": ["Role 1", "Role 2"],
+  "companies": ["Company affiliation 1"],
+  "bio": "Description or bio text or null"
+}`,
+
+  dnw_notice: `You are an expert data extractor for SAG-AFTRA "Do Not Work" notices. Analyze this text and extract the notice information.
+
+Return ONLY valid JSON:
+{
+  "production_title": "Name of the production",
+  "company_name": "Producer or company name (extract from text if mentioned)",
+  "reason": "The reason for the DNW notice (e.g. 'Failed to initiate signatory process', 'No SAG-AFTRA contract on file')",
+  "details": "Full text of the notice for reference",
+  "notice_date": "YYYY-MM-DD format date shown on the notice"
+}`,
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    // Verify admin access
+    await requireAdmin()
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const ANTHROPIC_API_KEY = process.env.SCANNER_ANTHROPIC_KEY
+  if (!ANTHROPIC_API_KEY) {
+    return NextResponse.json(
+      { error: 'SCANNER_ANTHROPIC_KEY is not configured. Add it to your .env.local file.' },
+      { status: 500 }
+    )
+  }
+
+  try {
+    const body = await req.json()
+    const { text, type } = body as { text: string; type: string }
+
+    if (!text || !type) {
+      return NextResponse.json({ error: 'Text and type are required.' }, { status: 400 })
+    }
+
+    const prompt = PROMPTS[type]
+    if (!prompt) {
+      return NextResponse.json({ error: `Unknown type: ${type}` }, { status: 400 })
+    }
+
+    // Call Claude API with text only (no vision)
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content: `${prompt}\n\nHere is the text to analyze:\n\n${text}`,
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      const errData = await response.text()
+      console.error('[scan-text] Claude API error:', errData)
+      return NextResponse.json(
+        { error: `Claude API error: ${response.status}` },
+        { status: 500 }
+      )
+    }
+
+    const data = await response.json()
+    const textContent = data.content?.find((c: any) => c.type === 'text')?.text ?? ''
+
+    // Extract JSON from the response (handle markdown code blocks)
+    let jsonStr = textContent
+    const jsonMatch = textContent.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1].trim()
+    }
+
+    const parsed = JSON.parse(jsonStr)
+
+    return NextResponse.json({ data: parsed })
+  } catch (err: any) {
+    console.error('[scan-text] Error:', err)
+    return NextResponse.json(
+      { error: err.message || 'Failed to process text.' },
+      { status: 500 }
+    )
+  }
+}
