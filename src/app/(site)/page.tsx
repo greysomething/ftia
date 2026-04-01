@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { getProductions, getBlogPosts } from '@/lib/queries'
 import { NetworkLogoTicker } from '@/components/NetworkLogoTicker'
+import { JoinButton } from '@/components/JoinButton'
 
 export const metadata: Metadata = {
   title: 'Production List | Film & Television Industry Alliance',
@@ -34,9 +35,9 @@ export default async function HomePage() {
             across North America. Updated daily by our editorial team.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/membership-plans" className="btn-accent text-lg px-8 py-3">
+            <JoinButton className="btn-accent text-lg px-8 py-3">
               Get Started
-            </Link>
+            </JoinButton>
             <Link
               href="/what-is-production-list"
               className="inline-flex items-center justify-center text-lg px-8 py-3 border border-white/40 text-white rounded-md hover:bg-white/10 transition-colors"
@@ -166,9 +167,9 @@ export default async function HomePage() {
               </div>
             ))}
           </div>
-          <Link href="/membership-plans" className="btn-accent text-lg px-8 py-3">
+          <JoinButton className="btn-accent text-lg px-8 py-3">
             Become a Member
-          </Link>
+          </JoinButton>
         </div>
       </section>
 
@@ -198,9 +199,9 @@ export default async function HomePage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/membership-plans" className="btn-primary text-lg px-8 py-3">
+              <JoinButton className="btn-primary text-lg px-8 py-3">
                 Sign Up Today
-              </Link>
+              </JoinButton>
             </div>
             <div className="relative">
               <div>
@@ -236,9 +237,9 @@ export default async function HomePage() {
               ))}
             </div>
             <div className="text-center mt-8">
-              <Link href="/membership-plans" className="btn-primary">
+              <JoinButton className="btn-primary">
                 Become a Member to Access All Listings
-              </Link>
+              </JoinButton>
             </div>
           </div>
         </section>
@@ -366,9 +367,9 @@ export default async function HomePage() {
           <p className="text-white/80 mb-8 max-w-xl mx-auto">
             Choose the plan that works for you. Cancel anytime. Immediate access to the full database.
           </p>
-          <Link href="/membership-plans" className="btn-accent text-lg px-8 py-3">
+          <JoinButton className="btn-accent text-lg px-8 py-3">
             See Membership Plans
-          </Link>
+          </JoinButton>
         </div>
       </section>
     </div>

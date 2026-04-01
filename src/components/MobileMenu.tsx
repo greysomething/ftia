@@ -62,13 +62,12 @@ export function MobileMenu({ user }: { user: User | null }) {
                   >
                     Login
                   </Link>
-                  <Link
-                    href="/membership-plans"
-                    onClick={() => setOpen(false)}
-                    className="px-6 py-3 text-accent font-semibold block"
+                  <button
+                    onClick={() => { setOpen(false); window.dispatchEvent(new CustomEvent('open-email-popup')) }}
+                    className="px-6 py-3 text-accent font-semibold block w-full text-left"
                   >
                     Join Now
-                  </Link>
+                  </button>
                 </>
               )}
             </div>

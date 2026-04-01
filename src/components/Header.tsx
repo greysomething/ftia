@@ -3,6 +3,7 @@ import Image from 'next/image'
 import { getUser, getUserProfile } from '@/lib/auth'
 import { MobileMenu } from './MobileMenu'
 import { UserNav } from './UserNav'
+import { JoinButton } from './JoinButton'
 
 export async function Header() {
   const [user, profile] = await Promise.all([getUser(), getUserProfile()])
@@ -62,9 +63,9 @@ export async function Header() {
                 <Link href="/login" className="text-sm text-white/90 hover:text-white">
                   Login
                 </Link>
-                <Link href="/membership-plans" className="btn-accent text-sm py-1.5 px-3">
+                <JoinButton className="btn-accent text-sm py-1.5 px-3">
                   Join Now
-                </Link>
+                </JoinButton>
               </>
             )}
             <MobileMenu user={user} />

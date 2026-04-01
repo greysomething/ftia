@@ -121,6 +121,15 @@ export function EmailPopup({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
     }
   }, [settings, shouldShow, showPopup])
 
+  // External trigger — other components can dispatch 'open-email-popup' to open
+  useEffect(() => {
+    function handleOpenEvent() {
+      setIsOpen(true)
+    }
+    window.addEventListener('open-email-popup', handleOpenEvent)
+    return () => window.removeEventListener('open-email-popup', handleOpenEvent)
+  }, [])
+
   // Exit intent trigger
   useEffect(() => {
     if (!settings) return
