@@ -417,6 +417,63 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
     }
   }
 
+  // Update an existing crew member listing
+  const updateCrewListing = async (index: number) => {
+    const c = crew[index]
+    if (!c.crew_id) return
+    const key = `crew-${index}`
+    setCreatingListing(prev => ({ ...prev, [key]: true }))
+    try {
+      const res = await fetch('/api/admin/create-listing', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'crew', id: c.crew_id, name: c.inline_name,
+          phones: c.inline_phones, emails: c.inline_emails,
+          linkedin: c.inline_linkedin, twitter: c.inline_twitter,
+          instagram: c.inline_instagram, website: c.inline_website,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setCreatingListing(prev => ({ ...prev, [`${key}-saved`]: true }))
+      setTimeout(() => setCreatingListing(prev => ({ ...prev, [`${key}-saved`]: false })), 2000)
+    } catch (err: any) {
+      alert(`Failed to update crew listing: ${err.message}`)
+    } finally {
+      setCreatingListing(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
+  // Update an existing company listing
+  const updateCompanyListing = async (index: number) => {
+    const c = companies[index]
+    if (!c.company_id) return
+    const key = `company-${index}`
+    setCreatingListing(prev => ({ ...prev, [key]: true }))
+    try {
+      const res = await fetch('/api/admin/create-listing', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'company', id: c.company_id, name: c.inline_name,
+          address: c.inline_address, phones: c.inline_phones,
+          faxes: c.inline_faxes, emails: c.inline_emails,
+          linkedin: c.inline_linkedin, twitter: c.inline_twitter,
+          instagram: c.inline_instagram, website: c.inline_website,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setCreatingListing(prev => ({ ...prev, [`${key}-saved`]: true }))
+      setTimeout(() => setCreatingListing(prev => ({ ...prev, [`${key}-saved`]: false })), 2000)
+    } catch (err: any) {
+      alert(`Failed to update company listing: ${err.message}`)
+    } finally {
+      setCreatingListing(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
   // Track which crew/company rows have expanded social fields
   const [expandedSocial, setExpandedSocial] = useState<Set<string>>(new Set())
   const toggleSocial = (key: string) => {
@@ -762,31 +819,49 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
                 </div>
               </div>
 
-              {/* Social media toggle */}
-              <div className="flex items-center gap-2 mt-1">
+              {/* Social media toggle + action buttons */}
+              <div className="flex items-center gap-2">
                 <button type="button" onClick={() => toggleSocial(`company-${i}`)}
                   className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
+                  <svg className={`w-3 h-3 transition-transform ${expandedSocial.has(`company-${i}`) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
-                  {expandedSocial.has(`company-${i}`) ? 'Hide' : 'Show'} Social & Web
+                  Social & Web
                 </button>
-                {!isLinked && co.inline_name && (
-                  <button type="button" onClick={() => createCompanyListing(i)}
-                    disabled={creatingListing[`company-${i}`]}
-                    className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 ml-auto">
-                    {creatingListing[`company-${i}`] ? (
-                      <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
-                    ) : (
-                      <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
-                    )}
-                  </button>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {creatingListing[`company-${i}-saved`] && (
+                    <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      Saved
+                    </span>
+                  )}
+                  {isLinked && co.inline_name && (
+                    <button type="button" onClick={() => updateCompanyListing(i)}
+                      disabled={creatingListing[`company-${i}`]}
+                      className="text-[11px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                      {creatingListing[`company-${i}`] ? (
+                        <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Saving...</>
+                      ) : (
+                        <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg> Update Listing</>
+                      )}
+                    </button>
+                  )}
+                  {!isLinked && co.inline_name && (
+                    <button type="button" onClick={() => createCompanyListing(i)}
+                      disabled={creatingListing[`company-${i}`]}
+                      className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
+                      {creatingListing[`company-${i}`] ? (
+                        <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
+                      ) : (
+                        <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {expandedSocial.has(`company-${i}`) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-gray-100 mt-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 mt-1 border-t border-dashed border-gray-200">
                   <div>
                     <label className="form-label text-xs">LinkedIn</label>
                     <input value={co.inline_linkedin ?? ''} onChange={e => updateCompany(i, 'inline_linkedin', e.target.value)}
@@ -887,31 +962,49 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
                     </div>
                   </div>
 
-                  {/* Social / Create Listing row */}
-                  <div className="flex items-center gap-2 ml-1 mt-0.5">
+                  {/* Social / Action buttons row */}
+                  <div className="flex items-center gap-2 ml-1 mt-0.5 mb-1 pb-1 border-b border-gray-100">
                     <button type="button" onClick={() => toggleSocial(`crew-${i}`)}
                       className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-1">
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
+                      <svg className={`w-3 h-3 transition-transform ${expandedSocial.has(`crew-${i}`) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
-                      {expandedSocial.has(`crew-${i}`) ? 'Hide' : 'Show'} Social & Web
+                      Social & Web
                     </button>
-                    {!isLinked && c.inline_name && (
-                      <button type="button" onClick={() => createCrewListing(i)}
-                        disabled={creatingListing[`crew-${i}`]}
-                        className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 ml-auto">
-                        {creatingListing[`crew-${i}`] ? (
-                          <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
-                        ) : (
-                          <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
-                        )}
-                      </button>
-                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      {creatingListing[`crew-${i}-saved`] && (
+                        <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          Saved
+                        </span>
+                      )}
+                      {isLinked && c.inline_name && (
+                        <button type="button" onClick={() => updateCrewListing(i)}
+                          disabled={creatingListing[`crew-${i}`]}
+                          className="text-[11px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                          {creatingListing[`crew-${i}`] ? (
+                            <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Saving...</>
+                          ) : (
+                            <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg> Update Listing</>
+                          )}
+                        </button>
+                      )}
+                      {!isLinked && c.inline_name && (
+                        <button type="button" onClick={() => createCrewListing(i)}
+                          disabled={creatingListing[`crew-${i}`]}
+                          className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
+                          {creatingListing[`crew-${i}`] ? (
+                            <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Creating...</>
+                          ) : (
+                            <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Create Listing</>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {expandedSocial.has(`crew-${i}`) && (
-                    <div className="ml-1 grid grid-cols-12 gap-3 pt-1 border-t border-gray-100 mt-0.5">
+                    <div className="ml-1 grid grid-cols-12 gap-3 pt-1 pb-2 mb-1 border-b border-dashed border-gray-200">
                       <div className="col-span-3">
                         <label className="form-label text-xs">LinkedIn</label>
                         <input value={c.inline_linkedin ?? ''} onChange={e => updateCrew(i, 'inline_linkedin', e.target.value)}

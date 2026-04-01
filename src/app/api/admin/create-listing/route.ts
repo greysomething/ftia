@@ -95,3 +95,56 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message || 'Unauthorized' }, { status: 401 })
   }
 }
+
+/**
+ * PATCH /api/admin/create-listing
+ * Updates an existing crew_member or company record with inline data.
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    await requireAdmin()
+    const supabase = createAdminClient()
+    const body = await req.json()
+    const { type, id } = body as { type: 'crew' | 'company'; id: number }
+
+    if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 })
+
+    if (type === 'crew') {
+      const { name, phones, emails, linkedin, twitter, instagram, website } = body
+      const updates: Record<string, any> = {}
+      if (name?.trim()) updates.name = name.trim()
+      if (phones) updates.phones = phones.filter(Boolean)
+      if (emails) updates.emails = emails.filter(Boolean)
+      if (linkedin !== undefined) updates.linkedin = linkedin?.trim() || null
+      if (twitter !== undefined) updates.twitter = twitter?.trim() || null
+      if (instagram !== undefined) updates.instagram = instagram?.trim() || null
+      if (website !== undefined) updates.website = website?.trim() || null
+
+      const { error } = await supabase.from('crew_members').update(updates).eq('id', id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ success: true, type: 'crew', id })
+    }
+
+    if (type === 'company') {
+      const { name, address, phones, faxes, emails, linkedin, twitter, instagram, website } = body
+      const updates: Record<string, any> = {}
+      if (name?.trim()) updates.title = name.trim()
+      if (address !== undefined) updates.addresses = address?.trim() ? [address.trim()] : []
+      if (phones) updates.phones = phones.filter(Boolean)
+      if (faxes) updates.faxes = faxes.filter(Boolean)
+      if (emails) updates.emails = emails.filter(Boolean)
+      if (linkedin !== undefined) updates.linkedin = linkedin?.trim() || null
+      if (twitter !== undefined) updates.twitter = twitter?.trim() || null
+      if (instagram !== undefined) updates.instagram = instagram?.trim() || null
+      if (website !== undefined) updates.website = website?.trim() || null
+
+      const { error } = await supabase.from('companies').update(updates).eq('id', id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ success: true, type: 'company', id })
+    }
+
+    return NextResponse.json({ error: 'Invalid type.' }, { status: 400 })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Unauthorized' }, { status: 401 })
+  }
+}
