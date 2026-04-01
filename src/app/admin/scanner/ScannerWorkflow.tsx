@@ -85,6 +85,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
   // Input mode state
   const [inputMode, setInputMode] = useState<'image' | 'text'>('image')
@@ -434,13 +435,54 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     setStep('bulk-results')
   }, [queue])
 
-  const loadBulkResult = useCallback((data: any) => {
+  // Track which bulk results have been saved (by index)
+  const [savedBulkIndices, setSavedBulkIndices] = useState<Set<number>>(new Set())
+  const [activeBulkIndex, setActiveBulkIndex] = useState<number | null>(null)
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkSaveError, setBulkSaveError] = useState<string | null>(null)
+
+  const loadBulkResult = useCallback((data: any, index: number) => {
     setScannedData(data)
     populateFromScan(data)
     matchEntities(data)
-    setBulkMode(false)
+    setActiveBulkIndex(index)
+    // Keep bulkMode true so we can return to bulk results
     setStep('review')
   }, [typeOptions, statusOptions])
+
+  const returnToBulkResults = useCallback(() => {
+    setStep('bulk-results')
+    setActiveBulkIndex(null)
+    setBulkSaveError(null)
+  }, [])
+
+  // Save production via fetch (no redirect) for bulk mode
+  const saveBulkProduction = useCallback(async (formEl: HTMLFormElement) => {
+    setBulkSaving(true)
+    setBulkSaveError(null)
+    try {
+      const formData = new FormData(formEl)
+      const res = await fetch('/api/admin/save-production', {
+        method: 'POST',
+        body: formData,
+      })
+      const result = await res.json()
+      if (!res.ok || result.error) {
+        setBulkSaveError(result.error || 'Failed to save production')
+        setBulkSaving(false)
+        return
+      }
+      // Mark as saved and return to bulk results
+      if (activeBulkIndex !== null) {
+        setSavedBulkIndices(prev => new Set([...prev, activeBulkIndex]))
+      }
+      setBulkSaving(false)
+      returnToBulkResults()
+    } catch (err: any) {
+      setBulkSaveError(err.message || 'Failed to save production')
+      setBulkSaving(false)
+    }
+  }, [activeBulkIndex, returnToBulkResults])
 
   function populateFromScan(data: any) {
     setTitle(data.title || '')
@@ -814,6 +856,7 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     setInputMode('image'); setPasteText('')
     queue.forEach(q => URL.revokeObjectURL(q.preview))
     setQueue([]); setBulkMode(false); setBulkProcessing(false); setBulkCurrentIndex(0); setBulkResults([])
+    setSavedBulkIndices(new Set()); setActiveBulkIndex(null); setBulkSaving(false); setBulkSaveError(null)
   }
 
   const stepIdx = STEPS.findIndex(s => s.key === step)
@@ -1417,49 +1460,83 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
             )}
 
             <div className="space-y-2">
-              {bulkResults.map((data, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-[#3ea8c8]/40 hover:bg-[#3ea8c8]/5 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">{data.title || 'Untitled'}</p>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                      {data.production_types?.length > 0 && (
-                        <span>{data.production_types.join(', ')}</span>
-                      )}
-                      {data.crew?.length > 0 && (
-                        <span>{data.crew.length} crew</span>
-                      )}
-                      {data.companies?.length > 0 && (
-                        <span>{data.companies.length} {data.companies.length === 1 ? 'company' : 'companies'}</span>
-                      )}
-                      {data.locations?.length > 0 && (
-                        <span>{data.locations.length} {data.locations.length === 1 ? 'location' : 'locations'}</span>
+              {bulkResults.map((data, i) => {
+                const isSaved = savedBulkIndices.has(i)
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-center justify-between p-4 bg-white border rounded-lg transition-colors ${
+                      isSaved
+                        ? 'border-green-300 bg-green-50/50'
+                        : 'border-gray-200 hover:border-[#3ea8c8]/40 hover:bg-[#3ea8c8]/5'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900 truncate">{data.title || 'Untitled'}</p>
+                        {isSaved && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-300 flex-shrink-0">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            Saved
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                        {data.production_types?.length > 0 && (
+                          <span>{data.production_types.join(', ')}</span>
+                        )}
+                        {data.crew?.length > 0 && (
+                          <span>{data.crew.length} crew</span>
+                        )}
+                        {data.companies?.length > 0 && (
+                          <span>{data.companies.length} {data.companies.length === 1 ? 'company' : 'companies'}</span>
+                        )}
+                        {data.locations?.length > 0 && (
+                          <span>{data.locations.length} {data.locations.length === 1 ? 'location' : 'locations'}</span>
+                        )}
+                      </div>
+                      {data.excerpt && (
+                        <p className="text-xs text-gray-400 mt-1 truncate">{data.excerpt}</p>
                       )}
                     </div>
-                    {data.excerpt && (
-                      <p className="text-xs text-gray-400 mt-1 truncate">{data.excerpt}</p>
-                    )}
+                    <button
+                      onClick={() => loadBulkResult(data, i)}
+                      className={`text-xs py-1.5 px-4 ml-4 flex-shrink-0 ${isSaved ? 'btn-outline' : 'btn-primary'}`}
+                    >
+                      {isSaved ? 'Review Again' : 'Review & Save'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => loadBulkResult(data)}
-                    className="btn-primary text-xs py-1.5 px-4 ml-4 flex-shrink-0"
-                  >
-                    Review &amp; Save
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
+            {savedBulkIndices.size > 0 && (
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800 flex items-center justify-between">
+                <span>{savedBulkIndices.size} of {bulkResults.length} productions saved.</span>
+                {savedBulkIndices.size === bulkResults.length && (
+                  <span className="font-medium">All done!</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ═══ STEP 5: REVIEW & CREATE ═══ */}
       {step === 'review' && (
-        <form action={formAction} className="space-y-5">
-          {formState?.error && (
+        <form
+          ref={formRef}
+          action={bulkMode ? undefined : formAction}
+          onSubmit={bulkMode ? (e) => {
+            e.preventDefault()
+            if (formRef.current) saveBulkProduction(formRef.current)
+          } : undefined}
+          className="space-y-5"
+        >
+          {formState?.error && !bulkMode && (
             <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">{formState.error}</div>
+          )}
+          {bulkSaveError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">{bulkSaveError}</div>
           )}
 
           {/* Hidden fields for saveProduction */}
@@ -1832,12 +1909,18 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                   </select>
                 </div>
                 <div className="flex gap-3 pt-2">
-                  <button type="submit" disabled={formPending} className="btn-primary flex-1">
-                    {formPending
-                      ? (updateMode ? 'Updating...' : 'Creating...')
-                      : (updateMode ? 'Update Production' : 'Create Production')}
+                  <button type="submit" disabled={formPending || bulkSaving} className="btn-primary flex-1">
+                    {(formPending || bulkSaving)
+                      ? (updateMode ? 'Updating...' : 'Saving...')
+                      : (updateMode ? 'Update Production' : bulkMode ? 'Save & Continue' : 'Create Production')}
                   </button>
                 </div>
+                {bulkMode && bulkResults.length > 0 && (
+                  <button type="button" onClick={returnToBulkResults} className="btn-outline w-full text-sm flex items-center justify-center gap-1">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                    Back to Bulk Results ({bulkResults.length - savedBulkIndices.size} remaining)
+                  </button>
+                )}
                 {/* Blog post generation */}
                 {blogResult?.saved ? (
                   <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -1908,7 +1991,9 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                   <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">{blogResult.error}</div>
                 )}
 
-                <button type="button" onClick={resetAll} className="btn-outline w-full text-sm">Start Over</button>
+                <button type="button" onClick={resetAll} className="btn-outline w-full text-sm">
+                  {bulkMode ? 'Discard All & Start Over' : 'Start Over'}
+                </button>
               </div>
 
               {/* Types */}
