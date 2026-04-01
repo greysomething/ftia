@@ -872,8 +872,9 @@ export async function addProductionToCurrentWeek(productionId: number) {
 }
 
 /**
- * Snapshot all currently active (published) productions into the current week.
- * Useful for an admin "Generate Weekly List" action or a scheduled cron job.
+ * Snapshot recently updated/created published productions into the current week.
+ * Only adds productions that were created or updated since the start of this week,
+ * not all 10,000+ published productions.
  */
 export async function snapshotCurrentWeek() {
   const supabase = createAdminClient()
@@ -885,12 +886,14 @@ export async function snapshotCurrentWeek() {
   const monday = new Date(now)
   monday.setDate(now.getDate() + diff)
   const mondayStr = monday.toISOString().split('T')[0]
+  const mondayISO = new Date(mondayStr + 'T00:00:00Z').toISOString()
 
-  // Get all published productions
+  // Get published productions created or updated this week
   const { data: productions } = await supabase
     .from('productions')
     .select('id')
     .eq('visibility', 'publish')
+    .or(`wp_updated_at.gte.${mondayISO},created_at.gte.${mondayISO}`)
 
   if (!productions?.length) return 0
 
@@ -911,6 +914,20 @@ export async function snapshotCurrentWeek() {
   }
 
   return inserted
+}
+
+/**
+ * Delete all entries for a specific week (clear a weekly list).
+ */
+export async function clearWeekEntries(weekMonday: string) {
+  const supabase = createAdminClient()
+  const { error, count } = await (supabase as any)
+    .from('production_week_entries')
+    .delete()
+    .eq('week_monday', weekMonday)
+    .select('*', { count: 'exact', head: true })
+  if (error) throw error
+  return count ?? 0
 }
 
 // ============================================================
