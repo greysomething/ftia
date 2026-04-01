@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useCallback } from 'react'
 
 /** Reorder an array by moving item from `from` index to `to` index */
 export function reorderArray<T>(arr: T[], from: number, to: number): T[] {
@@ -20,22 +20,41 @@ interface DragHandleRowProps {
 
 /**
  * Wraps a row with drag-and-drop reordering support.
- * Shows a grip handle on the left that initiates dragging.
+ * Only the grip handle initiates dragging — inputs/text inside remain selectable.
  */
 export function DragHandleRow({ index, listId, onReorder, children, className = '' }: DragHandleRowProps) {
   const rowRef = useRef<HTMLDivElement>(null)
+  const handleRef = useRef<HTMLDivElement>(null)
+  const isDragHandle = useRef(false)
+
+  // Track mousedown on the handle so we know if drag started from handle
+  const onHandleMouseDown = useCallback(() => {
+    isDragHandle.current = true
+  }, [])
+
+  // Reset on mouseup anywhere
+  const onMouseUp = useCallback(() => {
+    isDragHandle.current = false
+  }, [])
 
   return (
     <div
       ref={rowRef}
       draggable
+      onMouseUp={onMouseUp}
       onDragStart={e => {
+        // Only allow drag if it started from the handle
+        if (!isDragHandle.current) {
+          e.preventDefault()
+          return
+        }
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData(`text/drag-${listId}`, String(index))
         // Add drag styling after a frame so the drag image captures the original
         requestAnimationFrame(() => rowRef.current?.classList.add('opacity-40'))
       }}
       onDragEnd={() => {
+        isDragHandle.current = false
         rowRef.current?.classList.remove('opacity-40')
       }}
       onDragOver={e => {
@@ -66,9 +85,11 @@ export function DragHandleRow({ index, listId, onReorder, children, className = 
       }}
       className={`flex items-start gap-1 group transition-shadow rounded-lg ${className}`}
     >
-      {/* Drag handle */}
+      {/* Drag handle — only this element initiates drag */}
       <div
-        className="flex-shrink-0 cursor-grab active:cursor-grabbing pt-2.5 px-0.5 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity"
+        ref={handleRef}
+        onMouseDown={onHandleMouseDown}
+        className="flex-shrink-0 cursor-grab active:cursor-grabbing pt-2.5 px-0.5 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity select-none"
         title="Drag to reorder"
       >
         <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
