@@ -1,4 +1,4 @@
-export type PostVisibility = 'publish' | 'private' | 'draft' | 'password'
+export type PostVisibility = 'publish' | 'private' | 'draft' | 'password' | 'trash'
 export type MembershipStatus = 'active' | 'inactive' | 'cancelled' | 'expired' | 'pending' | 'token' | 'review' | 'suspended'
 export type MembershipPeriod = 'Day' | 'Week' | 'Month' | 'Year'
 export type ProductionPhase = 'in-pre-production' | 'in-production' | 'in-post-production' | 'completed'

@@ -80,6 +80,9 @@ export async function getAdminProductions({
     } else {
       query = query.eq('visibility', visibility)
     }
+  } else {
+    // "All" tab: exclude trashed items
+    query = query.neq('visibility', 'trash')
   }
 
   const { data, count, error } = await query
@@ -99,7 +102,7 @@ export async function getAdminProductionCounts() {
     { count: pendingCount },
     { count: trashCount },
   ] = await Promise.all([
-    supabase.from('productions').select('*', { count: 'exact', head: true }),
+    supabase.from('productions').select('*', { count: 'exact', head: true }).neq('visibility', 'trash'),
     supabase.from('productions').select('*', { count: 'exact', head: true }).eq('visibility', 'publish'),
     supabase.from('productions').select('*', { count: 'exact', head: true }).in('visibility', ['draft', 'private']),
     supabase.from('productions').select('*', { count: 'exact', head: true }).eq('visibility', 'pending'),
