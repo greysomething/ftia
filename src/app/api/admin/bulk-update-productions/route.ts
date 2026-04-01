@@ -118,16 +118,24 @@ export async function POST(req: NextRequest) {
           ePage++
         }
 
-        const candidates = allEligible.filter(p => !existingIds.has(p.id))
-        const today = new Date().toISOString().split('T')[0]
+        const notInWeek = allEligible.filter(p => !existingIds.has(p.id))
 
-        // Sort: future dates first, then no date, then past dates
+        // Only use productions with filming dates 30+ days in the future, or no dates set
+        const futureThreshold = new Date()
+        futureThreshold.setDate(futureThreshold.getDate() + 30)
+        const futureStr = futureThreshold.toISOString().split('T')[0]
+
+        const candidates = notInWeek.filter(p => {
+          const endDate = p.production_date_end ?? p.production_date_start
+          if (!p.production_date_start && !p.production_date_end) return true
+          return !!endDate && endDate >= futureStr
+        })
+
+        // Sort: productions with future dates first, then no-date
         candidates.sort((a, b) => {
-          const endA = a.production_date_end ?? a.production_date_start
-          const endB = b.production_date_end ?? b.production_date_start
-          const tierA = endA && endA >= today ? 1 : (!a.production_date_start ? 2 : 3)
-          const tierB = endB && endB >= today ? 1 : (!b.production_date_start ? 2 : 3)
-          if (tierA !== tierB) return tierA - tierB
+          const aHasDate = !!(a.production_date_start || a.production_date_end)
+          const bHasDate = !!(b.production_date_start || b.production_date_end)
+          if (aHasDate !== bHasDate) return aHasDate ? -1 : 1
           return (a.production_date_start ?? '').localeCompare(b.production_date_start ?? '')
         })
 

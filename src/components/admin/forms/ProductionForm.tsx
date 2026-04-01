@@ -474,6 +474,174 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
     }
   }
 
+  // AI Enrich state
+  const [enriching, setEnriching] = useState(false)
+  const [enrichResult, setEnrichResult] = useState<{ count: number; error?: string } | null>(null)
+
+  const handleEnrich = async () => {
+    // Get the current title from the form
+    const currentTitle = production?.title || scannedData?.title || ''
+    if (!currentTitle) {
+      setEnrichResult({ count: 0, error: 'Save or scan a title first before enriching.' })
+      return
+    }
+
+    setEnriching(true)
+    setEnrichResult(null)
+    try {
+      // Gather existing data as context for the AI
+      const existingData: any = {
+        title: currentTitle,
+        crew: crew.filter(c => c.inline_name).map(c => ({ role_name: c.role_name, inline_name: c.inline_name })),
+        companies: companies.filter(c => c.inline_name).map(c => ({ inline_name: c.inline_name })),
+        locations: locations.filter(l => l.city || l.location),
+      }
+
+      const res = await fetch('/api/admin/ai-research-production', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: currentTitle, existingData }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Research failed')
+
+      const data = result.data
+      let fieldsAdded = 0
+
+      // Merge synopsis/content if empty
+      if (data.synopsis) {
+        const excerptEl = formRef.current?.querySelector('[name="excerpt"]') as HTMLTextAreaElement | null
+        if (excerptEl && !excerptEl.value.trim()) {
+          excerptEl.value = data.synopsis
+          fieldsAdded++
+        }
+      }
+      if (data.additional_notes) {
+        const contentEl = formRef.current?.querySelector('[name="content"]') as HTMLTextAreaElement | null
+        if (contentEl && !contentEl.value.trim()) {
+          contentEl.value = data.additional_notes
+          fieldsAdded++
+        }
+      }
+
+      // Merge dates if empty
+      if (data.production_date_start) {
+        const dateEl = formRef.current?.querySelector('[name="production_date_start"]') as HTMLInputElement | null
+        if (dateEl && !dateEl.value) {
+          dateEl.value = data.production_date_start
+          fieldsAdded++
+        }
+      }
+      if (data.production_date_end) {
+        const dateEl = formRef.current?.querySelector('[name="production_date_end"]') as HTMLInputElement | null
+        if (dateEl && !dateEl.value) {
+          dateEl.value = data.production_date_end
+          fieldsAdded++
+        }
+      }
+
+      // Merge types
+      if (data.production_types?.length && selectedTypeIds.length === 0) {
+        const matchedIds: number[] = []
+        for (const typeName of data.production_types) {
+          const match = typeOptions.find(t => t.name.toLowerCase() === String(typeName).toLowerCase())
+          if (match) matchedIds.push(match.id)
+        }
+        if (matchedIds.length > 0) {
+          setSelectedTypeIds(matchedIds)
+          setPrimaryTypeId(matchedIds[0])
+          fieldsAdded++
+        }
+      }
+
+      // Merge statuses
+      if (data.production_statuses?.length && selectedStatusIds.length === 0) {
+        const matchedIds: number[] = []
+        for (const statusName of data.production_statuses) {
+          const match = statusOptions.find(s => s.name.toLowerCase() === String(statusName).toLowerCase())
+          if (match) matchedIds.push(match.id)
+        }
+        if (matchedIds.length > 0) {
+          setSelectedStatusIds(matchedIds)
+          setPrimaryStatusId(matchedIds[0])
+          fieldsAdded++
+        }
+      }
+
+      // Merge new locations (add any the AI found that we don't have)
+      if (data.locations?.length) {
+        const existingCities = new Set(locations.map(l => l.city.toLowerCase()).filter(Boolean))
+        const newLocs = data.locations
+          .filter((loc: any) => loc.city && !existingCities.has(loc.city.toLowerCase()))
+          .map((loc: any) => ({
+            location: loc.location || '', city: loc.city || '',
+            stage: loc.stage || '', country: loc.country || '',
+          }))
+        if (newLocs.length > 0) {
+          setLocations(prev => {
+            const cleaned = prev.filter(l => l.location || l.city)
+            return [...cleaned, ...newLocs]
+          })
+          fieldsAdded += newLocs.length
+        }
+      }
+
+      // Merge new crew (add any the AI found that we don't have)
+      if (data.crew?.length) {
+        const existingNames = new Set(crew.map(c => c.inline_name.toLowerCase()).filter(Boolean))
+        const newCrew = data.crew
+          .filter((c: any) => (c.inline_name || c.name) && !existingNames.has((c.inline_name || c.name).toLowerCase()))
+          .map((c: any) => ({
+            role_name: c.role_name || c.role || '',
+            inline_name: c.inline_name || c.name || '',
+            inline_phones: c.inline_phones || [],
+            inline_emails: c.inline_emails || [],
+            inline_linkedin: c.inline_linkedin || '',
+          }))
+        if (newCrew.length > 0) {
+          setCrew(prev => {
+            const cleaned = prev.filter(c => c.role_name || c.inline_name)
+            return [...cleaned, ...newCrew]
+          })
+          fieldsAdded += newCrew.length
+          // Run entity matching on the new crew
+          const crewNames = newCrew.map((c: CrewRow) => c.inline_name).filter(Boolean)
+          if (crewNames.length > 0) fetchMatches([], crewNames)
+        }
+      }
+
+      // Merge new companies
+      if (data.companies?.length) {
+        const existingNames = new Set(companies.map(c => c.inline_name.toLowerCase()).filter(Boolean))
+        const newCompanies = data.companies
+          .filter((c: any) => (c.inline_name || c.name) && !existingNames.has((c.inline_name || c.name).toLowerCase()))
+          .map((c: any) => ({
+            inline_name: c.inline_name || c.name || '',
+            inline_address: c.inline_address || '',
+            inline_phones: c.inline_phones || [],
+            inline_faxes: c.inline_faxes || [],
+            inline_emails: c.inline_emails || [],
+            inline_linkedin: c.inline_linkedin || '',
+          }))
+        if (newCompanies.length > 0) {
+          setCompanies(prev => {
+            const cleaned = prev.filter(c => c.inline_name)
+            return [...cleaned, ...newCompanies]
+          })
+          fieldsAdded += newCompanies.length
+          const companyNames = newCompanies.map((c: CompanyRow) => c.inline_name).filter(Boolean)
+          if (companyNames.length > 0) fetchMatches(companyNames, [])
+        }
+      }
+
+      setEnrichResult({ count: fieldsAdded })
+    } catch (err: any) {
+      setEnrichResult({ count: 0, error: err.message || 'Enrichment failed' })
+    } finally {
+      setEnriching(false)
+    }
+  }
+
   // Track which crew/company rows have expanded social fields
   const [expandedSocial, setExpandedSocial] = useState<Set<string>>(new Set())
   const toggleSocial = (key: string) => {
@@ -508,8 +676,57 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         </div>
       )}
 
-      {/* AI Scanner — available on both new and edit */}
-      <ImageScanner type="production" onScanComplete={handleScan} />
+      {/* AI Scanner & Enrich — available on both new and edit */}
+      <div className="flex flex-wrap items-center gap-3">
+        <ImageScanner type="production" onScanComplete={handleScan} />
+        <button
+          type="button"
+          onClick={handleEnrich}
+          disabled={enriching}
+          className="inline-flex items-center gap-2 text-sm font-medium bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {enriching ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Researching...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              Enrich with AI
+            </>
+          )}
+        </button>
+      </div>
+
+      {enrichResult && (
+        <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
+          enrichResult.error
+            ? 'bg-red-50 border border-red-200 text-red-700'
+            : 'bg-purple-50 border border-purple-200 text-purple-700'
+        }`}>
+          {enrichResult.error ? (
+            <>
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {enrichResult.error}
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              AI research added <strong>{enrichResult.count}</strong> new data point{enrichResult.count !== 1 ? 's' : ''}. Review and save.
+            </>
+          )}
+        </div>
+      )}
 
       {scannedData && (
         <div className="p-3 bg-[#3ea8c8]/10 border border-[#3ea8c8]/30 rounded-lg text-sm text-[#2a7a94] flex items-center gap-2">

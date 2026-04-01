@@ -110,25 +110,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 5. Sort candidates with multi-tier priority:
-  //    Tier 1: Productions with filming dates still in the future (most relevant)
-  //    Tier 2: Productions with no date set (could still be active)
-  //    Tier 3: Productions with past dates (least relevant)
-  //    Within each tier: oldest weekly list appearance first (recycle from earliest weeks)
-  const today = new Date().toISOString().split('T')[0]
+  // 5. Filter and sort candidates:
+  //    Only include productions with future dates (30+ days out) or no date set.
+  //    Exclude anything with a past filming date — stale supplements aren't useful.
+  const futureThreshold = new Date()
+  futureThreshold.setDate(futureThreshold.getDate() + 30)
+  const futureStr = futureThreshold.toISOString().split('T')[0]
 
-  function getTier(p: { production_date_start: string | null; production_date_end: string | null }): number {
+  function isEligibleSupplement(p: { production_date_start: string | null; production_date_end: string | null }): boolean {
     const endDate = p.production_date_end ?? p.production_date_start
-    if (endDate && endDate >= today) return 1  // Still in the future
-    if (!p.production_date_start && !p.production_date_end) return 2  // No date
-    return 3  // Past date
+    // No dates = eligible (could still be active)
+    if (!p.production_date_start && !p.production_date_end) return true
+    // Has dates: end/start must be at least 30 days in the future
+    return !!endDate && endDate >= futureStr
   }
 
-  const sorted = candidates.sort((a, b) => {
-    // Primary: tier (future dates first)
-    const tierDiff = getTier(a) - getTier(b)
-    if (tierDiff !== 0) return tierDiff
-    // Secondary: oldest weekly list appearance first
+  const eligibleCandidates = candidates.filter(isEligibleSupplement)
+
+  if (eligibleCandidates.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      added: 0,
+      message: 'No eligible productions found with future filming dates (30+ days out).',
+    })
+  }
+
+  const sorted = eligibleCandidates.sort((a, b) => {
+    // Primary: productions with dates first, then no-date
+    const aHasDate = !!(a.production_date_start || a.production_date_end)
+    const bHasDate = !!(b.production_date_start || b.production_date_end)
+    if (aHasDate !== bHasDate) return aHasDate ? -1 : 1
+    // Secondary: oldest weekly list appearance first (recycle from earliest weeks)
     const aWeek = oldestWeekMap[a.id] ?? '9999-99-99'
     const bWeek = oldestWeekMap[b.id] ?? '9999-99-99'
     if (aWeek !== bWeek) return aWeek.localeCompare(bWeek)
