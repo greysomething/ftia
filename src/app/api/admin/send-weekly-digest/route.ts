@@ -422,7 +422,7 @@ export async function POST(req: NextRequest) {
         failed += batch.length
         if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`)
 
-        // Log failures
+        // Log failures to email_logs
         const failEntries = batch.map((email, idx) => ({
           recipient: email,
           subject: emailPayloads[idx].subject,
@@ -433,6 +433,26 @@ export async function POST(req: NextRequest) {
           sent_at: new Date().toISOString(),
         }))
         await supabase.from('email_logs').insert(failEntries)
+
+        // Log failures to activity_log
+        const failActivityEntries = batch.map((email, idx) => ({
+          email,
+          event_type: 'email_sent',
+          ip_address: null,
+          user_agent: 'Weekly Digest Sender',
+          country: null,
+          city: null,
+          region: null,
+          metadata: {
+            subject: emailPayloads[idx].subject,
+            template: 'weekly-digest',
+            status: 'failed',
+            error: batchError.message,
+            trigger: triggerType,
+            week_monday: weekMonday,
+          },
+        }))
+        await supabase.from('activity_log').insert(failActivityEntries).catch(() => {})
       } else {
         const results = batchData?.data ?? []
         sent += results.length
@@ -450,6 +470,29 @@ export async function POST(req: NextRequest) {
           sent_at: new Date().toISOString(),
         }))
         await supabase.from('email_logs').insert(logEntries)
+
+        // Log to activity_log so digest sends show on user Activity Log pages
+        const activityEntries = batch
+          .filter((_, idx) => idx < results.length) // only successfully sent
+          .map((email, idx) => ({
+            email,
+            event_type: 'email_sent',
+            ip_address: null,
+            user_agent: 'Weekly Digest Sender',
+            country: null,
+            city: null,
+            region: null,
+            metadata: {
+              subject: emailPayloads[idx].subject,
+              template: 'weekly-digest',
+              resend_id: results[idx]?.id ?? null,
+              trigger: triggerType,
+              week_monday: weekMonday,
+            },
+          }))
+        if (activityEntries.length > 0) {
+          await supabase.from('activity_log').insert(activityEntries).catch(() => {})
+        }
       }
     } catch (err: any) {
       failed += batch.length
