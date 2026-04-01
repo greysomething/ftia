@@ -441,13 +441,36 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkSaveError, setBulkSaveError] = useState<string | null>(null)
 
-  const loadBulkResult = useCallback((data: any, index: number) => {
+  const loadBulkResult = useCallback(async (data: any, index: number) => {
     setScannedData(data)
     populateFromScan(data)
     matchEntities(data)
     setActiveBulkIndex(index)
     // Keep bulkMode true so we can return to bulk results
-    setStep('review')
+
+    // Run duplicate check and route through the full workflow
+    if (data.title) {
+      try {
+        const dupRes = await fetch('/api/admin/check-production-duplicates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: data.title }),
+        })
+        const dupResult = await dupRes.json()
+        const matches = dupResult.matches ?? []
+        setDuplicates(matches)
+
+        if (matches.length > 0) {
+          setStep('duplicates')
+        } else {
+          setStep('research')
+        }
+      } catch {
+        setStep('research')
+      }
+    } else {
+      setStep('research')
+    }
   }, [typeOptions, statusOptions])
 
   const returnToBulkResults = useCallback(() => {
@@ -1176,9 +1199,15 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
               <button onClick={() => setStep('research')} className="btn-primary text-sm">
                 Not a Duplicate — Continue
               </button>
-              <button onClick={resetAll} className="btn-outline text-sm">
-                Start Over
-              </button>
+              {bulkMode && bulkResults.length > 0 ? (
+                <button onClick={returnToBulkResults} className="btn-outline text-sm">
+                  ← Back to Bulk Results
+                </button>
+              ) : (
+                <button onClick={resetAll} className="btn-outline text-sm">
+                  Start Over
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1429,6 +1458,11 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                 <button onClick={() => setStep('review')} className="btn-outline text-sm">
                   Skip — Go to Review
                 </button>
+                {bulkMode && bulkResults.length > 0 && (
+                  <button onClick={returnToBulkResults} className="btn-outline text-sm">
+                    ← Back to Bulk Results
+                  </button>
+                )}
               </div>
             </div>
           </div>
