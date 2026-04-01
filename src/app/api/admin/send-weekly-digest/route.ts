@@ -151,6 +151,7 @@ export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const isPreview = searchParams.get('preview') === 'true'
   const testEmail = searchParams.get('test')
+  const isStream = searchParams.get('stream') === 'true'
   const triggerType = searchParams.get('trigger') || (isCron ? 'auto' : 'manual')
 
   // 1. Get current week's Monday
@@ -275,7 +276,6 @@ export async function POST(req: NextRequest) {
       let pageCount = 0
 
       while (hasMore) {
-        // Use raw API to avoid SDK response wrapping issues
         const url = new URL(`https://api.resend.com/audiences/${audienceId}/contacts`)
         url.searchParams.set('limit', '100')
         if (afterCursor) url.searchParams.set('after', afterCursor)
@@ -292,8 +292,6 @@ export async function POST(req: NextRequest) {
         const data = await res.json()
         const contacts = data.data ?? []
         pageCount++
-
-        console.log(`[send-weekly-digest] Audience ${audienceId} page ${pageCount}: ${contacts.length} contacts, has_more=${data.has_more}`)
 
         if (!Array.isArray(contacts) || contacts.length === 0) break
 
@@ -312,240 +310,291 @@ export async function POST(req: NextRequest) {
           hasMore = false
         }
       }
-
-      console.log(`[send-weekly-digest] Audience ${audienceId} total: ${pageCount} pages fetched`)
     } catch (err) {
       console.error(`[send-weekly-digest] Failed to fetch audience ${audienceId}:`, err)
     }
   }
 
-  // Fetch contacts based on selected audience
-  if (audience === 'newsletter' || audience === 'all' || audience === 'all_subscribers') {
-    await fetchResendAudience(AUDIENCE_IDS.newsletter)
-  }
-  if (audience === 'active_members' || audience === 'active_and_past' || audience === 'all') {
-    await fetchResendAudience(AUDIENCE_IDS.active_members)
-  }
-  if (audience === 'past_members' || audience === 'active_and_past' || audience === 'all') {
-    await fetchResendAudience(AUDIENCE_IDS.past_members)
-  }
+  // Helper: run the full send pipeline, calling emit() with progress events
+  async function runSendPipeline(emit: (event: Record<string, any>) => void) {
+    emit({ phase: 'audience', message: `Fetching "${audience}" audience...` })
 
-  const totalFetchedFromAudience = recipientEmails.size
-  console.log(`[send-weekly-digest] Total unique recipients from audience(s): ${totalFetchedFromAudience}`)
-
-  if (recipientEmails.size === 0) {
-    return NextResponse.json(
-      { error: `No contacts found in the "${audience}" audience to send digest to.` },
-      { status: 400 }
-    )
-  }
-
-  // 8b. Exclude recipients who already received the digest for this weekMonday
-  //     This prevents double-sends on retry and allows resuming to send to remaining recipients.
-  //     Uses weekMonday (not calendar week) so the dedup boundary matches the digest content.
-  const weekMondayStart = new Date(weekMonday + 'T00:00:00Z')
-  // Look back from the Monday to catch any early sends, and forward to cover the full week
-  const dedupWindowStart = new Date(weekMondayStart)
-  dedupWindowStart.setDate(dedupWindowStart.getDate() - 1) // Sunday before
-
-  const alreadySent = new Set<string>()
-  let sentPage = 0
-  while (true) {
-    const { data: sentLogs } = await supabase
-      .from('email_logs')
-      .select('recipient')
-      .eq('template_slug', 'weekly-digest')
-      .not('recipient', 'like', 'bulk:%')
-      .gte('sent_at', dedupWindowStart.toISOString())
-      .range(sentPage * 1000, sentPage * 1000 + 999)
-    if (!sentLogs || sentLogs.length === 0) break
-    for (const log of sentLogs) {
-      if (log.recipient) alreadySent.add(log.recipient.toLowerCase())
+    if (audience === 'newsletter' || audience === 'all' || audience === 'all_subscribers') {
+      await fetchResendAudience(AUDIENCE_IDS.newsletter)
     }
-    if (sentLogs.length < 1000) break
-    sentPage++
-  }
+    if (audience === 'active_members' || audience === 'active_and_past' || audience === 'all') {
+      await fetchResendAudience(AUDIENCE_IDS.active_members)
+    }
+    if (audience === 'past_members' || audience === 'active_and_past' || audience === 'all') {
+      await fetchResendAudience(AUDIENCE_IDS.past_members)
+    }
 
-  // Remove already-sent recipients (recipientEmails is already lowercase)
-  for (const email of alreadySent) {
-    recipientEmails.delete(email)
-  }
+    const totalFetchedFromAudience = recipientEmails.size
 
-  console.log(`[send-weekly-digest] After excluding ${alreadySent.size} already sent: ${recipientEmails.size} remaining`)
+    if (recipientEmails.size === 0) {
+      emit({ phase: 'error', error: `No contacts found in the "${audience}" audience.` })
+      return { error: `No contacts found in the "${audience}" audience to send digest to.` }
+    }
 
-  if (recipientEmails.size === 0) {
-    return NextResponse.json({
-      success: true,
-      message: `All ${alreadySent.size} recipients already received the digest this week. Nothing new to send. (Audience "${audience}" had ${totalFetchedFromAudience} contacts total.)`,
-      stats: { totalRecipients: 0, sent: 0, failed: 0, alreadySent: alreadySent.size, productionCount: prods.length, weekMonday, audienceFetched: totalFetchedFromAudience, audienceUsed: audience },
-    })
-  }
+    emit({ phase: 'dedup', message: `Found ${totalFetchedFromAudience} recipients. Checking for duplicates...` })
 
-  // 9. Send emails in batches using Resend SDK batch API (up to 100 per request)
-  const { Resend } = await import('resend')
-  const resend = new Resend(resendApiKey)
+    // Exclude already-sent recipients
+    const weekMondayStart = new Date(weekMonday + 'T00:00:00Z')
+    const dedupWindowStart = new Date(weekMondayStart)
+    dedupWindowStart.setDate(dedupWindowStart.getDate() - 1)
 
-  let sent = 0
-  let failed = 0
-  const errors: string[] = []
-  const emails = Array.from(recipientEmails)
-  const BATCH_SIZE = 100
-  const fromAddress = `Production List <${process.env.EMAIL_FROM ?? 'noreply@productionlist.com'}>`
-
-  for (let i = 0; i < emails.length; i += BATCH_SIZE) {
-    const batch = emails.slice(i, i + BATCH_SIZE)
-
-    // Build per-recipient email objects with personalization
-    const emailPayloads = batch.map((email) => {
-      const firstName = emailToName.get(email) || ''
-      const personalVars = { ...vars, firstName, recipientEmail: email }
-      const personalRendered = template.render(personalVars)
-      const unsubUrl = `https://productionlist.com/unsubscribe?email=${encodeURIComponent(email)}`
-
-      return {
-        from: fromAddress,
-        to: [email],
-        subject: personalRendered.subject,
-        html: personalRendered.html,
-        headers: {
-          'List-Unsubscribe': `<${unsubUrl}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        },
+    const alreadySent = new Set<string>()
+    let sentPage = 0
+    while (true) {
+      const { data: sentLogs } = await supabase
+        .from('email_logs')
+        .select('recipient')
+        .eq('template_slug', 'weekly-digest')
+        .not('recipient', 'like', 'bulk:%')
+        .gte('sent_at', dedupWindowStart.toISOString())
+        .range(sentPage * 1000, sentPage * 1000 + 999)
+      if (!sentLogs || sentLogs.length === 0) break
+      for (const log of sentLogs) {
+        if (log.recipient) alreadySent.add(log.recipient.toLowerCase())
       }
+      if (sentLogs.length < 1000) break
+      sentPage++
+    }
+
+    for (const email of alreadySent) {
+      recipientEmails.delete(email)
+    }
+
+    if (recipientEmails.size === 0) {
+      const result = {
+        success: true,
+        message: `All ${alreadySent.size} recipients already received the digest this week.`,
+        stats: { totalRecipients: 0, sent: 0, failed: 0, alreadySent: alreadySent.size, productionCount: prods.length, weekMonday, audienceFetched: totalFetchedFromAudience, audienceUsed: audience },
+      }
+      emit({ phase: 'done', ...result })
+      return result
+    }
+
+    const emails = Array.from(recipientEmails)
+    const totalBatches = Math.ceil(emails.length / BATCH_SIZE)
+
+    emit({
+      phase: 'sending',
+      message: `Sending to ${emails.length} recipients (${alreadySent.size} already sent, excluded)...`,
+      total: emails.length,
+      totalBatches,
+      sent: 0,
+      failed: 0,
     })
 
-    try {
-      const { data: batchData, error: batchError } = await resend.batch.send(emailPayloads)
+    // Send emails in batches
+    const { Resend } = await import('resend')
+    const resend = new Resend(resendApiKey)
 
-      if (batchError) {
-        console.error(`[send-weekly-digest] Batch SDK error:`, batchError)
-        failed += batch.length
-        if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchError.message}`)
+    let sent = 0
+    let failed = 0
+    const errors: string[] = []
+    const BATCH_SIZE = 100
+    const fromAddress = `Production List <${process.env.EMAIL_FROM ?? 'noreply@productionlist.com'}>`
 
-        // Log failures to email_logs (catch to avoid double-counting in outer catch)
-        try {
-          const failEntries = batch.map((email, idx) => ({
-            recipient: email,
-            subject: emailPayloads[idx].subject,
-            template_slug: 'weekly-digest',
-            status: 'failed',
-            resend_id: null,
-            error_message: batchError.message,
-            sent_at: new Date().toISOString(),
-          }))
-          await supabase.from('email_logs').insert(failEntries)
-        } catch (logErr) {
-          console.error(`[send-weekly-digest] Failed to log email_logs for failed batch:`, logErr)
-        }
+    for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+      const batch = emails.slice(i, i + BATCH_SIZE)
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1
 
-        // Log failures to activity_log
-        const failActivityEntries = batch.map((email, idx) => ({
-          email,
-          event_type: 'email_sent',
-          ip_address: null,
-          user_agent: 'Weekly Digest Sender',
-          country: null,
-          city: null,
-          region: null,
-          metadata: {
-            subject: emailPayloads[idx].subject,
-            template: 'weekly-digest',
-            status: 'failed',
-            error: batchError.message,
-            trigger: triggerType,
-            week_monday: weekMonday,
+      const emailPayloads = batch.map((email) => {
+        const firstName = emailToName.get(email) || ''
+        const personalVars = { ...vars, firstName, recipientEmail: email }
+        const personalRendered = template.render(personalVars)
+        const unsubUrl = `https://productionlist.com/unsubscribe?email=${encodeURIComponent(email)}`
+        return {
+          from: fromAddress,
+          to: [email],
+          subject: personalRendered.subject,
+          html: personalRendered.html,
+          headers: {
+            'List-Unsubscribe': `<${unsubUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
           },
-        }))
-        await supabase.from('activity_log').insert(failActivityEntries).catch(() => {})
-      } else {
-        const results = batchData?.data ?? []
-        sent += results.length
-        const batchFailed = batch.length - results.length
-        failed += batchFailed
-
-        // Log individual sends for per-recipient tracking (catch errors to avoid double-counting)
-        try {
-          const logEntries = batch.map((email, idx) => ({
-            recipient: email,
-            subject: emailPayloads[idx].subject,
-            template_slug: 'weekly-digest',
-            status: idx < results.length ? 'sent' : 'failed',
-            resend_id: results[idx]?.id ?? null,
-            error_message: null,
-            sent_at: new Date().toISOString(),
-          }))
-          await supabase.from('email_logs').insert(logEntries)
-        } catch (logErr) {
-          console.error(`[send-weekly-digest] Failed to log email_logs for batch:`, logErr)
         }
+      })
 
-        // Log to activity_log so digest sends show on user Activity Log pages
-        const activityEntries = batch
-          .filter((_, idx) => idx < results.length) // only successfully sent
-          .map((email, idx) => ({
+      try {
+        const { data: batchData, error: batchError } = await resend.batch.send(emailPayloads)
+
+        if (batchError) {
+          console.error(`[send-weekly-digest] Batch SDK error:`, batchError)
+          failed += batch.length
+          if (errors.length < 10) errors.push(`Batch ${batchNum}: ${batchError.message}`)
+
+          try {
+            const failEntries = batch.map((email, idx) => ({
+              recipient: email,
+              subject: emailPayloads[idx].subject,
+              template_slug: 'weekly-digest',
+              status: 'failed',
+              resend_id: null,
+              error_message: batchError.message,
+              sent_at: new Date().toISOString(),
+            }))
+            await supabase.from('email_logs').insert(failEntries)
+          } catch (logErr) {
+            console.error(`[send-weekly-digest] Failed to log email_logs for failed batch:`, logErr)
+          }
+
+          const failActivityEntries = batch.map((email, idx) => ({
             email,
             event_type: 'email_sent',
             ip_address: null,
             user_agent: 'Weekly Digest Sender',
-            country: null,
-            city: null,
-            region: null,
+            country: null, city: null, region: null,
             metadata: {
               subject: emailPayloads[idx].subject,
               template: 'weekly-digest',
-              resend_id: results[idx]?.id ?? null,
+              status: 'failed',
+              error: batchError.message,
               trigger: triggerType,
               week_monday: weekMonday,
             },
           }))
-        if (activityEntries.length > 0) {
-          await supabase.from('activity_log').insert(activityEntries).catch(() => {})
+          await supabase.from('activity_log').insert(failActivityEntries).catch(() => {})
+        } else {
+          const results = batchData?.data ?? []
+          sent += results.length
+          const batchFailed = batch.length - results.length
+          failed += batchFailed
+
+          try {
+            const logEntries = batch.map((email, idx) => ({
+              recipient: email,
+              subject: emailPayloads[idx].subject,
+              template_slug: 'weekly-digest',
+              status: idx < results.length ? 'sent' : 'failed',
+              resend_id: results[idx]?.id ?? null,
+              error_message: null,
+              sent_at: new Date().toISOString(),
+            }))
+            await supabase.from('email_logs').insert(logEntries)
+          } catch (logErr) {
+            console.error(`[send-weekly-digest] Failed to log email_logs for batch:`, logErr)
+          }
+
+          const activityEntries = batch
+            .filter((_, idx) => idx < results.length)
+            .map((email, idx) => ({
+              email,
+              event_type: 'email_sent',
+              ip_address: null,
+              user_agent: 'Weekly Digest Sender',
+              country: null, city: null, region: null,
+              metadata: {
+                subject: emailPayloads[idx].subject,
+                template: 'weekly-digest',
+                resend_id: results[idx]?.id ?? null,
+                trigger: triggerType,
+                week_monday: weekMonday,
+              },
+            }))
+          if (activityEntries.length > 0) {
+            await supabase.from('activity_log').insert(activityEntries).catch(() => {})
+          }
         }
+      } catch (err: any) {
+        failed += batch.length
+        if (errors.length < 10) errors.push(`Batch ${batchNum}: ${err.message}`)
       }
-    } catch (err: any) {
-      failed += batch.length
-      if (errors.length < 10) errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${err.message}`)
+
+      // Emit progress after each batch
+      emit({
+        phase: 'batch',
+        batch: batchNum,
+        totalBatches,
+        sent,
+        failed,
+        total: emails.length,
+        processed: Math.min(i + BATCH_SIZE, emails.length),
+      })
+
+      if (i + BATCH_SIZE < emails.length) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
     }
 
-    // Brief pause between batches to respect rate limits
-    if (i + BATCH_SIZE < emails.length) {
-      await new Promise((resolve) => setTimeout(resolve, 500))
+    // Log summary
+    await supabase.from('email_logs').insert({
+      recipient: `bulk:${emails.length}`,
+      subject: rendered.subject,
+      template_slug: 'weekly-digest',
+      status: 'sent',
+      error_message: errors.length > 0 ? errors.join('; ') : null,
+      resend_id: JSON.stringify({
+        trigger: triggerType,
+        sent,
+        failed,
+        productionCount: prods.length,
+        weekMonday,
+        audience,
+      }),
+      sent_at: new Date().toISOString(),
+    })
+
+    const result = {
+      success: true,
+      message: `Digest sent to ${sent} of ${emails.length} recipients (${failed} failed). ${totalFetchedFromAudience} in audience, ${alreadySent.size} already sent this week.`,
+      stats: {
+        totalRecipients: emails.length,
+        sent,
+        failed,
+        productionCount: prods.length,
+        weekMonday,
+        audienceFetched: totalFetchedFromAudience,
+        alreadySentCount: alreadySent.size,
+        audienceUsed: audience,
+      },
+      ...(errors.length > 0 ? { errors } : {}),
     }
 
-    console.log(`[send-weekly-digest] Progress: ${sent + failed}/${emails.length} (${sent} sent, ${failed} failed)`)
+    emit({ phase: 'done', ...result })
+    return result
   }
 
-  // 10. Log summary (includes trigger type for audit trail)
-  await supabase.from('email_logs').insert({
-    recipient: `bulk:${emails.length}`,
-    subject: rendered.subject,
-    template_slug: 'weekly-digest',
-    status: 'sent',
-    error_message: errors.length > 0 ? errors.join('; ') : null,
-    resend_id: JSON.stringify({
-      trigger: triggerType,
-      sent: sent,
-      failed: failed,
-      productionCount: prods.length,
-      weekMonday,
-      audience,
-    }),
-    sent_at: new Date().toISOString(),
+  // Streaming mode: return Server-Sent Events
+  if (isStream) {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      async start(controller) {
+        function emit(event: Record<string, any>) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+        }
+        try {
+          await runSendPipeline(emit)
+        } catch (err: any) {
+          emit({ phase: 'error', error: err.message || 'Unknown error' })
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    })
+  }
+
+  // Non-streaming mode: run pipeline, return JSON
+  let finalResult: any = null
+  await runSendPipeline((event) => {
+    if (event.phase === 'done' || event.phase === 'error') {
+      finalResult = event
+    }
   })
 
-  return NextResponse.json({
-    success: true,
-    message: `Digest sent to ${sent} of ${emails.length} recipients (${failed} failed). ${totalFetchedFromAudience} in audience, ${alreadySent.size} already sent this week.`,
-    stats: {
-      totalRecipients: emails.length,
-      sent,
-      failed,
-      productionCount: prods.length,
-      weekMonday,
-      audienceFetched: totalFetchedFromAudience,
-      alreadySentCount: alreadySent.size,
-      audienceUsed: audience,
-    },
-    ...(errors.length > 0 ? { errors } : {}),
-  })
+  if (finalResult?.error && !finalResult?.success) {
+    return NextResponse.json({ error: finalResult.error }, { status: 400 })
+  }
+
+  return NextResponse.json(finalResult ?? { error: 'Unexpected error' })
 }

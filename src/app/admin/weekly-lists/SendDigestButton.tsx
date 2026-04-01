@@ -1,12 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+
+interface ProgressState {
+  phase: string
+  message?: string
+  total?: number
+  totalBatches?: number
+  batch?: number
+  sent?: number
+  failed?: number
+  processed?: number
+  error?: string
+  success?: boolean
+  stats?: Record<string, any>
+}
 
 export function SendDigestButton({ currentWeekCount }: { currentWeekCount: number }) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info')
   const [showConfirm, setShowConfirm] = useState(false)
+  const [progress, setProgress] = useState<ProgressState | null>(null)
 
   const canSend = currentWeekCount >= 40
 
@@ -20,6 +35,7 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
 
     setLoading(true)
     setMessage(null)
+    setProgress(null)
     try {
       const res = await fetch(`/api/admin/send-weekly-digest?test=${encodeURIComponent(email)}`, {
         method: 'POST',
@@ -35,22 +51,66 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
     }
   }
 
-  async function handleSendAll() {
+  const handleSendAll = useCallback(async () => {
     setShowConfirm(false)
     setLoading(true)
     setMessage(null)
+    setProgress({ phase: 'starting', message: 'Initializing...' })
+
     try {
-      const res = await fetch('/api/admin/send-weekly-digest', { method: 'POST' })
-      const data = await res.json()
-      setMessage(data.message || data.error)
-      setMessageType(res.ok ? 'success' : 'error')
+      const res = await fetch('/api/admin/send-weekly-digest?stream=true', { method: 'POST' })
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({ error: 'Request failed' }))
+        setMessage(data.error || 'Failed to start digest send.')
+        setMessageType('error')
+        setProgress(null)
+        setLoading(false)
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event: ProgressState = JSON.parse(line.slice(6))
+            setProgress(event)
+
+            if (event.phase === 'done') {
+              setMessage(event.message ?? `Sent ${event.stats?.sent ?? 0} emails.`)
+              setMessageType(event.success ? 'success' : 'error')
+              setLoading(false)
+            } else if (event.phase === 'error') {
+              setMessage(event.error ?? 'An error occurred.')
+              setMessageType('error')
+              setLoading(false)
+            }
+          } catch { /* skip malformed */ }
+        }
+      }
     } catch {
-      setMessage('Network error.')
+      setMessage('Network error — connection lost.')
       setMessageType('error')
+      setProgress(null)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  const pct = progress?.total && progress.processed
+    ? Math.round((progress.processed / progress.total) * 100)
+    : 0
 
   return (
     <div className="admin-card p-4 mb-6">
@@ -74,6 +134,7 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
         <div className="flex items-center gap-2">
           <button
             onClick={handlePreview}
+            disabled={loading}
             className="btn-outline text-sm py-1.5 px-3"
           >
             Preview
@@ -124,7 +185,101 @@ export function SendDigestButton({ currentWeekCount }: { currentWeekCount: numbe
         </div>
       </div>
 
-      {message && (
+      {/* Real-time progress panel */}
+      {progress && loading && (
+        <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+          {/* Progress bar */}
+          <div className="h-2 bg-gray-100">
+            <div
+              className="h-full bg-gradient-to-r from-[#3ea8c8] to-[#2b7bb9] transition-all duration-300 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+
+          <div className="p-3 space-y-2">
+            {/* Phase status */}
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 text-gray-700">
+                {progress.phase === 'audience' && (
+                  <>
+                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Fetching audience contacts...
+                  </>
+                )}
+                {progress.phase === 'dedup' && (
+                  <>
+                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    {progress.message}
+                  </>
+                )}
+                {progress.phase === 'sending' && (
+                  <>
+                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    {progress.message}
+                  </>
+                )}
+                {progress.phase === 'batch' && (
+                  <>
+                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Batch {progress.batch} of {progress.totalBatches}
+                  </>
+                )}
+                {progress.phase === 'starting' && (
+                  <>
+                    <svg className="w-4 h-4 animate-spin text-[#3ea8c8]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Initializing...
+                  </>
+                )}
+              </div>
+
+              {progress.total != null && progress.processed != null && (
+                <span className="text-xs text-gray-500 font-mono">
+                  {progress.processed}/{progress.total} ({pct}%)
+                </span>
+              )}
+            </div>
+
+            {/* Counters */}
+            {(progress.sent != null || progress.failed != null) && (
+              <div className="flex items-center gap-4 text-xs">
+                {progress.sent != null && progress.sent > 0 && (
+                  <span className="flex items-center gap-1 text-green-600">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    {progress.sent} sent
+                  </span>
+                )}
+                {progress.failed != null && progress.failed > 0 && (
+                  <span className="flex items-center gap-1 text-red-500">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    {progress.failed} failed
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {message && !loading && (
         <div className={`mt-3 text-sm px-3 py-2 rounded-lg ${
           messageType === 'success' ? 'bg-green-50 text-green-700 border border-green-200' :
           messageType === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
