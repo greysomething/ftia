@@ -42,14 +42,14 @@ function CustomTooltip({ active, payload, label }: any) {
   const d = new Date(label + 'T00:00:00')
   const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 
-  // Get data from the chart payload
+  // Get counts from chart bars
   const newSignups = payload.find((p: any) => p.dataKey === 'newSignups')
   const rebills = payload.find((p: any) => p.dataKey === 'rebills')
-  const signupRev = payload.find((p: any) => p.dataKey === 'signupRevenue')
-  const rebillRev = payload.find((p: any) => p.dataKey === 'rebillRevenue')
 
+  // Revenue fields aren't rendered as bars, so read from the underlying data point
+  const dataPoint = payload[0]?.payload as DataPoint | undefined
   const totalPayments = (newSignups?.value ?? 0) + (rebills?.value ?? 0)
-  const totalRevenue = (signupRev?.value ?? 0) + (rebillRev?.value ?? 0)
+  const totalRevenue = (dataPoint?.signupRevenue ?? 0) + (dataPoint?.rebillRevenue ?? 0)
 
   return (
     <div className="bg-white border border-gray-200 shadow-xl rounded-xl p-4 text-sm min-w-[200px]">
