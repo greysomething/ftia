@@ -18,7 +18,7 @@ export async function getProductions({
   statusSlug,
   locationFilter,
   search,
-  sort = 'updated',
+  sort = 'shoot-date-desc',
 }: {
   page?: number
   perPage?: number
