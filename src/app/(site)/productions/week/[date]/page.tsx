@@ -6,6 +6,7 @@ import { getUser, isMember } from '@/lib/auth'
 import { formatProductionDate, formatLocations, formatDate, formatPhone, parsePhpSerialized, PHASE_LABELS, PHASE_COLORS } from '@/lib/utils'
 import { MemberGate } from '@/components/MemberGate'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
+import { ShareWeeklyDigest } from '@/components/ShareWeeklyDigest'
 import type { ProductionPhase } from '@/types/database'
 
 interface Props {
@@ -101,6 +102,13 @@ export default async function WeeklyListPage({ params }: Props) {
                     <div className="text-3xl font-bold text-gray-600">{totalCrew}</div>
                     <div className="text-xs text-gray-500 uppercase tracking-wide">Crew</div>
                   </div>
+                )}
+                {member && (
+                  <ShareWeeklyDigest
+                    weekMonday={date}
+                    title={`Week of ${formattedWeek}`}
+                    productionCount={productions.length}
+                  />
                 )}
               </div>
             </div>
