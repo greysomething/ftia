@@ -55,9 +55,13 @@ export async function middleware(request: NextRequest) {
     '/do-not-work',
   ]
 
+  // Allow public access to weekly production list pages (content is member-gated on the page)
+  const publicExceptions = ['/productions/week/', '/weekly']
+  const isPublicException = publicExceptions.some((p) => pathname.startsWith(p))
+
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
 
-  if (isProtected && !user) {
+  if (isProtected && !isPublicException && !user) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(loginUrl)
