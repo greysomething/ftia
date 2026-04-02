@@ -477,6 +477,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
   // AI Enrich state
   const [enriching, setEnriching] = useState(false)
   const [enrichResult, setEnrichResult] = useState<{ count: number; error?: string } | null>(null)
+  const [aiHighlights, setAiHighlights] = useState<Set<string>>(new Set())
 
   const handleEnrich = async () => {
     // Get the current title from the form
@@ -529,6 +530,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
 
       const data = result.data
       let fieldsAdded = 0
+      const newHighlights = new Set<string>()
 
       // Merge synopsis/content if empty
       if (data.synopsis) {
@@ -536,6 +538,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         if (excerptEl && !excerptEl.value.trim()) {
           excerptEl.value = data.synopsis
           fieldsAdded++
+          newHighlights.add('excerpt')
         }
       }
       if (data.additional_notes) {
@@ -543,6 +546,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         if (contentEl && !contentEl.value.trim()) {
           contentEl.value = data.additional_notes
           fieldsAdded++
+          newHighlights.add('content')
         }
       }
 
@@ -552,6 +556,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         if (dateEl && !dateEl.value) {
           dateEl.value = data.production_date_start
           fieldsAdded++
+          newHighlights.add('production_date_start')
         }
       }
       if (data.production_date_end) {
@@ -559,6 +564,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         if (dateEl && !dateEl.value) {
           dateEl.value = data.production_date_end
           fieldsAdded++
+          newHighlights.add('production_date_end')
         }
       }
 
@@ -573,6 +579,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
           setSelectedTypeIds(matchedIds)
           setPrimaryTypeId(matchedIds[0])
           fieldsAdded++
+          newHighlights.add('types')
         }
       }
 
@@ -587,8 +594,14 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
           setSelectedStatusIds(matchedIds)
           setPrimaryStatusId(matchedIds[0])
           fieldsAdded++
+          newHighlights.add('statuses')
         }
       }
+
+      // Track how many locations/crew/companies existed before merge
+      const locCountBefore = locations.filter(l => l.location || l.city).length
+      const crewCountBefore = crew.filter(c => c.role_name || c.inline_name).length
+      const companyCountBefore = companies.filter(c => c.inline_name).length
 
       // Merge new locations (add any the AI found that we don't have)
       if (data.locations?.length) {
@@ -605,6 +618,10 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
             return [...cleaned, ...newLocs]
           })
           fieldsAdded += newLocs.length
+          // Mark each new location row by index
+          for (let li = 0; li < newLocs.length; li++) {
+            newHighlights.add(`location-${locCountBefore + li}`)
+          }
         }
       }
 
@@ -626,6 +643,9 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
             return [...cleaned, ...newCrew]
           })
           fieldsAdded += newCrew.length
+          for (let ci = 0; ci < newCrew.length; ci++) {
+            newHighlights.add(`crew-${crewCountBefore + ci}`)
+          }
           // Run entity matching on the new crew
           const crewNames = newCrew.map((c: CrewRow) => c.inline_name).filter(Boolean)
           if (crewNames.length > 0) fetchMatches([], crewNames)
@@ -651,11 +671,15 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
             return [...cleaned, ...newCompanies]
           })
           fieldsAdded += newCompanies.length
+          for (let ci = 0; ci < newCompanies.length; ci++) {
+            newHighlights.add(`company-${companyCountBefore + ci}`)
+          }
           const companyNames = newCompanies.map((c: CompanyRow) => c.inline_name).filter(Boolean)
           if (companyNames.length > 0) fetchMatches(companyNames, [])
         }
       }
 
+      setAiHighlights(newHighlights)
       setEnrichResult({ count: fieldsAdded })
     } catch (err: any) {
       setEnrichResult({ count: 0, error: err.message || 'Enrichment failed' })
@@ -674,6 +698,16 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
       return next
     })
   }
+
+  /** Purple ring + background for AI-enriched fields */
+  const aiRing = (key: string) =>
+    aiHighlights.has(key) ? 'ring-2 ring-purple-400 bg-purple-50/50' : ''
+  const aiRowBg = (key: string) =>
+    aiHighlights.has(key) ? 'bg-purple-50 ring-1 ring-purple-300 rounded-lg p-2 -m-2' : ''
+  const aiBadge = (key: string) =>
+    aiHighlights.has(key) ? (
+      <span className="ml-2 text-[10px] font-bold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full uppercase tracking-wider">AI</span>
+    ) : null
 
   return (
     <form ref={formRef} action={action} className="space-y-6 max-w-4xl" key={scannedData ? 'scanned' : 'default'}>
@@ -831,13 +865,13 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         </div>
 
         <div>
-          <label className="form-label">Excerpt / Logline</label>
-          <textarea name="excerpt" rows={2} defaultValue={v('excerpt')} className="form-textarea" placeholder="Brief logline or one-sentence description" />
+          <label className="form-label">Excerpt / Logline{aiBadge('excerpt')}</label>
+          <textarea name="excerpt" rows={2} defaultValue={v('excerpt')} className={`form-textarea ${aiRing('excerpt')}`} placeholder="Brief logline or one-sentence description" />
         </div>
 
         <div>
-          <label className="form-label">Description / Notes</label>
-          <textarea name="content" rows={6} defaultValue={v('content')} className="form-textarea" placeholder="Full description, plot synopsis, or additional notes" />
+          <label className="form-label">Description / Notes{aiBadge('content')}</label>
+          <textarea name="content" rows={6} defaultValue={v('content')} className={`form-textarea ${aiRing('content')}`} placeholder="Full description, plot synopsis, or additional notes" />
         </div>
       </div>
 
@@ -849,8 +883,8 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         </h2>
 
         <div>
-          <label className="form-label">Production Type(s)</label>
-          <div className="flex flex-wrap gap-2 mt-1">
+          <label className="form-label">Production Type(s){aiBadge('types')}</label>
+          <div className={`flex flex-wrap gap-2 mt-1 ${aiHighlights.has('types') ? 'ring-2 ring-purple-300 bg-purple-50/50 rounded-lg p-2' : ''}`}>
             {typeOptions.map(t => (
               <label key={t.id}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm cursor-pointer transition-colors ${
@@ -874,8 +908,8 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         </div>
 
         <div>
-          <label className="form-label">Production Status(es)</label>
-          <div className="flex flex-wrap gap-2 mt-1">
+          <label className="form-label">Production Status(es){aiBadge('statuses')}</label>
+          <div className={`flex flex-wrap gap-2 mt-1 ${aiHighlights.has('statuses') ? 'ring-2 ring-purple-300 bg-purple-50/50 rounded-lg p-2' : ''}`}>
             {statusOptions.map(s => (
               <label key={s.id}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm cursor-pointer transition-colors ${
@@ -907,12 +941,12 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <label className="form-label">Production Start</label>
-            <input name="production_date_start" type="date" defaultValue={v('production_date_start')?.slice?.(0, 10) ?? ''} className="form-input" />
+            <label className="form-label">Production Start{aiBadge('production_date_start')}</label>
+            <input name="production_date_start" type="date" defaultValue={v('production_date_start')?.slice?.(0, 10) ?? ''} className={`form-input ${aiRing('production_date_start')}`} />
           </div>
           <div>
-            <label className="form-label">Production End</label>
-            <input name="production_date_end" type="date" defaultValue={v('production_date_end')?.slice?.(0, 10) ?? ''} className="form-input" />
+            <label className="form-label">Production End{aiBadge('production_date_end')}</label>
+            <input name="production_date_end" type="date" defaultValue={v('production_date_end')?.slice?.(0, 10) ?? ''} className={`form-input ${aiRing('production_date_end')}`} />
           </div>
           <div>
             <label className="form-label">Post-Production Start</label>
@@ -935,7 +969,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
           <button type="button" onClick={addLocation} className="text-xs btn-outline py-1 px-2">+ Add Location</button>
         </div>
         {locations.map((loc, i) => (
-          <div key={i} className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+          <div key={i} className={`grid grid-cols-2 md:grid-cols-5 gap-3 items-end ${aiRowBg(`location-${i}`)}`}>
             <div className="md:col-span-2">
               <label className="form-label text-xs">Location</label>
               <input value={loc.location} onChange={e => updateLocation(i, 'location', e.target.value)}
@@ -984,10 +1018,15 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
           const isLinked = co.company_id != null
           return (
             <DragHandleRow key={i} index={i} listId="prod-companies" onReorder={(from, to) => setCompanies(prev => reorderArray(prev, from, to))}>
-            <div className={`border rounded-lg p-3 space-y-3 ${isLinked ? 'bg-green-50/50 border-green-200' : 'bg-gray-50/50'}`}>
+            <div className={`border rounded-lg p-3 space-y-3 ${isLinked ? 'bg-green-50/50 border-green-200' : aiHighlights.has(`company-${i}`) ? 'bg-purple-50/50 border-purple-300 ring-1 ring-purple-300' : 'bg-gray-50/50'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-gray-400 uppercase">Company {i + 1}</span>
+                  {!isLinked && aiHighlights.has(`company-${i}`) && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-300">
+                      AI Researched
+                    </span>
+                  )}
                   {isLinked && (
                     <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-300">
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1165,7 +1204,7 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
             return (
               <DragHandleRow key={i} index={i} listId="prod-crew" onReorder={(from, to) => setCrew(prev => reorderArray(prev, from, to))}>
                 <div className="space-y-1">
-                  <div className={`grid grid-cols-12 gap-3 items-center ${isLinked ? 'bg-green-50 rounded-lg px-1 py-1' : ''}`}>
+                  <div className={`grid grid-cols-12 gap-3 items-center ${isLinked ? 'bg-green-50 rounded-lg px-1 py-1' : ''} ${!isLinked && aiHighlights.has(`crew-${i}`) ? 'bg-purple-50 ring-1 ring-purple-300 rounded-lg px-1 py-1' : ''}`}>
                     <div className="col-span-3">
                       <input value={c.role_name} onChange={e => updateCrew(i, 'role_name', e.target.value)}
                         className="form-input text-sm" placeholder="e.g. Director" />
