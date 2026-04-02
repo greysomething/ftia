@@ -37,6 +37,18 @@ const nextConfig: NextConfig = {
       },
     ]
   },
+  async rewrites() {
+    return {
+      beforeFiles: [
+        // Blog posts use flat /{slug} URLs (WP permalink style),
+        // but /blog/{slug} should also work for SEO and user expectations
+        {
+          source: '/blog/:slug',
+          destination: '/:slug',
+        },
+      ],
+    }
+  },
 }
 
 export default nextConfig
