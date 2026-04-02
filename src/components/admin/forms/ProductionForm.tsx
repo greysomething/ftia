@@ -489,12 +489,34 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
     setEnriching(true)
     setEnrichResult(null)
     try {
-      // Gather existing data as context for the AI
+      // Gather ALL existing data as context for the AI
+      const form = formRef.current
+      const currentExcerpt = form ? (form.elements.namedItem('excerpt') as HTMLTextAreaElement)?.value : production?.excerpt
+      const currentContent = form ? (form.elements.namedItem('content') as HTMLTextAreaElement)?.value : production?.content
+      const currentPhase = form ? (form.elements.namedItem('computed_status') as HTMLSelectElement)?.value : production?.computed_status
+      const currentDateStart = form ? (form.elements.namedItem('production_date_start') as HTMLInputElement)?.value : production?.production_date_start
+      const currentDateEnd = form ? (form.elements.namedItem('production_date_end') as HTMLInputElement)?.value : production?.production_date_end
+
       const existingData: any = {
         title: currentTitle,
+        synopsis: currentExcerpt || undefined,
+        additional_notes: currentContent || undefined,
+        production_phase: currentPhase || undefined,
+        production_date_start: currentDateStart || undefined,
+        production_date_end: currentDateEnd || undefined,
+        production_types: selectedTypeIds.map(id => typeOptions.find(t => t.id === id)?.name).filter(Boolean),
+        production_statuses: selectedStatusIds.map(id => statusOptions.find(s => s.id === id)?.name).filter(Boolean),
         crew: crew.filter(c => c.inline_name).map(c => ({ role_name: c.role_name, inline_name: c.inline_name })),
         companies: companies.filter(c => c.inline_name).map(c => ({ inline_name: c.inline_name })),
-        locations: locations.filter(l => l.city || l.location),
+        locations: locations.filter(l => l.city || l.location).map(l => ({ city: l.city, location: l.location, stage: l.stage, country: l.country })),
+      }
+
+      // Remove empty arrays/undefined to keep the context clean
+      for (const key of Object.keys(existingData)) {
+        const val = existingData[key]
+        if (val === undefined || (Array.isArray(val) && val.length === 0)) {
+          delete existingData[key]
+        }
       }
 
       const res = await fetch('/api/admin/ai-research-production', {
