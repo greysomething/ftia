@@ -12,6 +12,8 @@ interface DataPoint {
   signupRevenue: number
   rebillRevenue: number
   revenue: number
+  refunds: number
+  refundAmount: number
 }
 
 interface Summary {
@@ -20,6 +22,8 @@ interface Summary {
   revenue: number
   signupRevenue: number
   rebillRevenue: number
+  refunds: number
+  refundAmount: number
 }
 
 const RANGES = [
@@ -49,7 +53,9 @@ function CustomTooltip({ active, payload, label }: any) {
   // Revenue fields aren't rendered as bars, so read from the underlying data point
   const dataPoint = payload[0]?.payload as DataPoint | undefined
   const totalPayments = (newSignups?.value ?? 0) + (rebills?.value ?? 0)
-  const totalRevenue = (dataPoint?.signupRevenue ?? 0) + (dataPoint?.rebillRevenue ?? 0)
+  const totalRevenue = dataPoint?.revenue ?? 0
+  const refunds = dataPoint?.refunds ?? 0
+  const refundAmount = dataPoint?.refundAmount ?? 0
 
   return (
     <div className="bg-white border border-gray-200 shadow-xl rounded-xl p-4 text-sm min-w-[200px]">
@@ -70,6 +76,15 @@ function CustomTooltip({ active, payload, label }: any) {
           </div>
           <span className="font-semibold text-gray-900">{rebills?.value ?? 0}</span>
         </div>
+        {refunds > 0 && (
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-sm bg-red-400" />
+              <span className="text-gray-600">Refunds</span>
+            </div>
+            <span className="font-semibold text-red-600">{refunds} (−${refundAmount.toFixed(2)})</span>
+          </div>
+        )}
       </div>
 
       <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
@@ -78,7 +93,7 @@ function CustomTooltip({ active, payload, label }: any) {
           <span className="font-bold text-gray-900">{totalPayments}</span>
         </div>
         <div className="flex items-center justify-between gap-4">
-          <span className="text-gray-500">Revenue</span>
+          <span className="text-gray-500">Net Revenue</span>
           <span className="font-bold text-emerald-700">${totalRevenue.toFixed(2)}</span>
         </div>
       </div>
@@ -88,7 +103,7 @@ function CustomTooltip({ active, payload, label }: any) {
 
 export function AnalyticsChart() {
   const [data, setData] = useState<DataPoint[]>([])
-  const [summary, setSummary] = useState<Summary>({ newSignups: 0, rebills: 0, revenue: 0, signupRevenue: 0, rebillRevenue: 0 })
+  const [summary, setSummary] = useState<Summary>({ newSignups: 0, rebills: 0, revenue: 0, signupRevenue: 0, rebillRevenue: 0, refunds: 0, refundAmount: 0 })
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
 
@@ -98,7 +113,7 @@ export function AnalyticsChart() {
       .then((r) => r.json())
       .then((d) => {
         setData(d.chartData ?? [])
-        setSummary(d.summary ?? { newSignups: 0, rebills: 0, revenue: 0, signupRevenue: 0, rebillRevenue: 0 })
+        setSummary(d.summary ?? { newSignups: 0, rebills: 0, revenue: 0, signupRevenue: 0, rebillRevenue: 0, refunds: 0, refundAmount: 0 })
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -113,7 +128,7 @@ export function AnalyticsChart() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Payment Analytics</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Stripe transactions — new sign-ups vs recurring payments</p>
+          <p className="text-xs text-gray-400 mt-0.5">Stripe transactions (ET) — sign-ups, recurring, and refunds</p>
         </div>
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {RANGES.map((r) => (
@@ -133,7 +148,7 @@ export function AnalyticsChart() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
         <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg p-3.5">
           <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider">New Sign-ups</p>
           <p className="text-2xl font-bold text-blue-900 mt-1">{summary.newSignups.toLocaleString()}</p>
@@ -144,8 +159,13 @@ export function AnalyticsChart() {
           <p className="text-2xl font-bold text-emerald-900 mt-1">{summary.rebills.toLocaleString()}</p>
           <p className="text-xs text-emerald-500 mt-0.5">${summary.rebillRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} revenue</p>
         </div>
+        <div className="bg-gradient-to-br from-red-50 to-red-100/50 rounded-lg p-3.5">
+          <p className="text-[10px] font-semibold text-red-600 uppercase tracking-wider">Refunds</p>
+          <p className="text-2xl font-bold text-red-900 mt-1">{summary.refunds.toLocaleString()}</p>
+          <p className="text-xs text-red-500 mt-0.5">−${summary.refundAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
         <div className="bg-gradient-to-br from-violet-50 to-violet-100/50 rounded-lg p-3.5">
-          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider">Total Revenue</p>
+          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider">Net Revenue</p>
           <p className="text-2xl font-bold text-violet-900 mt-1">${summary.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           <p className="text-xs text-violet-500 mt-0.5">{totalPayments} payments</p>
         </div>
