@@ -50,12 +50,27 @@ export async function POST(req: NextRequest) {
         url.searchParams.set('limit', '100')
         if (afterCursor) url.searchParams.set('after', afterCursor)
 
-        const res = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${resendApiKey}` },
-        })
+        let res: Response | null = null
+        let retries = 0
+        const MAX_RETRIES = 5
 
-        if (!res.ok) {
-          emit({ phase: 'warning', message: `Resend API error for "${name}": ${res.status}` })
+        while (retries <= MAX_RETRIES) {
+          res = await fetch(url.toString(), {
+            headers: { Authorization: `Bearer ${resendApiKey}` },
+          })
+
+          if (res.status === 429) {
+            retries++
+            const backoff = Math.min(2000 * retries, 10000) // 2s, 4s, 6s, 8s, 10s
+            emit({ phase: 'warning', message: `Rate limited on "${name}" page ${pageCount + 1}, retrying in ${backoff / 1000}s (attempt ${retries}/${MAX_RETRIES})...` })
+            await new Promise(r => setTimeout(r, backoff))
+            continue
+          }
+          break
+        }
+
+        if (!res || !res.ok) {
+          emit({ phase: 'warning', message: `Resend API error for "${name}": ${res?.status ?? 'unknown'}` })
           break
         }
 
@@ -90,8 +105,9 @@ export async function POST(req: NextRequest) {
           hasMore = false
         }
 
-        // Small delay to avoid rate limits
-        await new Promise(r => setTimeout(r, 100))
+        // Delay to avoid Resend API rate limits (429 errors)
+        // Resend allows ~10 req/sec; 500ms gives comfortable margin
+        await new Promise(r => setTimeout(r, 500))
       }
 
       emit({
