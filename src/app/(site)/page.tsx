@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
 import { getProductions, getBlogPosts } from '@/lib/queries'
+import { getFeaturedImageUrl } from '@/lib/utils'
 import { NetworkLogoTicker } from '@/components/NetworkLogoTicker'
 import { JoinButton } from '@/components/JoinButton'
 
@@ -283,17 +284,7 @@ export default async function HomePage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {blogPosts.slice(0, 4).map((post: any) => {
-                // Build image URL: prefer production URL, fall back to storage path
-                let featuredImage: string | null = null
-                if (post.media?.original_url && post.media.original_url !== 'NULL') {
-                  // Rewrite local WP URLs to production domain
-                  featuredImage = post.media.original_url.replace(
-                    'https://productionlist-wp-local.local/wp-content/uploads/',
-                    'https://productionlist.com/wp-content/uploads/'
-                  )
-                } else if (post.media?.storage_path) {
-                  featuredImage = `https://productionlist.com/wp-content/uploads/${post.media.storage_path}`
-                }
+                const featuredImage = getFeaturedImageUrl(post)
                 const altText = (post.media?.alt_text && post.media.alt_text !== 'NULL')
                   ? post.media.alt_text
                   : post.title
