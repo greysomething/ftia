@@ -360,7 +360,7 @@ export async function POST(req: NextRequest) {
     let sent = 0
     let failed = 0
     const errors: string[] = []
-    const fromAddress = `Production List <${process.env.EMAIL_FROM ?? 'noreply@productionlist.com'}>`
+    const fromAddress = 'Production List <project@updates.productionlist.com>'
 
     for (let i = 0; i < emails.length; i += BATCH_SIZE) {
       const batch = emails.slice(i, i + BATCH_SIZE)
