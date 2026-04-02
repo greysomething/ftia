@@ -338,6 +338,7 @@ export async function POST(req: NextRequest) {
     }
 
     const emails = Array.from(recipientEmails)
+    const BATCH_SIZE = 100
     const totalBatches = Math.ceil(emails.length / BATCH_SIZE)
 
     emit({
@@ -359,7 +360,6 @@ export async function POST(req: NextRequest) {
     let sent = 0
     let failed = 0
     const errors: string[] = []
-    const BATCH_SIZE = 100
     const fromAddress = `Production List <${process.env.EMAIL_FROM ?? 'noreply@productionlist.com'}>`
 
     for (let i = 0; i < emails.length; i += BATCH_SIZE) {
