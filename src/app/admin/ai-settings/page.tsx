@@ -41,10 +41,21 @@ export default function AISettingsPage() {
         setDefaults(data.defaults)
         const initial: Record<string, CardState> = {}
         for (const row of data.rows) {
+          const d = data.defaults[row.slug]
           initial[row.slug] = {
-            system_prompt: row.system_prompt ?? '',
-            model: row.model ?? '',
-            max_tokens: row.max_tokens != null ? String(row.max_tokens) : '',
+            system_prompt: row.system_prompt ?? d?.prompt ?? '',
+            model: row.model ?? d?.model ?? '',
+            max_tokens: row.max_tokens != null ? String(row.max_tokens) : String(d?.max_tokens ?? ''),
+          }
+        }
+        // Also init cards for slugs that have defaults but no DB row yet
+        for (const [slug, d] of Object.entries(data.defaults)) {
+          if (!initial[slug]) {
+            initial[slug] = {
+              system_prompt: d.prompt,
+              model: d.model,
+              max_tokens: String(d.max_tokens),
+            }
           }
         }
         setEdits(initial)
@@ -72,15 +83,20 @@ export default function AISettingsPage() {
     setSaving(prev => ({ ...prev, [slug]: true }))
     try {
       const d = defaults[slug]
+      // Only store overrides — if the value matches the default, save null
+      const promptChanged = edit.system_prompt.trim() !== (d?.prompt ?? '').trim()
+      const modelChanged = edit.model.trim() !== (d?.model ?? '').trim()
+      const tokensChanged = edit.max_tokens !== String(d?.max_tokens ?? '')
+
       const res = await fetch('/api/admin/ai-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slug,
           name: d?.name || slug,
-          system_prompt: edit.system_prompt || null,
-          model: edit.model || null,
-          max_tokens: edit.max_tokens ? Number(edit.max_tokens) : null,
+          system_prompt: promptChanged ? edit.system_prompt : null,
+          model: modelChanged ? edit.model : null,
+          max_tokens: tokensChanged && edit.max_tokens ? Number(edit.max_tokens) : null,
         }),
       })
 
@@ -124,7 +140,11 @@ export default function AISettingsPage() {
       setRows(prev => prev.map(r => (r.slug === slug ? data : r)))
       setEdits(prev => ({
         ...prev,
-        [slug]: { system_prompt: '', model: '', max_tokens: '' },
+        [slug]: {
+          system_prompt: d?.prompt ?? '',
+          model: d?.model ?? '',
+          max_tokens: String(d?.max_tokens ?? ''),
+        },
       }))
       showFlash(slug, 'success', 'Reset to defaults')
     } catch (err: any) {
@@ -202,12 +222,11 @@ export default function AISettingsPage() {
                   <textarea
                     rows={16}
                     className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-[#3ea8c8] focus:border-[#3ea8c8]"
-                    placeholder={d.prompt}
                     value={edit.system_prompt}
                     onChange={e => updateField(slug, 'system_prompt', e.target.value)}
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    Leave empty to use the default prompt. The placeholder text shows the current default.
+                    Edit the prompt directly. Click &quot;Reset to Default&quot; to restore the original.
                   </p>
                 </div>
 
@@ -219,7 +238,6 @@ export default function AISettingsPage() {
                     <input
                       type="text"
                       className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#3ea8c8] focus:border-[#3ea8c8]"
-                      placeholder={d.model}
                       value={edit.model}
                       onChange={e => updateField(slug, 'model', e.target.value)}
                     />
@@ -231,7 +249,6 @@ export default function AISettingsPage() {
                     <input
                       type="number"
                       className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#3ea8c8] focus:border-[#3ea8c8]"
-                      placeholder={String(d.max_tokens)}
                       value={edit.max_tokens}
                       onChange={e => updateField(slug, 'max_tokens', e.target.value)}
                     />
