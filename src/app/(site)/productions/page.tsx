@@ -10,6 +10,7 @@ import { ViewToggle } from '@/components/ViewToggle'
 import { TrendingSearches } from '@/components/TrendingSearches'
 import { WeeklyArchive } from '@/components/WeeklyArchive'
 import { WeeklyReportPDF } from '@/components/WeeklyReportPDF'
+import { ShareWeeklyDigest } from '@/components/ShareWeeklyDigest'
 import { createClient } from '@/lib/supabase/server'
 import type { ProductionPhase } from '@/types/database'
 
@@ -208,8 +209,8 @@ export default async function ProductionsPage({ searchParams }: Props) {
                 return (
                   <>
                     {/* ── Hero Card ── */}
-                    <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden mb-6">
-                      <div className="bg-gradient-to-r from-[#1a2332] to-[#243a52] px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6">
+                      <div className="bg-gradient-to-r from-[#1a2332] to-[#243a52] px-6 py-5 rounded-t-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="bg-[#3ea8c8] text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
@@ -225,6 +226,13 @@ export default async function ProductionsPage({ searchParams }: Props) {
                         </div>
                         <div className="flex items-center gap-3">
                           <WeeklyReportPDF weekMonday={currentWeek.monday} projectCount={currentWeek.count} isMember={member} />
+                          {member && (
+                            <ShareWeeklyDigest
+                              weekMonday={currentWeek.monday}
+                              title={`Week of ${fmtDate(mondayDate)}`}
+                              productionCount={currentWeek.count}
+                            />
+                          )}
                           <Link
                             href={`/productions/week/${currentWeek.monday}`}
                             className="inline-flex items-center gap-2 bg-[#3ea8c8] text-white font-medium text-sm px-5 py-2.5 rounded-lg hover:bg-[#2d8ba8] transition-colors whitespace-nowrap"
