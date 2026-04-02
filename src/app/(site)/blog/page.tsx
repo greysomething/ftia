@@ -91,8 +91,8 @@ export default async function BlogPage({ searchParams }: Props) {
       )}
 
       {/* ─── Branded Header ─────────────────────────────── */}
-      <div className="bg-primary">
-        <div className="page-wrap py-6 md:py-8">
+      <div className="bg-primary relative overflow-hidden">
+        <div className="page-wrap py-6 md:py-8 relative z-10">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
@@ -117,7 +117,57 @@ export default async function BlogPage({ searchParams }: Props) {
             </div>
           </div>
         </div>
-        <div className="h-1 bg-accent" />
+
+        {/* Broadcast lower-third overlay — CSS-only, no JS */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+          {/* Static diagonal panels */}
+          <div className="absolute -right-[5%] top-0 w-[30%] h-full -skew-x-[18deg] bg-gradient-to-l from-black/[0.18] via-black/[0.08] to-transparent" />
+          <div className="absolute right-[10%] top-0 w-[18%] h-full -skew-x-[22deg] bg-gradient-to-r from-transparent via-accent/[0.06] to-transparent animate-[panelPulse_6s_ease-in-out_infinite]" />
+          <div className="absolute right-[28%] top-0 w-[4%] h-full -skew-x-[18deg] bg-accent/[0.08] animate-[panelPulse_8s_ease-in-out_infinite_2s]" />
+          <div className="absolute -left-[3%] top-0 w-[20%] h-full skew-x-[15deg] bg-gradient-to-r from-black/[0.10] to-transparent" />
+
+          {/* Diagonal edge lines */}
+          <div className="absolute right-[26%] top-0 w-[2px] h-full -skew-x-[18deg] bg-accent/30 animate-[edgeGlow_4s_ease-in-out_infinite]" style={{ color: 'rgb(var(--accent-rgb, 239 68 68))' }} />
+          <div className="absolute right-[38%] top-0 w-[1px] h-full -skew-x-[22deg] bg-white/[0.12]" />
+          <div className="absolute right-[9%] top-0 w-[2px] h-full -skew-x-[18deg] bg-accent/20 animate-[edgeGlow_5s_ease-in-out_infinite_1.5s]" style={{ color: 'rgb(var(--accent-rgb, 239 68 68))' }} />
+          <div className="absolute right-[50%] top-0 w-[1px] h-full -skew-x-[15deg] bg-white/[0.06]" />
+
+          {/* Sweeping light flares */}
+          <div className="absolute top-0 left-0 w-full h-full">
+            <div className="absolute w-[15%] h-full bg-gradient-to-r from-transparent via-white/[0.12] to-transparent animate-[flare_8s_ease-in-out_infinite]" />
+          </div>
+          <div className="absolute top-0 left-0 w-full h-full">
+            <div className="absolute w-[8%] h-full bg-gradient-to-r from-transparent via-accent/[0.15] to-transparent animate-[flare_12s_ease-in-out_infinite_4s]" />
+          </div>
+          <div className="absolute top-0 left-0 w-full h-full">
+            <div className="absolute w-[5%] h-full bg-gradient-to-r from-transparent via-white/[0.20] to-transparent animate-[flare_6s_ease-in-out_infinite_2s]" />
+          </div>
+
+          {/* Diagonal sweep bars */}
+          <div className="absolute top-[15%] left-0 w-full h-[3px]">
+            <div className="absolute w-[40%] h-full bg-gradient-to-r from-transparent via-accent/40 to-transparent animate-[diagonalSweep_7s_linear_infinite]" />
+          </div>
+          <div className="absolute top-[55%] left-0 w-full h-[2px]">
+            <div className="absolute w-[50%] h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[diagonalSweep_9s_linear_infinite_3s]" />
+          </div>
+          <div className="absolute top-[85%] left-0 w-full h-[3px]">
+            <div className="absolute w-[35%] h-full bg-gradient-to-r from-transparent via-accent/30 to-transparent animate-[diagonalSweep_11s_linear_infinite_1s]" />
+          </div>
+
+          {/* Horizontal rules */}
+          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/[0.15] to-transparent" />
+          <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent/25 to-transparent" />
+
+          {/* Corner accents */}
+          <div className="absolute -top-2 -right-2 w-32 h-32 border-r-2 border-t-2 border-accent/[0.15] -skew-x-[10deg]" />
+          <div className="absolute -bottom-2 -right-2 w-24 h-24 border-r-2 border-b-2 border-white/[0.08] -skew-x-[10deg]" />
+
+          {/* Ambient glow */}
+          <div className="absolute -right-10 top-0 w-[40%] h-full bg-gradient-to-l from-accent/[0.07] via-transparent to-transparent" />
+          <div className="absolute -left-10 bottom-0 w-[30%] h-full bg-gradient-to-r from-black/[0.06] via-transparent to-transparent" />
+        </div>
+
+        <div className="h-1 bg-accent relative z-10" />
       </div>
 
       {/* ─── Category Tabs ──────────────────────────────── */}
