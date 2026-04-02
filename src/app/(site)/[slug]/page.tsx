@@ -163,62 +163,64 @@ export default async function SlugPage({ params }: Props) {
             </div>
           </div>
 
-          {/* Animated news-ticker layers — CSS-only, no JS */}
+          {/* Broadcast-quality animated layers — CSS-only, no JS */}
           <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
 
-            {/* ── Horizontal sliding bars ── */}
-            {/* Top bar — slides right */}
-            <div className="absolute top-[15%] left-0 w-full h-px">
-              <div className="absolute w-[60%] h-full bg-gradient-to-r from-transparent via-accent/20 to-transparent animate-[slideRight_12s_linear_infinite]" />
+            {/* ── FULL-WIDTH SWEEPING BANDS ── */}
+            <div className="absolute top-0 left-0 w-full h-full">
+              <div className="absolute w-[50%] h-full bg-gradient-to-r from-transparent via-accent/[0.12] to-transparent animate-[slideRight_14s_ease-in-out_infinite]" />
             </div>
-            {/* Mid-upper bar — slides left, thicker */}
-            <div className="absolute top-[38%] left-0 w-full h-[2px]">
-              <div className="absolute w-[45%] h-full bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[slideLeft_18s_linear_infinite]" />
-            </div>
-            {/* Mid-lower bar — slides right, accent colored */}
-            <div className="absolute top-[62%] left-0 w-full h-px">
-              <div className="absolute w-[70%] h-full bg-gradient-to-r from-transparent via-accent/15 to-transparent animate-[slideRight_15s_linear_infinite_2s]" />
-            </div>
-            {/* Bottom bar — slides left */}
-            <div className="absolute top-[85%] left-0 w-full h-px">
-              <div className="absolute w-[50%] h-full bg-gradient-to-r from-transparent via-white/[0.07] to-transparent animate-[slideLeft_10s_linear_infinite_1s]" />
+            <div className="absolute top-0 left-0 w-full h-full">
+              <div className="absolute w-[35%] h-full bg-gradient-to-r from-transparent via-white/[0.06] to-transparent animate-[slideLeft_18s_ease-in-out_infinite_3s]" />
             </div>
 
-            {/* ── Sweeping highlight band — wide horizontal glow ── */}
-            <div className="absolute top-0 left-0 w-[40%] h-full bg-gradient-to-r from-transparent via-accent/[0.06] to-transparent animate-[slideRight_20s_ease-in-out_infinite]" />
-
-            {/* ── Diagonal accent streak ── */}
-            <div className="absolute -right-20 top-0 w-[300px] h-full origin-top-right -skew-x-12">
-              <div className="w-full h-full bg-gradient-to-b from-accent/[0.08] via-transparent to-accent/[0.05] animate-[float_8s_ease-in-out_infinite]" />
+            {/* ── THICK HORIZONTAL BARS ── */}
+            <div className="absolute top-[12%] left-0 w-full h-[3px]">
+              <div className="absolute w-[65%] h-full bg-gradient-to-r from-transparent via-accent/30 to-transparent animate-[slideRight_10s_linear_infinite]" />
+            </div>
+            <div className="absolute top-[45%] left-0 w-full h-1">
+              <div className="absolute w-[55%] h-full bg-gradient-to-r from-transparent via-white/[0.15] to-transparent animate-[slideLeft_13s_linear_infinite_1s]" />
+            </div>
+            <div className="absolute top-[72%] left-0 w-full h-[3px]">
+              <div className="absolute w-[70%] h-full bg-gradient-to-r from-transparent via-accent/25 to-transparent animate-[slideRight_11s_linear_infinite_2s]" />
+            </div>
+            <div className="absolute top-[90%] left-0 w-full h-1">
+              <div className="absolute w-[45%] h-full bg-gradient-to-r from-transparent via-white/[0.12] to-transparent animate-[slideLeft_9s_linear_infinite]" />
             </div>
 
-            {/* ── Floating gradient orbs — right side ── */}
-            <div className="absolute -right-10 top-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-accent/[0.09] blur-3xl animate-[float_16s_ease-in-out_infinite]" />
-            <div className="absolute right-[20%] -top-16 w-[250px] h-[250px] rounded-full bg-white/[0.04] blur-2xl animate-[float_12s_ease-in-out_infinite_reverse]" />
+            {/* ── BOLD DIAGONAL SLASHES ── */}
+            <div className="absolute -right-12 top-0 w-[200px] h-[150%] -skew-x-12 bg-gradient-to-b from-accent/[0.10] via-accent/[0.04] to-transparent animate-[float_10s_ease-in-out_infinite]" />
+            <div className="absolute right-[8%] -top-[20%] w-[120px] h-[150%] -skew-x-[20deg] bg-gradient-to-b from-transparent via-white/[0.05] to-transparent animate-[float_14s_ease-in-out_infinite_reverse]" />
+            <div className="absolute right-[22%] top-0 w-[80px] h-full skew-x-12 bg-gradient-to-b from-transparent via-accent/[0.06] to-transparent animate-[float_12s_ease-in-out_infinite_3s]" />
 
-            {/* ── Ticker dots — horizontal scrolling row ── */}
-            <div className="absolute bottom-[20%] left-0 w-full flex gap-8 animate-[slideRight_30s_linear_infinite]">
-              {Array.from({ length: 40 }).map((_, i) => (
-                <div key={i} className="flex-shrink-0 w-1 h-1 rounded-full bg-white/[0.08]" />
-              ))}
+            {/* ── LARGE GLOWING ORBS ── */}
+            <div className="absolute -right-20 top-1/4 w-[500px] h-[500px] rounded-full bg-accent/[0.12] blur-[100px] animate-[float_16s_ease-in-out_infinite]" />
+            <div className="absolute right-[15%] -bottom-20 w-[350px] h-[350px] rounded-full bg-accent/[0.08] blur-[80px] animate-[float_20s_ease-in-out_infinite_reverse]" />
+            <div className="absolute left-[40%] -top-10 w-[300px] h-[300px] rounded-full bg-white/[0.04] blur-[60px] animate-[float_18s_ease-in-out_infinite_5s]" />
+
+            {/* ── SCROLLING BLOCK SEGMENTS — ticker data feel ── */}
+            <div className="absolute top-[28%] left-0 w-full h-8 opacity-[0.04]">
+              <div className="flex gap-6 animate-[slideRight_25s_linear_infinite]">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={i} className="flex-shrink-0 w-24 h-full rounded bg-white" />
+                ))}
+              </div>
             </div>
-            <div className="absolute top-[25%] left-0 w-full flex gap-12 animate-[slideLeft_35s_linear_infinite]">
-              {Array.from({ length: 30 }).map((_, i) => (
-                <div key={i} className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent/[0.06]" />
-              ))}
+            <div className="absolute top-[65%] left-0 w-full h-6 opacity-[0.03]">
+              <div className="flex gap-8 animate-[slideLeft_30s_linear_infinite_2s]">
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <div key={i} className="flex-shrink-0 w-32 h-full rounded bg-accent" />
+                ))}
+              </div>
             </div>
 
-            {/* ── Grid dots — right side ── */}
-            <svg className="absolute right-6 top-1/2 -translate-y-1/2 w-52 h-52 text-white/[0.06]" viewBox="0 0 200 200">
-              {Array.from({ length: 36 }).map((_, i) => (
-                <circle key={i} cx={15 + (i % 6) * 35} cy={15 + Math.floor(i / 6) * 35} r="1.5" fill="currentColor" />
-              ))}
-            </svg>
+            {/* ── BOLD VERTICAL ACCENTS ── */}
+            <div className="absolute right-[6%] top-0 w-[3px] h-full bg-gradient-to-b from-transparent via-accent/20 to-transparent animate-[shimmer_5s_ease-in-out_infinite]" />
+            <div className="absolute right-[14%] top-0 w-[2px] h-full bg-gradient-to-b from-transparent via-white/[0.10] to-transparent animate-[shimmer_7s_ease-in-out_infinite_2s]" />
 
-            {/* ── Vertical accent lines — right side ── */}
-            <div className="absolute right-[10%] top-0 w-px h-full bg-gradient-to-b from-transparent via-accent/[0.12] to-transparent animate-[shimmer_6s_ease-in-out_infinite]" />
-            <div className="absolute right-[18%] top-0 w-px h-full bg-gradient-to-b from-transparent via-white/[0.06] to-transparent animate-[shimmer_9s_ease-in-out_infinite_2s]" />
-            <div className="absolute right-[5%] top-0 w-[2px] h-full bg-gradient-to-b from-transparent via-accent/[0.08] to-transparent animate-[shimmer_7s_ease-in-out_infinite_4s]" />
+            {/* ── GEOMETRIC SHAPES — angular accents ── */}
+            <div className="absolute -top-8 -right-8 w-40 h-40 border-2 border-accent/[0.12] rounded-lg rotate-45 animate-[float_12s_ease-in-out_infinite_1s]" />
+            <div className="absolute -bottom-4 right-[12%] w-24 h-24 border border-white/[0.06] rounded rotate-[30deg] animate-[float_15s_ease-in-out_infinite_reverse]" />
           </div>
 
           <div className="h-1 bg-accent relative z-10" />
