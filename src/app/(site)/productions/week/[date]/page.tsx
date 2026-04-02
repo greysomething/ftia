@@ -71,8 +71,8 @@ export default async function WeeklyListPage({ params }: Props) {
 
       <div className="max-w-5xl mx-auto">
         {/* Header Card */}
-        <div className="white-bg overflow-hidden mb-6">
-          <div className="h-1.5 bg-gradient-to-r from-primary to-accent" />
+        <div className="white-bg mb-6">
+          <div className="h-1.5 bg-gradient-to-r from-primary to-accent rounded-t-lg" />
           <div className="p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
