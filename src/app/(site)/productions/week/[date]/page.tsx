@@ -103,13 +103,11 @@ export default async function WeeklyListPage({ params }: Props) {
                     <div className="text-xs text-gray-500 uppercase tracking-wide">Crew</div>
                   </div>
                 )}
-                {member && (
-                  <ShareWeeklyDigest
-                    weekMonday={date}
-                    title={`Week of ${formattedWeek}`}
-                    productionCount={productions.length}
-                  />
-                )}
+                <ShareWeeklyDigest
+                  weekMonday={date}
+                  title={`Week of ${formattedWeek}`}
+                  productionCount={productions.length}
+                />
               </div>
             </div>
 
