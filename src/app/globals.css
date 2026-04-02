@@ -154,3 +154,13 @@
   0%, 100% { opacity: 0; transform: translateY(10px); }
   50% { opacity: 1; transform: translateY(-10px); }
 }
+
+@keyframes slideRight {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes slideLeft {
+  0% { transform: translateX(200%); }
+  100% { transform: translateX(-100%); }
+}

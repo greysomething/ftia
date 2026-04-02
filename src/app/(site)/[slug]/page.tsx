@@ -163,25 +163,62 @@ export default async function SlugPage({ params }: Props) {
             </div>
           </div>
 
-          {/* Subtle animated elements — CSS-only, no JS overhead */}
+          {/* Animated news-ticker layers — CSS-only, no JS */}
           <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-            {/* Floating gradient orbs */}
-            <div className="absolute -right-20 top-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-accent/[0.07] blur-3xl animate-[float_20s_ease-in-out_infinite]" />
-            <div className="absolute right-20 -top-10 w-[300px] h-[300px] rounded-full bg-white/[0.03] blur-2xl animate-[float_15s_ease-in-out_infinite_reverse]" />
-            <div className="absolute right-1/3 bottom-0 w-[200px] h-[200px] rounded-full bg-accent/[0.04] blur-2xl animate-[float_25s_ease-in-out_infinite_2s]" />
 
-            {/* Thin moving light streaks */}
-            <div className="absolute right-0 top-0 w-full h-full">
-              <div className="absolute right-[15%] top-0 w-px h-full bg-gradient-to-b from-transparent via-white/[0.08] to-transparent animate-[shimmer_8s_ease-in-out_infinite]" />
-              <div className="absolute right-[35%] top-0 w-px h-full bg-gradient-to-b from-transparent via-accent/[0.06] to-transparent animate-[shimmer_12s_ease-in-out_infinite_3s]" />
+            {/* ── Horizontal sliding bars ── */}
+            {/* Top bar — slides right */}
+            <div className="absolute top-[15%] left-0 w-full h-px">
+              <div className="absolute w-[60%] h-full bg-gradient-to-r from-transparent via-accent/20 to-transparent animate-[slideRight_12s_linear_infinite]" />
+            </div>
+            {/* Mid-upper bar — slides left, thicker */}
+            <div className="absolute top-[38%] left-0 w-full h-[2px]">
+              <div className="absolute w-[45%] h-full bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[slideLeft_18s_linear_infinite]" />
+            </div>
+            {/* Mid-lower bar — slides right, accent colored */}
+            <div className="absolute top-[62%] left-0 w-full h-px">
+              <div className="absolute w-[70%] h-full bg-gradient-to-r from-transparent via-accent/15 to-transparent animate-[slideRight_15s_linear_infinite_2s]" />
+            </div>
+            {/* Bottom bar — slides left */}
+            <div className="absolute top-[85%] left-0 w-full h-px">
+              <div className="absolute w-[50%] h-full bg-gradient-to-r from-transparent via-white/[0.07] to-transparent animate-[slideLeft_10s_linear_infinite_1s]" />
             </div>
 
-            {/* Subtle grid dots on the right side */}
-            <svg className="absolute right-8 top-1/2 -translate-y-1/2 w-48 h-48 text-white/[0.04] animate-[pulse_10s_ease-in-out_infinite]" viewBox="0 0 200 200">
-              {Array.from({ length: 25 }).map((_, i) => (
-                <circle key={i} cx={20 + (i % 5) * 40} cy={20 + Math.floor(i / 5) * 40} r="1.5" fill="currentColor" />
+            {/* ── Sweeping highlight band — wide horizontal glow ── */}
+            <div className="absolute top-0 left-0 w-[40%] h-full bg-gradient-to-r from-transparent via-accent/[0.06] to-transparent animate-[slideRight_20s_ease-in-out_infinite]" />
+
+            {/* ── Diagonal accent streak ── */}
+            <div className="absolute -right-20 top-0 w-[300px] h-full origin-top-right -skew-x-12">
+              <div className="w-full h-full bg-gradient-to-b from-accent/[0.08] via-transparent to-accent/[0.05] animate-[float_8s_ease-in-out_infinite]" />
+            </div>
+
+            {/* ── Floating gradient orbs — right side ── */}
+            <div className="absolute -right-10 top-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-accent/[0.09] blur-3xl animate-[float_16s_ease-in-out_infinite]" />
+            <div className="absolute right-[20%] -top-16 w-[250px] h-[250px] rounded-full bg-white/[0.04] blur-2xl animate-[float_12s_ease-in-out_infinite_reverse]" />
+
+            {/* ── Ticker dots — horizontal scrolling row ── */}
+            <div className="absolute bottom-[20%] left-0 w-full flex gap-8 animate-[slideRight_30s_linear_infinite]">
+              {Array.from({ length: 40 }).map((_, i) => (
+                <div key={i} className="flex-shrink-0 w-1 h-1 rounded-full bg-white/[0.08]" />
+              ))}
+            </div>
+            <div className="absolute top-[25%] left-0 w-full flex gap-12 animate-[slideLeft_35s_linear_infinite]">
+              {Array.from({ length: 30 }).map((_, i) => (
+                <div key={i} className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent/[0.06]" />
+              ))}
+            </div>
+
+            {/* ── Grid dots — right side ── */}
+            <svg className="absolute right-6 top-1/2 -translate-y-1/2 w-52 h-52 text-white/[0.06]" viewBox="0 0 200 200">
+              {Array.from({ length: 36 }).map((_, i) => (
+                <circle key={i} cx={15 + (i % 6) * 35} cy={15 + Math.floor(i / 6) * 35} r="1.5" fill="currentColor" />
               ))}
             </svg>
+
+            {/* ── Vertical accent lines — right side ── */}
+            <div className="absolute right-[10%] top-0 w-px h-full bg-gradient-to-b from-transparent via-accent/[0.12] to-transparent animate-[shimmer_6s_ease-in-out_infinite]" />
+            <div className="absolute right-[18%] top-0 w-px h-full bg-gradient-to-b from-transparent via-white/[0.06] to-transparent animate-[shimmer_9s_ease-in-out_infinite_2s]" />
+            <div className="absolute right-[5%] top-0 w-[2px] h-full bg-gradient-to-b from-transparent via-accent/[0.08] to-transparent animate-[shimmer_7s_ease-in-out_infinite_4s]" />
           </div>
 
           <div className="h-1 bg-accent relative z-10" />
