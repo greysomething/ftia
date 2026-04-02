@@ -621,19 +621,25 @@ export default async function AdminUserDetailPage({ params }: Props) {
                     logout: { label: 'Logout', color: 'bg-gray-100 text-gray-600' },
                     contact_form: { label: 'Contact Form', color: 'bg-teal-100 text-teal-800' },
                   }
-                  const evt = eventLabels[entry.event_type] ?? { label: entry.event_type, color: 'bg-gray-100 text-gray-600' }
-                  const location = [entry.city, entry.country].filter(Boolean).join(', ')
                   const meta = entry.metadata as Record<string, any> | null
+                  // Dynamic badge labels for password_reset based on step
+                  let evt = eventLabels[entry.event_type] ?? { label: entry.event_type, color: 'bg-gray-100 text-gray-600' }
+                  if (entry.event_type === 'password_reset' && meta?.step) {
+                    const stepBadges: Record<string, { label: string; color: string }> = {
+                      reset_requested: { label: 'Reset Requested', color: 'bg-yellow-100 text-yellow-800' },
+                      link_verified: { label: 'Link Verified', color: 'bg-amber-100 text-amber-800' },
+                      password_changed: { label: 'Password Changed', color: 'bg-green-100 text-green-800' },
+                      change_failed: { label: 'Reset Failed', color: 'bg-red-100 text-red-800' },
+                    }
+                    evt = stepBadges[meta.step] ?? evt
+                  }
+                  const location = [entry.city, entry.country].filter(Boolean).join(', ')
                   // Build a meaningful detail string from metadata
                   let detail: string | null = null
                   if (entry.event_type === 'password_reset' && meta?.step) {
-                    const stepLabels: Record<string, string> = {
-                      reset_requested: 'Requested',
-                      link_verified: 'Link verified',
-                      password_changed: 'Password changed',
-                      change_failed: meta?.error ?? 'Failed',
-                    }
-                    detail = stepLabels[meta.step] ?? meta.step
+                    // Show method/source info instead of repeating the step
+                    const method = meta.method as string | undefined
+                    if (method) detail = method === 'token_hash' ? 'via email link' : method === 'pkce' ? 'via PKCE' : method
                   } else if (entry.event_type === 'membership_changed' && meta?.action) {
                     const actionLabels: Record<string, string> = {
                       created: 'New membership',
@@ -644,6 +650,11 @@ export default async function AdminUserDetailPage({ params }: Props) {
                     detail = actionLabels[meta.action] ?? meta.action
                   } else if (entry.event_type === 'email_sent' && meta?.subject) {
                     detail = meta.subject
+                  } else if (entry.event_type === 'login') {
+                    detail = 'Successful login'
+                  } else if (entry.event_type === 'register') {
+                    const parts = [meta?.organizationType, meta?.country].filter(Boolean)
+                    detail = parts.length > 0 ? parts.join(', ') : 'New account'
                   } else {
                     detail = meta?.reason || meta?.error || meta?.template || null
                   }

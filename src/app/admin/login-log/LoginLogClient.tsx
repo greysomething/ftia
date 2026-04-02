@@ -98,6 +98,39 @@ function metadataSummary(eventType: string, metadata: Record<string, unknown>): 
     return reason || null
   }
 
+  if (eventType === 'password_reset') {
+    const step = metadata.step as string | undefined
+    const method = metadata.method as string | undefined
+    const stepLabels: Record<string, string> = {
+      reset_requested: 'Requested',
+      link_verified: `Link verified${method ? ` (${method})` : ''}`,
+      password_changed: 'Password changed successfully',
+      change_failed: `Change failed${metadata.error ? `: ${metadata.error}` : ''}`,
+    }
+    return step ? stepLabels[step] ?? step.replace(/_/g, ' ') : null
+  }
+
+  if (eventType === 'password_reset_failed') {
+    const error = metadata.error as string | undefined
+    const method = metadata.method as string | undefined
+    return [error, method ? `(${method})` : null].filter(Boolean).join(' ') || null
+  }
+
+  if (eventType === 'register') {
+    const country = metadata.country as string | undefined
+    const orgType = metadata.organizationType as string | undefined
+    return [orgType, country].filter(Boolean).join(', ') || null
+  }
+
+  if (eventType === 'profile_update') {
+    const fields = metadata.fields as string[] | undefined
+    const updatedBy = metadata.updatedBy as string | undefined
+    const parts: string[] = []
+    if (updatedBy) parts.push(`by ${updatedBy}`)
+    if (fields?.length) parts.push(`(${fields.join(', ')})`)
+    return parts.length > 0 ? parts.join(' ') : null
+  }
+
   return null
 }
 
@@ -193,7 +226,7 @@ export function LoginLogClient({
           <div className="flex-1 min-w-[200px]">
             <label className="form-label">Event Type</label>
             <div className="flex flex-wrap gap-1">
-              {['all', 'login', 'login_failed', 'logout', 'register', 'password_reset', 'membership_changed', 'email_sent', 'pdf_download', 'profile_update', 'contact_form'].map(type => (
+              {['all', 'login', 'login_failed', 'logout', 'register', 'password_reset', 'password_reset_failed', 'membership_changed', 'email_sent', 'pdf_download', 'profile_update', 'contact_form'].map(type => (
                 <button
                   key={type}
                   onClick={() => router.push(buildUrl({ type, page: '1' }))}
