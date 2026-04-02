@@ -400,12 +400,14 @@ export async function POST(req: NextRequest) {
         }
       })
 
+      let batchCounted = false
       try {
         const { data: batchData, error: batchError } = await resend.batch.send(emailPayloads)
 
         if (batchError) {
           console.error(`[send-weekly-digest] Batch SDK error:`, batchError)
           failed += batch.length
+          batchCounted = true
           if (errors.length < 10) errors.push(`Batch ${batchNum}: ${batchError.message}`)
 
           try {
@@ -423,27 +425,32 @@ export async function POST(req: NextRequest) {
             console.error(`[send-weekly-digest] Failed to log email_logs for failed batch:`, logErr)
           }
 
-          const failActivityEntries = batch.map((email, idx) => ({
-            email,
-            event_type: 'email_sent',
-            ip_address: null,
-            user_agent: 'Weekly Digest Sender',
-            country: null, city: null, region: null,
-            metadata: {
-              subject: emailPayloads[idx].subject,
-              template: 'weekly-digest',
-              status: 'failed',
-              error: batchError.message,
-              trigger: triggerType,
-              week_monday: weekMonday,
-            },
-          }))
-          await supabase.from('activity_log').insert(failActivityEntries).catch(() => {})
+          try {
+            const failActivityEntries = batch.map((email, idx) => ({
+              email,
+              event_type: 'email_sent',
+              ip_address: null,
+              user_agent: 'Weekly Digest Sender',
+              country: null, city: null, region: null,
+              metadata: {
+                subject: emailPayloads[idx].subject,
+                template: 'weekly-digest',
+                status: 'failed',
+                error: batchError.message,
+                trigger: triggerType,
+                week_monday: weekMonday,
+              },
+            }))
+            await supabase.from('activity_log').insert(failActivityEntries)
+          } catch {
+            // Don't let logging errors affect send counts
+          }
         } else {
           const results = batchData?.data ?? []
           sent += results.length
           const batchFailed = batch.length - results.length
           failed += batchFailed
+          batchCounted = true
 
           try {
             const logEntries = batch.map((email, idx) => ({
@@ -460,28 +467,36 @@ export async function POST(req: NextRequest) {
             console.error(`[send-weekly-digest] Failed to log email_logs for batch:`, logErr)
           }
 
-          const activityEntries = batch
-            .filter((_, idx) => idx < results.length)
-            .map((email, idx) => ({
-              email,
-              event_type: 'email_sent',
-              ip_address: null,
-              user_agent: 'Weekly Digest Sender',
-              country: null, city: null, region: null,
-              metadata: {
-                subject: emailPayloads[idx].subject,
-                template: 'weekly-digest',
-                resend_id: results[idx]?.id ?? null,
-                trigger: triggerType,
-                week_monday: weekMonday,
-              },
-            }))
-          if (activityEntries.length > 0) {
-            await supabase.from('activity_log').insert(activityEntries).catch(() => {})
+          try {
+            const activityEntries = batch
+              .filter((_, idx) => idx < results.length)
+              .map((email, idx) => ({
+                email,
+                event_type: 'email_sent',
+                ip_address: null,
+                user_agent: 'Weekly Digest Sender',
+                country: null, city: null, region: null,
+                metadata: {
+                  subject: emailPayloads[idx].subject,
+                  template: 'weekly-digest',
+                  resend_id: results[idx]?.id ?? null,
+                  trigger: triggerType,
+                  week_monday: weekMonday,
+                },
+              }))
+            if (activityEntries.length > 0) {
+              await supabase.from('activity_log').insert(activityEntries)
+            }
+          } catch {
+            // Don't let logging errors affect send counts
           }
         }
       } catch (err: any) {
-        failed += batch.length
+        // Only count as failed if not already counted (prevents double-counting
+        // when emails sent successfully but logging threw an error)
+        if (!batchCounted) {
+          failed += batch.length
+        }
         if (errors.length < 10) errors.push(`Batch ${batchNum}: ${err.message}`)
       }
 
