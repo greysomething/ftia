@@ -103,8 +103,8 @@ export default async function SlugPage({ params }: Props) {
     return (
       <>
         {/* ─── Article Header ───────────────────────────── */}
-        <div className="bg-primary">
-          <div className="page-wrap py-8 md:py-10">
+        <div className="bg-primary relative overflow-hidden">
+          <div className="page-wrap py-8 md:py-10 relative z-10">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-white mb-4">
               <Link href="/" className="text-white/80 hover:text-white transition-colors">Home</Link>
@@ -160,10 +160,31 @@ export default async function SlugPage({ params }: Props) {
                 </svg>
                 {readTime} min read
               </span>
-              <span className="text-white/50">{wordCount.toLocaleString()} words</span>
             </div>
           </div>
-          <div className="h-1 bg-accent" />
+
+          {/* Subtle animated elements — CSS-only, no JS overhead */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            {/* Floating gradient orbs */}
+            <div className="absolute -right-20 top-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-accent/[0.07] blur-3xl animate-[float_20s_ease-in-out_infinite]" />
+            <div className="absolute right-20 -top-10 w-[300px] h-[300px] rounded-full bg-white/[0.03] blur-2xl animate-[float_15s_ease-in-out_infinite_reverse]" />
+            <div className="absolute right-1/3 bottom-0 w-[200px] h-[200px] rounded-full bg-accent/[0.04] blur-2xl animate-[float_25s_ease-in-out_infinite_2s]" />
+
+            {/* Thin moving light streaks */}
+            <div className="absolute right-0 top-0 w-full h-full">
+              <div className="absolute right-[15%] top-0 w-px h-full bg-gradient-to-b from-transparent via-white/[0.08] to-transparent animate-[shimmer_8s_ease-in-out_infinite]" />
+              <div className="absolute right-[35%] top-0 w-px h-full bg-gradient-to-b from-transparent via-accent/[0.06] to-transparent animate-[shimmer_12s_ease-in-out_infinite_3s]" />
+            </div>
+
+            {/* Subtle grid dots on the right side */}
+            <svg className="absolute right-8 top-1/2 -translate-y-1/2 w-48 h-48 text-white/[0.04] animate-[pulse_10s_ease-in-out_infinite]" viewBox="0 0 200 200">
+              {Array.from({ length: 25 }).map((_, i) => (
+                <circle key={i} cx={20 + (i % 5) * 40} cy={20 + Math.floor(i / 5) * 40} r="1.5" fill="currentColor" />
+              ))}
+            </svg>
+          </div>
+
+          <div className="h-1 bg-accent relative z-10" />
         </div>
 
         {/* ─── Main Content Area ────────────────────────── */}
