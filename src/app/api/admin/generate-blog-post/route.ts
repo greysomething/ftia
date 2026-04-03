@@ -145,6 +145,11 @@ export async function POST(req: NextRequest) {
 
     const blogData = JSON.parse(jsonMatch[0])
 
+    // Wrap the first paragraph in an H4 heading
+    if (blogData.content) {
+      blogData.content = blogData.content.replace(/^<p>([\s\S]*?)<\/p>/, '<h5>$1</h5>')
+    }
+
     // Append CTA linking to the production page
     if (productionId) {
       const supabaseForSlug = createAdminClient()
@@ -198,6 +203,19 @@ export async function POST(req: NextRequest) {
         error: insertErr.message,
         blog: blogData,
       })
+    }
+
+    // Assign "Project Alerts" category by default
+    if (blogPost) {
+      const { data: projectAlertsCat } = await supabase
+        .from('blog_categories')
+        .select('id')
+        .eq('slug', 'project-alerts')
+        .single()
+      if (projectAlertsCat) {
+        await supabase.from('blog_post_categories')
+          .upsert({ post_id: blogPost.id, category_id: projectAlertsCat.id }, { onConflict: 'post_id,category_id', ignoreDuplicates: true })
+      }
     }
 
     // Link blog post to production if we have a production ID

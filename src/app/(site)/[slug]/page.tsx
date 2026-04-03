@@ -245,6 +245,7 @@ export default async function SlugPage({ params }: Props) {
                     prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-4
                     prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
                     prose-h4:text-lg prose-h4:mt-6 prose-h4:mb-2
+                    prose-h5:text-[1.125rem] prose-h5:font-light prose-h5:mt-0 prose-h5:mb-4 prose-h5:leading-relaxed prose-h5:text-gray-700
                     prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-4
                     prose-a:text-accent prose-a:no-underline hover:prose-a:underline
                     prose-strong:text-gray-900

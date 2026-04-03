@@ -279,6 +279,11 @@ async function processQueueItem(
       }
     }
 
+    // Wrap the first paragraph in an H4 heading
+    if (blogData.content) {
+      blogData.content = blogData.content.replace(/^<p>([\s\S]*?)<\/p>/, '<h5>$1</h5>')
+    }
+
     // Append CTA linking to the production page
     if (prod.slug) {
       const ctaHtml = `<p style="text-align:center"><strong><a href="/production/${prod.slug}">Click here</a> for production info or to contact producers</strong></p>`
@@ -300,6 +305,17 @@ async function processQueueItem(
       .single()
 
     if (insertErr) throw new Error(`Failed to save: ${insertErr.message}`)
+
+    // Assign "Project Alerts" category by default
+    const { data: projectAlertsCat } = await supabase
+      .from('blog_categories')
+      .select('id')
+      .eq('slug', 'project-alerts')
+      .single()
+    if (projectAlertsCat) {
+      await supabase.from('blog_post_categories')
+        .upsert({ post_id: blogPost.id, category_id: projectAlertsCat.id }, { onConflict: 'post_id,category_id', ignoreDuplicates: true })
+    }
 
     await supabase.from('productions').update({ blog_linked: blogPost.id }).eq('id', productionId)
     await supabase.from('blog_generation_queue').update({

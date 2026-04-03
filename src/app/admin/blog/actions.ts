@@ -97,7 +97,12 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
 
   revalidatePath('/admin/blog')
   revalidatePath('/blog')
-  redirect('/admin/blog')
+  if (id) {
+    revalidatePath(`/admin/blog/${id}/edit`)
+    redirect(`/admin/blog/${id}/edit`)
+  } else {
+    redirect(`/admin/blog/${postId}/edit`)
+  }
 }
 
 export async function trashBlogPost(id: number) {
