@@ -20,7 +20,7 @@ export function RichTextEditor({ content, onChange }: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading: { levels: [2, 3, 4] },
+        heading: { levels: [2, 3, 4, 5] },
       }),
       Underline,
       LinkExt.configure({
@@ -125,6 +125,13 @@ export function RichTextEditor({ content, onChange }: Props) {
             title="Heading 4"
           >
             H4
+          </ToolbarButton>
+          <ToolbarButton
+            active={editor.isActive('heading', { level: 5 })}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
+            title="Heading 5"
+          >
+            H5
           </ToolbarButton>
           <ToolbarButton
             active={editor.isActive('paragraph')}
