@@ -37,8 +37,9 @@ function formatScheduleDate(dateStr: string) {
   const diff = d.getTime() - now.getTime()
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
 
-  const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  const tz = 'America/Los_Angeles'
+  const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz })
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz })
 
   if (days > 0 && days <= 7) return `${formatted} at ${time} (in ${days}d)`
   return `${formatted} at ${time}`

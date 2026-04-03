@@ -125,6 +125,13 @@ export async function POST(req: NextRequest) {
       ).filter(Boolean) ?? []
       if (excludeTypes.length && typeNames.some((t: string) => excludeTypes.includes(t))) continue
 
+      // Skip productions without a start date at least 30 days in the future
+      if (!p.production_date_start) continue
+      const startDate = new Date(p.production_date_start)
+      const thirtyDaysFromNow = new Date()
+      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
+      if (startDate < thirtyDaysFromNow) continue
+
       // Score based on data richness
       let score = 0
       if (p.title) score++

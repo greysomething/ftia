@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { getPromptConfig } from '@/lib/ai-prompts'
+import { validateResearchUrls } from '@/lib/url-validator'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 120
 
 export async function POST(req: NextRequest) {
   try { await requireAdmin() } catch {
@@ -60,7 +61,15 @@ export async function POST(req: NextRequest) {
     }
 
     const data = JSON.parse(jsonMatch[0])
-    return NextResponse.json({ ok: true, data })
+
+    // Validate all URLs in the AI response
+    const { data: validated, validation_report, total_checked, total_valid, total_invalid } = await validateResearchUrls(data)
+    if (total_invalid > 0) {
+      console.warn(`[ai-research] ${type} "${name}": ${total_invalid}/${total_checked} URLs invalid:`,
+        validation_report.filter(r => !r.valid).map(r => `${r.field}: ${r.url} (${r.reason})`))
+    }
+
+    return NextResponse.json({ ok: true, data: validated, url_validation: { total_checked, total_valid, total_invalid } })
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? 'AI research failed' }, { status: 500 })
   }
