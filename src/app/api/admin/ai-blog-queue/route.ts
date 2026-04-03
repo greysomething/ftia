@@ -104,10 +104,10 @@ export async function POST(req: NextRequest) {
       .select(`
         id, title, excerpt, content, computed_status,
         production_date_start, production_date_end,
-        production_crew(id),
-        production_companies(id),
+        production_crew_roles(id),
+        production_company_links(id),
         production_locations(id),
-        production_type_map(production_types(name))
+        production_type_links(production_types(name))
       `)
       .order('updated_at', { ascending: false })
       .limit(200)
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
       if (queuedIds.has(p.id) || linkedIds.has(p.id)) continue
 
       // Check excluded types
-      const typeNames = (p.production_type_map as any[])?.map(
+      const typeNames = (p.production_type_links as any[])?.map(
         (tm: any) => tm.production_types?.name
       ).filter(Boolean) ?? []
       if (excludeTypes.length && typeNames.some((t: string) => excludeTypes.includes(t))) continue
@@ -131,8 +131,8 @@ export async function POST(req: NextRequest) {
       if (p.excerpt) score++
       if (p.content) score++
       if (p.computed_status) score++
-      if ((p.production_crew as any[])?.length > 0) score++
-      if ((p.production_companies as any[])?.length > 0) score++
+      if ((p.production_crew_roles as any[])?.length > 0) score++
+      if ((p.production_company_links as any[])?.length > 0) score++
       if ((p.production_locations as any[])?.length > 0) score++
       if (p.production_date_start) score++
 

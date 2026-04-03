@@ -165,11 +165,11 @@ async function generateBlogForItem(
     .select(`
       id, title, excerpt, content, computed_status,
       production_date_start, production_date_end,
-      production_crew(role_name, inline_name),
-      production_companies(inline_name),
+      production_crew_roles(role_name, inline_name),
+      production_company_links(inline_name),
       production_locations(location, city, stage, country),
-      production_type_map(production_types(name)),
-      production_status_map(production_statuses(name))
+      production_type_links(production_types(name)),
+      production_status_links(production_statuses(name))
     `)
     .eq('id', productionId)
     .single()
@@ -184,10 +184,10 @@ async function generateBlogForItem(
 
   // Build context string for the AI
   const context: string[] = [`Project Title: ${prod.title}`]
-  const typeNames = (prod.production_type_map as any[])?.map(
+  const typeNames = (prod.production_type_links as any[])?.map(
     (tm: any) => tm.production_types?.name
   ).filter(Boolean) ?? []
-  const statusNames = (prod.production_status_map as any[])?.map(
+  const statusNames = (prod.production_status_links as any[])?.map(
     (sm: any) => sm.production_statuses?.name
   ).filter(Boolean) ?? []
 
@@ -199,11 +199,11 @@ async function generateBlogForItem(
   if (prod.excerpt) context.push(`Logline: ${prod.excerpt}`)
   if (prod.content) context.push(`Description: ${prod.content}`)
 
-  const crew = prod.production_crew as any[]
+  const crew = prod.production_crew_roles as any[]
   if (crew?.length) {
     context.push(`Key Crew:\n${crew.map((c: any) => `  - ${c.role_name}: ${c.inline_name}`).join('\n')}`)
   }
-  const companies = prod.production_companies as any[]
+  const companies = prod.production_company_links as any[]
   if (companies?.length) {
     context.push(`Production Companies: ${companies.map((c: any) => c.inline_name).join(', ')}`)
   }

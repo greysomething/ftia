@@ -133,10 +133,10 @@ async function autoPopulateQueue(
     .select(`
       id, title, excerpt, content, computed_status,
       production_date_start, production_date_end,
-      production_crew(id),
-      production_companies(id),
+      production_crew_roles(id),
+      production_company_links(id),
       production_locations(id),
-      production_type_map(production_types(name))
+      production_type_links(production_types(name))
     `)
     .order('updated_at', { ascending: false })
     .limit(100)
@@ -145,7 +145,7 @@ async function autoPopulateQueue(
   for (const p of productions ?? []) {
     if (queuedIds.has(p.id) || linkedIds.has(p.id)) continue
 
-    const typeNames = (p.production_type_map as any[])?.map(
+    const typeNames = (p.production_type_links as any[])?.map(
       (tm: any) => tm.production_types?.name
     ).filter(Boolean) ?? []
     if (excludeTypes.length && typeNames.some((t: string) => excludeTypes.includes(t))) continue
@@ -155,8 +155,8 @@ async function autoPopulateQueue(
     if (p.excerpt) score++
     if (p.content) score++
     if (p.computed_status) score++
-    if ((p.production_crew as any[])?.length > 0) score++
-    if ((p.production_companies as any[])?.length > 0) score++
+    if ((p.production_crew_roles as any[])?.length > 0) score++
+    if ((p.production_company_links as any[])?.length > 0) score++
     if ((p.production_locations as any[])?.length > 0) score++
     if (p.production_date_start) score++
 
@@ -195,11 +195,11 @@ async function processQueueItem(
     .select(`
       id, title, excerpt, content, computed_status,
       production_date_start, production_date_end,
-      production_crew(role_name, inline_name),
-      production_companies(inline_name),
+      production_crew_roles(role_name, inline_name),
+      production_company_links(inline_name),
       production_locations(location, city, stage, country),
-      production_type_map(production_types(name)),
-      production_status_map(production_statuses(name))
+      production_type_links(production_types(name)),
+      production_status_links(production_statuses(name))
     `)
     .eq('id', productionId)
     .single()
@@ -213,8 +213,8 @@ async function processQueueItem(
 
   // Build context
   const context: string[] = [`Project Title: ${prod.title}`]
-  const typeNames = (prod.production_type_map as any[])?.map((tm: any) => tm.production_types?.name).filter(Boolean) ?? []
-  const statusNames = (prod.production_status_map as any[])?.map((sm: any) => sm.production_statuses?.name).filter(Boolean) ?? []
+  const typeNames = (prod.production_type_links as any[])?.map((tm: any) => tm.production_types?.name).filter(Boolean) ?? []
+  const statusNames = (prod.production_status_links as any[])?.map((sm: any) => sm.production_statuses?.name).filter(Boolean) ?? []
 
   if (typeNames.length) context.push(`Type: ${typeNames.join(', ')}`)
   if (statusNames.length) context.push(`Status: ${statusNames.join(', ')}`)
@@ -224,9 +224,9 @@ async function processQueueItem(
   if (prod.excerpt) context.push(`Logline: ${prod.excerpt}`)
   if (prod.content) context.push(`Description: ${prod.content}`)
 
-  const crew = prod.production_crew as any[]
+  const crew = prod.production_crew_roles as any[]
   if (crew?.length) context.push(`Key Crew:\n${crew.map((c: any) => `  - ${c.role_name}: ${c.inline_name}`).join('\n')}`)
-  const companies = prod.production_companies as any[]
+  const companies = prod.production_company_links as any[]
   if (companies?.length) context.push(`Production Companies: ${companies.map((c: any) => c.inline_name).join(', ')}`)
   const locations = prod.production_locations as any[]
   if (locations?.length) context.push(`Filming Locations:\n${locations.map((l: any) => `  - ${[l.location, l.city, l.stage, l.country].filter(Boolean).join(', ')}`).join('\n')}`)
