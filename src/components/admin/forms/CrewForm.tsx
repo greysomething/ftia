@@ -164,7 +164,8 @@ export function CrewForm({ crew }: CrewFormProps) {
   const aiHasRep = aiResult?.representation && (aiResult.representation.agency || aiResult.representation.agent || aiResult.representation.manager)
 
   return (
-    <form ref={formRef} action={action} className="space-y-6 max-w-2xl" key={scannedData ? JSON.stringify(scannedData).substring(0, 50) : 'default'}>
+    <div className="flex gap-6 items-start">
+    <form ref={formRef} action={action} className="space-y-6 max-w-2xl flex-1 min-w-0" key={scannedData ? JSON.stringify(scannedData).substring(0, 50) : 'default'}>
       {crew && <input type="hidden" name="id" value={crew.id} />}
       {/* Hidden fields for arrays */}
       <input type="hidden" name="roles" value={JSON.stringify(roles)} />
@@ -222,14 +223,14 @@ export function CrewForm({ crew }: CrewFormProps) {
 
           {/* Contact fields found */}
           <div className="grid grid-cols-2 gap-2 text-sm">
-            {aiResult.email && <AIField label="Email" value={aiResult.email} onInsert={() => setFieldValue('email', aiResult.email)} />}
-            {aiResult.phone && <AIField label="Phone" value={aiResult.phone} onInsert={() => setFieldValue('phone', aiResult.phone)} />}
-            {aiResult.website && <AIField label="Website" value={aiResult.website} onInsert={() => setFieldValue('website', aiResult.website)} />}
-            {aiResult.linkedin && <AIField label="LinkedIn" value={aiResult.linkedin} onInsert={() => setFieldValue('linkedin', aiResult.linkedin)} />}
-            {aiResult.twitter && <AIField label="Twitter" value={aiResult.twitter} onInsert={() => setFieldValue('twitter', aiResult.twitter)} />}
-            {aiResult.instagram && <AIField label="Instagram" value={aiResult.instagram} onInsert={() => setFieldValue('instagram', aiResult.instagram)} />}
-            {aiResult.imdb && <AIField label="IMDb" value={aiResult.imdb} onInsert={() => setFieldValue('imdb', aiResult.imdb)} />}
-            {aiResult.location && <AIField label="Location" value={aiResult.location} onInsert={() => setFieldValue('location', aiResult.location)} />}
+            {aiResult.email && <AIField label="Email" value={aiResult.email} onInsert={() => setFieldValue('email', aiResult.email)} confidence={aiResult.field_metadata?.email?.confidence} />}
+            {aiResult.phone && <AIField label="Phone" value={aiResult.phone} onInsert={() => setFieldValue('phone', aiResult.phone)} confidence={aiResult.field_metadata?.phone?.confidence} />}
+            {aiResult.website && <AIField label="Website" value={aiResult.website} onInsert={() => setFieldValue('website', aiResult.website)} confidence={aiResult.field_metadata?.website?.confidence} />}
+            {aiResult.linkedin && <AIField label="LinkedIn" value={aiResult.linkedin} onInsert={() => setFieldValue('linkedin', aiResult.linkedin)} confidence={aiResult.field_metadata?.linkedin?.confidence} />}
+            {aiResult.twitter && <AIField label="Twitter" value={aiResult.twitter} onInsert={() => setFieldValue('twitter', aiResult.twitter)} confidence={aiResult.field_metadata?.twitter?.confidence} />}
+            {aiResult.instagram && <AIField label="Instagram" value={aiResult.instagram} onInsert={() => setFieldValue('instagram', aiResult.instagram)} confidence={aiResult.field_metadata?.instagram?.confidence} />}
+            {aiResult.imdb && <AIField label="IMDb" value={aiResult.imdb} onInsert={() => setFieldValue('imdb', aiResult.imdb)} confidence={aiResult.field_metadata?.imdb?.confidence} />}
+            {aiResult.location && <AIField label="Location" value={aiResult.location} onInsert={() => setFieldValue('location', aiResult.location)} confidence={aiResult.field_metadata?.location?.confidence} />}
           </div>
 
           {aiResult.bio && (
@@ -469,6 +470,14 @@ export function CrewForm({ crew }: CrewFormProps) {
         <Link href="/admin/crew" className="btn-outline">Cancel</Link>
       </div>
     </form>
+
+    {/* Confidence & Sources Panel — right sidebar */}
+    {aiResult?.field_metadata && (
+      <div className="w-80 flex-shrink-0 sticky top-6">
+        <ConfidencePanel metadata={aiResult.field_metadata} aiResult={aiResult} />
+      </div>
+    )}
+    </div>
   )
 }
 
@@ -486,18 +495,188 @@ function InsertButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-function AIField({ label, value, onInsert }: { label: string; value: string; onInsert: () => void }) {
+function AIField({ label, value, onInsert, confidence }: { label: string; value: string; onInsert: () => void; confidence?: number }) {
   const display = value.length > 40 ? value.substring(0, 37) + '…' : value
   return (
     <div className="flex items-center justify-between bg-white/60 rounded px-2 py-1.5">
-      <div className="min-w-0">
-        <span className="text-[10px] font-semibold text-purple-500 uppercase tracking-wider">{label}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold text-purple-500 uppercase tracking-wider">{label}</span>
+          {confidence != null && <ConfidenceDot score={confidence} />}
+        </div>
         <p className="text-xs text-gray-700 truncate" title={value}>{display}</p>
       </div>
       <button type="button" onClick={onInsert}
         className="ml-2 flex-shrink-0 text-[10px] font-medium text-purple-600 hover:text-purple-800 bg-purple-100 hover:bg-purple-200 px-1.5 py-0.5 rounded transition-colors">
         ↓
       </button>
+    </div>
+  )
+}
+
+function ConfidenceDot({ score }: { score: number }) {
+  const pct = Math.round(score * 100)
+  const color = score >= 0.9 ? 'bg-green-500' : score >= 0.75 ? 'bg-emerald-400' : score >= 0.6 ? 'bg-yellow-400' : 'bg-orange-400'
+  return (
+    <span className={`inline-block w-2 h-2 rounded-full ${color}`} title={`${pct}% confidence`} />
+  )
+}
+
+function ConfidencePanel({ metadata, aiResult }: { metadata: Record<string, { confidence: number; sources: string[]; reasoning: string }>; aiResult: any }) {
+  // Build ordered list of fields that have metadata
+  const FIELD_LABELS: Record<string, string> = {
+    email: 'Email', phone: 'Phone', website: 'Website',
+    linkedin: 'LinkedIn', twitter: 'Twitter/X', instagram: 'Instagram',
+    imdb: 'IMDb', bio: 'Bio', primary_role: 'Primary Role',
+    known_for: 'Known For', representation: 'Representation',
+    location: 'Location', awards: 'Awards',
+  }
+
+  const fields = Object.entries(metadata).filter(([key, val]) => val && val.confidence != null)
+
+  // Overall confidence (average)
+  const avgConfidence = fields.length > 0
+    ? fields.reduce((sum, [, v]) => sum + v.confidence, 0) / fields.length
+    : 0
+  const overallPct = Math.round(avgConfidence * 100)
+
+  const getBarColor = (score: number) => {
+    if (score >= 0.9) return 'bg-green-500'
+    if (score >= 0.75) return 'bg-emerald-400'
+    if (score >= 0.6) return 'bg-yellow-400'
+    return 'bg-orange-400'
+  }
+
+  const getLabel = (score: number) => {
+    if (score >= 0.9) return 'Verified'
+    if (score >= 0.75) return 'High'
+    if (score >= 0.6) return 'Moderate'
+    return 'Low'
+  }
+
+  return (
+    <div className="admin-card border-purple-200 bg-white space-y-4">
+      <div className="flex items-center gap-2">
+        <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+        <h3 className="font-semibold text-gray-900 text-sm">AI Confidence & Sources</h3>
+      </div>
+
+      {/* Overall score */}
+      <div className="bg-gray-50 rounded-lg p-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-medium text-gray-600">Overall Confidence</span>
+          <span className={`text-xs font-bold ${avgConfidence >= 0.75 ? 'text-green-700' : avgConfidence >= 0.6 ? 'text-yellow-700' : 'text-orange-700'}`}>
+            {overallPct}% — {getLabel(avgConfidence)}
+          </span>
+        </div>
+        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all duration-500 ${getBarColor(avgConfidence)}`} style={{ width: `${overallPct}%` }} />
+        </div>
+        <p className="text-[10px] text-gray-400 mt-1">{fields.length} data points evaluated</p>
+      </div>
+
+      {/* Per-field breakdown */}
+      <div className="space-y-0.5 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
+        {fields
+          .sort(([, a], [, b]) => b.confidence - a.confidence)
+          .map(([key, meta]) => {
+          const pct = Math.round(meta.confidence * 100)
+          return (
+            <ConfidenceFieldRow
+              key={key}
+              label={FIELD_LABELS[key] || key}
+              confidence={meta.confidence}
+              pct={pct}
+              sources={meta.sources}
+              reasoning={meta.reasoning}
+              barColor={getBarColor(meta.confidence)}
+              levelLabel={getLabel(meta.confidence)}
+            />
+          )
+        })}
+      </div>
+
+      <p className="text-[10px] text-gray-400 border-t border-gray-100 pt-2">
+        Confidence scores reflect source reliability. Cross-referenced data from multiple verified sources scores higher.
+      </p>
+    </div>
+  )
+}
+
+function ConfidenceFieldRow({
+  label, confidence, pct, sources, reasoning, barColor, levelLabel,
+}: {
+  label: string; confidence: number; pct: number; sources: string[]; reasoning: string; barColor: string; levelLabel: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="border border-gray-100 rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-700">{label}</span>
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-semibold ${
+              confidence >= 0.9 ? 'text-green-600' : confidence >= 0.75 ? 'text-emerald-600' : confidence >= 0.6 ? 'text-yellow-600' : 'text-orange-600'
+            }`}>
+              {pct}%
+            </span>
+            <svg className={`w-3 h-3 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+        <div className="w-full h-1 bg-gray-100 rounded-full mt-1 overflow-hidden">
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-2.5 space-y-2 border-t border-gray-100 bg-gray-50/50">
+          {/* Confidence level label */}
+          <div className="flex items-center gap-1.5 pt-2">
+            <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+              confidence >= 0.9 ? 'bg-green-100 text-green-700' :
+              confidence >= 0.75 ? 'bg-emerald-100 text-emerald-700' :
+              confidence >= 0.6 ? 'bg-yellow-100 text-yellow-700' :
+              'bg-orange-100 text-orange-700'
+            }`}>
+              {levelLabel}
+            </span>
+          </div>
+
+          {/* Sources */}
+          {sources?.length > 0 && (
+            <div>
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Sources</span>
+              <ul className="mt-0.5 space-y-0.5">
+                {sources.map((src, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-[11px] text-gray-600">
+                    <svg className="w-3 h-3 text-purple-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    <span>{src}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Reasoning */}
+          {reasoning && (
+            <div>
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Reasoning</span>
+              <p className="text-[11px] text-gray-600 mt-0.5 leading-relaxed">{reasoning}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
