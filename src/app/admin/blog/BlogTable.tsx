@@ -13,6 +13,7 @@ interface BlogPost {
   visibility: string
   published_at: string | null
   created_at: string
+  blog_post_categories?: Array<{ blog_categories: { id: number; name: string; slug: string } | null }>
 }
 
 interface Category {
@@ -219,6 +220,11 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
                     >
                       {p.title || <span className="italic text-gray-400">Untitled</span>}
                     </Link>
+                    {p.blog_post_categories?.map(bpc => bpc.blog_categories).filter(Boolean).map(cat => (
+                      <span key={cat!.id} className="ml-1.5 inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-500">
+                        {cat!.name}
+                      </span>
+                    ))}
                     {p.visibility === 'publish' && !isScheduled && p.slug && (
                       <Link href={`/${p.slug}`} target="_blank"
                         className="ml-2 text-[10px] text-gray-400 hover:text-[#3ea8c8]">
