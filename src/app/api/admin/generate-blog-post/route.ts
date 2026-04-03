@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
         .eq('id', productionId)
         .single()
       if (prod?.slug) {
-        const ctaHtml = `<p style="text-align:center"><strong><a href="/production/${prod.slug}">Click here</a> for production info or to contact producers</strong></p>`
+        const ctaHtml = `<p style="text-align:center"><strong><a href="/production/${prod.slug}" style="color:#3ea8c8">Click here</a> for production info or to contact producers</strong></p>`
         blogData.content = (blogData.content || '') + '\n' + ctaHtml
       }
     }
