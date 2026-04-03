@@ -68,11 +68,19 @@ export function BlogGenerateWorkflow() {
 
   const [populating, setPopulating] = useState(false)
 
+  const [dbError, setDbError] = useState<string | null>(null)
+
   // Load settings
   useEffect(() => {
     fetch('/api/admin/ai-blog-settings')
       .then(r => r.json())
-      .then(d => { if (d.settings) setSettings({ ...DEFAULT_SETTINGS, ...d.settings }) })
+      .then(d => {
+        if (d.error) {
+          setDbError(d.error)
+        } else if (d.settings) {
+          setSettings({ ...DEFAULT_SETTINGS, ...d.settings })
+        }
+      })
       .catch(() => flash('error', 'Failed to load settings'))
       .finally(() => setSettingsLoading(false))
   }, [])
@@ -84,8 +92,12 @@ export function BlogGenerateWorkflow() {
     fetch(`/api/admin/ai-blog-queue${params}`)
       .then(r => r.json())
       .then(d => {
-        setQueue(d.items ?? [])
-        setStats(d.stats ?? { pending: 0, generating: 0, completed: 0, failed: 0, skipped: 0, total: 0 })
+        if (d.error) {
+          setDbError(d.error)
+        } else {
+          setQueue(d.items ?? [])
+          setStats(d.stats ?? { pending: 0, generating: 0, completed: 0, failed: 0, skipped: 0, total: 0 })
+        }
       })
       .catch(() => {})
       .finally(() => setQueueLoading(false))
@@ -255,6 +267,18 @@ export function BlogGenerateWorkflow() {
           View All Posts
         </Link>
       </div>
+
+      {dbError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200">
+          <h3 className="text-sm font-semibold text-red-800 mb-1">Database tables not found</h3>
+          <p className="text-sm text-red-700 mb-2">
+            The blog generation tables haven&apos;t been created yet. Run the migration SQL in your{' '}
+            <a href="https://supabase.com/dashboard/project/ynwdhnlnawemmxjrtgyy/sql/new" target="_blank" rel="noreferrer"
+              className="underline font-medium hover:text-red-900">Supabase Dashboard SQL Editor</a>.
+          </p>
+          <p className="text-xs text-red-500 font-mono">{dbError}</p>
+        </div>
+      )}
 
       {settingsFlash && (
         <div className={`mb-4 px-4 py-2 rounded text-sm ${
