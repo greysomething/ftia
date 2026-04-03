@@ -116,8 +116,22 @@ export async function POST(req: NextRequest) {
     })
 
     if (!response.ok) {
-      const err = await response.text()
-      return NextResponse.json({ error: `AI API error: ${err}` }, { status: 500 })
+      const errText = await response.text()
+      let friendlyMessage = `AI API returned status ${response.status}`
+      try {
+        const errJson = JSON.parse(errText)
+        const msg = errJson?.error?.message || errJson?.message || ''
+        if (msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('balance')) {
+          friendlyMessage = 'The Anthropic API credit balance is too low. Please add credits at console.anthropic.com.'
+        } else if (msg.toLowerCase().includes('rate limit')) {
+          friendlyMessage = 'AI API rate limit reached. Please wait a few minutes and try again.'
+        } else if (msg.toLowerCase().includes('overloaded')) {
+          friendlyMessage = 'The AI service is temporarily overloaded. Please try again in a moment.'
+        } else if (msg) {
+          friendlyMessage = msg
+        }
+      } catch {}
+      return NextResponse.json({ error: friendlyMessage }, { status: 500 })
     }
 
     const result = await response.json()

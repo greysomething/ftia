@@ -26,7 +26,6 @@ export function ProductionFilters({ types, statuses, locations, resultCount }: F
   const activeType = searchParams.get('type') ?? ''
   const activeStatus = searchParams.get('status') ?? ''
   const activeLocation = searchParams.get('location') ?? ''
-  const activeSort = searchParams.get('sort') ?? 'shoot-date-desc'
 
   const updateFilter = useCallback(
     (key: string, value: string) => {
@@ -202,21 +201,6 @@ export function ProductionFilters({ types, statuses, locations, resultCount }: F
               <option key={l.value} value={l.value}>{l.label} ({l.count})</option>
             ))}
           </optgroup>
-        </select>
-      </CollapsibleFilter>
-
-      {/* Sort */}
-      <CollapsibleFilter title="Sort By" defaultOpen={false}>
-        <select
-          value={activeSort}
-          onChange={(e) => updateFilter('sort', e.target.value)}
-          className="w-full text-sm border border-gray-200 rounded-lg py-2 px-3 bg-gray-50 focus:bg-white focus:border-[#3ea8c8] focus:ring-1 focus:ring-[#3ea8c8]/30 outline-none transition-all"
-        >
-          <option value="shoot-date-desc">Shoot Date (Latest)</option>
-          <option value="shoot-date">Shoot Date (Earliest)</option>
-          <option value="updated">Last Updated</option>
-          <option value="title">Title (A-Z)</option>
-          <option value="title-desc">Title (Z-A)</option>
         </select>
       </CollapsibleFilter>
 

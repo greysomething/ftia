@@ -79,6 +79,165 @@ const STEPS: { key: Step; label: string }[] = [
   { key: 'review', label: 'Review & Create' },
 ]
 
+const RESEARCH_STAGES = [
+  { label: 'Initializing AI research agent', icon: '🧠', duration: 3000 },
+  { label: 'Scanning trade publications & databases', icon: '📰', duration: 8000 },
+  { label: 'Cross-referencing crew & company records', icon: '🔗', duration: 10000 },
+  { label: 'Searching film commission listings', icon: '🎬', duration: 8000 },
+  { label: 'Verifying production dates & locations', icon: '📍', duration: 7000 },
+  { label: 'Validating URLs & source links', icon: '🔍', duration: 6000 },
+  { label: 'Compiling enriched production data', icon: '✨', duration: 5000 },
+]
+
+function ResearchProgressPanel() {
+  const [stageIndex, setStageIndex] = useState(0)
+  const [progress, setProgress] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
+  const startTime = useRef(Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const secs = Math.floor((Date.now() - startTime.current) / 1000)
+      setElapsed(secs)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Cycle through stages
+  useEffect(() => {
+    if (stageIndex >= RESEARCH_STAGES.length - 1) return
+    const timer = setTimeout(() => {
+      setStageIndex(i => Math.min(i + 1, RESEARCH_STAGES.length - 1))
+    }, RESEARCH_STAGES[stageIndex].duration)
+    return () => clearTimeout(timer)
+  }, [stageIndex])
+
+  // Smooth progress bar — fills up across all stages, slows down near the end
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        const stageProgress = (stageIndex / RESEARCH_STAGES.length) * 100
+        const stageChunk = 100 / RESEARCH_STAGES.length
+        const target = stageProgress + stageChunk * 0.9
+        const speed = prev < 60 ? 0.8 : prev < 85 ? 0.3 : 0.08
+        return Math.min(prev + speed, target, 95)
+      })
+    }, 100)
+    return () => clearInterval(interval)
+  }, [stageIndex])
+
+  const stage = RESEARCH_STAGES[stageIndex]
+
+  return (
+    <div className="admin-card overflow-hidden">
+      {/* Animated gradient header */}
+      <div className="relative -mx-5 -mt-5 px-6 py-5 bg-gradient-to-r from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white overflow-hidden">
+        {/* Animated particles */}
+        <div className="absolute inset-0 overflow-hidden">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-1 h-1 rounded-full bg-[#3ea8c8]/40"
+              style={{
+                left: `${(i * 8.3) % 100}%`,
+                top: `${(i * 13.7) % 100}%`,
+                animation: `pulse ${2 + (i % 3)}s ease-in-out infinite`,
+                animationDelay: `${i * 0.3}s`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="relative flex items-center gap-4">
+          <div className="relative">
+            <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center">
+              <svg className="w-6 h-6 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+              </svg>
+            </div>
+            <span className="absolute -top-1 -right-1 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-400" />
+            </span>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold">AI Research in Progress</h3>
+            <p className="text-sm text-blue-200/70">Analyzing production data across multiple sources</p>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-mono font-bold tabular-nums">
+              {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+            </div>
+            <div className="text-[10px] text-blue-200/50 uppercase tracking-wider">Elapsed</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Progress section */}
+      <div className="px-1 py-6">
+        {/* Progress bar */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">Research Progress</span>
+            <span className="text-sm font-mono text-gray-400">{Math.round(progress)}%</span>
+          </div>
+          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#3ea8c8] via-[#6bc5db] to-[#3ea8c8] transition-all duration-300 ease-out"
+              style={{
+                width: `${progress}%`,
+                backgroundSize: '200% 100%',
+                animation: 'shimmer 2s linear infinite',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Stage list */}
+        <div className="space-y-2">
+          {RESEARCH_STAGES.map((s, i) => {
+            const isActive = i === stageIndex
+            const isDone = i < stageIndex
+            const isPending = i > stageIndex
+            return (
+              <div
+                key={i}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-500 ${
+                  isActive ? 'bg-[#3ea8c8]/10 text-[#3ea8c8] font-medium' :
+                  isDone ? 'text-gray-400' :
+                  'text-gray-300'
+                }`}
+              >
+                <span className="w-6 text-center flex-shrink-0">
+                  {isDone ? (
+                    <svg className="w-4 h-4 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : isActive ? (
+                    <span className="block w-4 h-4 mx-auto rounded-full border-2 border-[#3ea8c8] border-t-transparent animate-spin" />
+                  ) : (
+                    <span className="block w-2 h-2 mx-auto rounded-full bg-gray-200" />
+                  )}
+                </span>
+                <span>{s.icon}</span>
+                <span>{s.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* CSS for shimmer animation */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      ` }} />
+    </div>
+  )
+}
+
 export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowProps) {
   const [step, setStep] = useState<Step>('upload')
   const [preview, setPreview] = useState<string | null>(null)
@@ -1433,39 +1592,35 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
             </div>
           </div>
 
-          <div className="admin-card border-2 border-dashed border-[#3ea8c8]/30 bg-[#3ea8c8]/5">
-            <div className="text-center py-6">
-              <svg className="w-12 h-12 text-[#3ea8c8]/50 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <h3 className="text-lg font-semibold text-gray-700 mb-1">AI Research & Enrichment</h3>
-              <p className="text-sm text-gray-400 mb-4 max-w-md mx-auto">
-                Search trade publications, film commissions, and industry databases to find additional crew, contacts, dates, and verify existing information.
-              </p>
-              <div className="flex items-center justify-center gap-3">
-                <button onClick={handleResearch} disabled={researching} className="btn-primary">
-                  {researching ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Researching across industry sources...
-                    </span>
-                  ) : 'Research & Enrich with AI'}
-                </button>
-                <button onClick={() => setStep('review')} className="btn-outline text-sm">
-                  Skip — Go to Review
-                </button>
-                {bulkMode && bulkResults.length > 0 && (
-                  <button onClick={returnToBulkResults} className="btn-outline text-sm">
-                    ← Back to Bulk Results
+          {researching ? (
+            <ResearchProgressPanel />
+          ) : (
+            <div className="admin-card border-2 border-dashed border-[#3ea8c8]/30 bg-[#3ea8c8]/5">
+              <div className="text-center py-6">
+                <svg className="w-12 h-12 text-[#3ea8c8]/50 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <h3 className="text-lg font-semibold text-gray-700 mb-1">AI Research & Enrichment</h3>
+                <p className="text-sm text-gray-400 mb-4 max-w-md mx-auto">
+                  Search trade publications, film commissions, and industry databases to find additional crew, contacts, dates, and verify existing information.
+                </p>
+                <div className="flex items-center justify-center gap-3">
+                  <button onClick={handleResearch} disabled={researching} className="btn-primary">
+                    Research & Enrich with AI
                   </button>
-                )}
+                  <button onClick={() => setStep('review')} className="btn-outline text-sm">
+                    Skip — Go to Review
+                  </button>
+                  {bulkMode && bulkResults.length > 0 && (
+                    <button onClick={returnToBulkResults} className="btn-outline text-sm">
+                      ← Back to Bulk Results
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 

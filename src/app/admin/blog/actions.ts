@@ -129,3 +129,51 @@ export async function deleteBlogPost(id: number) {
   revalidatePath('/admin/blog')
   revalidatePath('/blog')
 }
+
+export async function bulkBlogAction(ids: number[], action: string, value?: string) {
+  await requireAdmin()
+  const supabase = createAdminClient()
+
+  if (action === 'trash') {
+    const { error } = await supabase.from('blog_posts')
+      .update({ visibility: 'private' as any })
+      .in('id', ids)
+    if (error) throw new Error(error.message)
+  } else if (action === 'restore') {
+    const { error } = await supabase.from('blog_posts')
+      .update({ visibility: 'draft' as any })
+      .in('id', ids)
+    if (error) throw new Error(error.message)
+  } else if (action === 'publish') {
+    const { error } = await supabase.from('blog_posts')
+      .update({ visibility: 'publish' as any, published_at: new Date().toISOString() })
+      .in('id', ids)
+    if (error) throw new Error(error.message)
+  } else if (action === 'draft') {
+    const { error } = await supabase.from('blog_posts')
+      .update({ visibility: 'draft' as any, published_at: null })
+      .in('id', ids)
+    if (error) throw new Error(error.message)
+  } else if (action === 'set-category' && value) {
+    const categoryId = parseInt(value, 10)
+    for (const postId of ids) {
+      // Upsert: add category if not already linked
+      await supabase.from('blog_post_categories')
+        .upsert({ post_id: postId, category_id: categoryId }, { onConflict: 'post_id,category_id', ignoreDuplicates: true })
+    }
+  } else if (action === 'remove-category' && value) {
+    const categoryId = parseInt(value, 10)
+    await supabase.from('blog_post_categories')
+      .delete()
+      .in('post_id', ids)
+      .eq('category_id', categoryId)
+  } else if (action === 'delete') {
+    const { error } = await supabase.from('blog_posts')
+      .delete()
+      .in('id', ids)
+    if (error) throw new Error(error.message)
+  }
+
+  revalidatePath('/admin/blog')
+  revalidatePath('/blog')
+}

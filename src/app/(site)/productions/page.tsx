@@ -7,6 +7,7 @@ import { formatProductionDate, formatLocations, PHASE_LABELS, PHASE_COLORS, form
 import { ProductionCard } from '@/components/ProductionCard'
 import { ProductionFilters } from '@/components/ProductionFilters'
 import { ViewToggle } from '@/components/ViewToggle'
+import { SortDropdown, SortableHeader } from '@/components/ProductionSort'
 import { TrendingSearches } from '@/components/TrendingSearches'
 import { WeeklyArchive } from '@/components/WeeklyArchive'
 import { WeeklyReportPDF } from '@/components/WeeklyReportPDF'
@@ -451,6 +452,9 @@ export default async function ProductionsPage({ searchParams }: Props) {
                     </span>
                   )}
                 </div>
+                <Suspense fallback={null}>
+                  <SortDropdown />
+                </Suspense>
               </div>
 
               {productions.length === 0 ? (
@@ -479,11 +483,19 @@ export default async function ProductionsPage({ searchParams }: Props) {
                     <table className="w-full">
                       <thead>
                         <tr className="bg-gray-50/80 border-b border-gray-100">
-                          <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Title</th>
+                          <th className="text-left px-5 py-3">
+                            <Suspense fallback={<span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Title</span>}>
+                              <SortableHeader columnKey="title">Title</SortableHeader>
+                            </Suspense>
+                          </th>
                           <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Type</th>
                           <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
                           <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Location</th>
-                          <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Shoot Date</th>
+                          <th className="text-left px-5 py-3">
+                            <Suspense fallback={<span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Shoot Date</span>}>
+                              <SortableHeader columnKey="shoot-date">Shoot Date</SortableHeader>
+                            </Suspense>
+                          </th>
                           <th className="px-5 py-3"></th>
                         </tr>
                       </thead>
