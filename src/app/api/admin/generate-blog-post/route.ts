@@ -145,6 +145,20 @@ export async function POST(req: NextRequest) {
 
     const blogData = JSON.parse(jsonMatch[0])
 
+    // Append CTA linking to the production page
+    if (productionId) {
+      const supabaseForSlug = createAdminClient()
+      const { data: prod } = await supabaseForSlug
+        .from('productions')
+        .select('slug')
+        .eq('id', productionId)
+        .single()
+      if (prod?.slug) {
+        const ctaHtml = `<p style="text-align:center"><strong><a href="/production/${prod.slug}">Click here</a> for production info or to contact producers</strong></p>`
+        blogData.content = (blogData.content || '') + '\n' + ctaHtml
+      }
+    }
+
     // Save as draft blog post immediately
     const supabase = createAdminClient()
     let slug = slugify(blogData.title || productionData.title)

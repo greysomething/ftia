@@ -163,7 +163,7 @@ async function generateBlogForItem(
   const { data: prod } = await supabase
     .from('productions')
     .select(`
-      id, title, excerpt, content, computed_status,
+      id, title, slug, excerpt, content, computed_status,
       production_date_start, production_date_end,
       production_crew_roles(role_name, inline_name),
       production_company_links(inline_name),
@@ -263,6 +263,12 @@ async function generateBlogForItem(
         suffix++
         if (suffix > 20) { slug = `${slug}-${Date.now()}`; break }
       }
+    }
+
+    // Append CTA linking to the production page
+    if (prod.slug) {
+      const ctaHtml = `<p style="text-align:center"><strong><a href="/production/${prod.slug}">Click here</a> for production info or to contact producers</strong></p>`
+      blogData.content = (blogData.content || '') + '\n' + ctaHtml
     }
 
     const visibility = autoPublish ? 'publish' : 'draft'
