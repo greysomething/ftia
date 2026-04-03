@@ -67,6 +67,10 @@ export function BlogGenerateWorkflow() {
   const [progress, setProgress] = useState<GenerationProgress[]>([])
 
   const [populating, setPopulating] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [deleting, setDeleting] = useState(false)
+  const [dragId, setDragId] = useState<number | null>(null)
+  const [reordering, setReordering] = useState(false)
 
   const [dbError, setDbError] = useState<string | null>(null)
 
@@ -170,6 +174,76 @@ export function BlogGenerateWorkflow() {
     if ((await res.json()).ok) {
       flash('success', 'Completed items cleared')
       loadQueue(queueTab)
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Remove ${selectedIds.size} item(s) from the queue?`)) return
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/admin/ai-blog-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', queueIds: Array.from(selectedIds) }),
+      })
+      const d = await res.json()
+      if (d.ok) {
+        flash('success', `Removed ${d.deleted} item(s)`)
+        setSelectedIds(new Set())
+        loadQueue(queueTab)
+      } else {
+        flash('error', d.error || 'Failed to delete')
+      }
+    } catch {
+      flash('error', 'Failed to delete items')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  function handleDragStart(id: number) {
+    setDragId(id)
+  }
+
+  function handleDragOver(e: React.DragEvent, targetId: number) {
+    e.preventDefault()
+    if (dragId === null || dragId === targetId) return
+    setQueue(prev => {
+      const items = [...prev]
+      const fromIndex = items.findIndex(i => i.id === dragId)
+      const toIndex = items.findIndex(i => i.id === targetId)
+      if (fromIndex < 0 || toIndex < 0) return prev
+      const [moved] = items.splice(fromIndex, 1)
+      items.splice(toIndex, 0, moved)
+      return items
+    })
+  }
+
+  async function handleDragEnd() {
+    setDragId(null)
+    // Save new order — only pending items matter for generation order
+    const pendingItems = queue.filter(i => i.status === 'pending')
+    if (pendingItems.length < 2) return
+    setReordering(true)
+    try {
+      await fetch('/api/admin/ai-blog-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reorder', orderedIds: pendingItems.map(i => i.id) }),
+      })
+    } catch {}
+    setReordering(false)
+  }
+
+  const pendingItems = queue.filter(i => i.status === 'pending')
+  const allPendingSelected = pendingItems.length > 0 && pendingItems.every(i => selectedIds.has(i.id))
+
+  function toggleSelectAll() {
+    if (allPendingSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(pendingItems.map(i => i.id)))
     }
   }
 
@@ -497,6 +571,18 @@ export function BlogGenerateWorkflow() {
 
           {/* Bulk actions */}
           <div className="ml-auto flex items-center gap-2 pb-2">
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDelete}
+                disabled={deleting}
+                className="text-xs text-red-600 hover:underline font-medium"
+              >
+                {deleting ? 'Removing...' : `Remove Selected (${selectedIds.size})`}
+              </button>
+            )}
+            {reordering && (
+              <span className="text-xs text-gray-400">Saving order...</span>
+            )}
             {stats.failed > 0 && (
               <button onClick={handleRetryFailed} className="text-xs text-orange-600 hover:underline">
                 Retry Failed
@@ -523,16 +609,58 @@ export function BlogGenerateWorkflow() {
           <table className="admin-table">
             <thead>
               <tr>
+                <th className="w-8">
+                  <input
+                    type="checkbox"
+                    checked={allPendingSelected}
+                    onChange={toggleSelectAll}
+                    className="rounded border-gray-300"
+                    title="Select all pending"
+                  />
+                </th>
+                <th className="w-6"></th>
                 <th>Production</th>
                 <th>Status</th>
                 <th>Attempts</th>
-                <th>Added</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {queue.map(item => (
-                <tr key={item.id}>
+                <tr
+                  key={item.id}
+                  draggable={item.status === 'pending'}
+                  onDragStart={() => handleDragStart(item.id)}
+                  onDragOver={e => handleDragOver(e, item.id)}
+                  onDragEnd={handleDragEnd}
+                  className={dragId === item.id ? 'opacity-40' : ''}
+                >
+                  <td className="w-8">
+                    {item.status === 'pending' && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        onChange={e => {
+                          setSelectedIds(prev => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(item.id)
+                            else next.delete(item.id)
+                            return next
+                          })
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                    )}
+                  </td>
+                  <td className="w-6 text-center">
+                    {item.status === 'pending' && (
+                      <span className="cursor-grab text-gray-300 hover:text-gray-500" title="Drag to reorder">
+                        <svg className="w-4 h-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                        </svg>
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <Link
                       href={`/admin/productions/${item.production_id}/edit`}
@@ -563,9 +691,6 @@ export function BlogGenerateWorkflow() {
                     )}
                   </td>
                   <td className="text-sm text-gray-500">{item.attempts}</td>
-                  <td className="text-sm text-gray-500">
-                    {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </td>
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       {item.status === 'completed' && item.blog_post_id && (

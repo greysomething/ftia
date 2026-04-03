@@ -10,15 +10,24 @@ const RichTextEditor = dynamic(
   { ssr: false, loading: () => <div className="border border-gray-300 rounded-lg bg-gray-50 h-[460px] animate-pulse" /> }
 )
 
-interface BlogPostFormProps {
-  post?: Record<string, any> | null
+interface BlogCategory {
+  id: number
+  name: string
+  slug: string
 }
 
-export function BlogPostForm({ post }: BlogPostFormProps) {
+interface BlogPostFormProps {
+  post?: Record<string, any> | null
+  allCategories?: BlogCategory[]
+  postCategoryIds?: number[]
+}
+
+export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }: BlogPostFormProps) {
   const [state, action, pending] = useActionState(saveBlogPost, null)
   const [content, setContent] = useState(post?.content ?? '')
   const [featuredImage, setFeaturedImage] = useState(post?.featured_image_url ?? '')
   const [uploading, setUploading] = useState(false)
+  const [selectedCategories, setSelectedCategories] = useState<number[]>(postCategoryIds)
   const formRef = useRef<HTMLFormElement>(null)
   const v = (key: string) => post?.[key] ?? ''
 
@@ -54,6 +63,7 @@ export function BlogPostForm({ post }: BlogPostFormProps) {
       {post && <input type="hidden" name="id" value={post.id} />}
       <input type="hidden" name="content" value={content} />
       <input type="hidden" name="featured_image_url" value={featuredImage} />
+      <input type="hidden" name="category_ids" value={JSON.stringify(selectedCategories)} />
 
       {state?.error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
@@ -132,7 +142,7 @@ export function BlogPostForm({ post }: BlogPostFormProps) {
                 />
                 {scheduleDate && (
                   <p className="text-[11px] text-blue-600 mt-1">
-                    Will be published on {new Date(scheduleDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} at {new Date(scheduleDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    Will be published on {new Date(scheduleDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' })} at {new Date(scheduleDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })} PT
                   </p>
                 )}
               </div>
@@ -153,6 +163,32 @@ export function BlogPostForm({ post }: BlogPostFormProps) {
               <Link href="/admin/blog" className="btn-outline text-center">Cancel</Link>
             </div>
           </div>
+
+          {/* Categories */}
+          {allCategories.length > 0 && (
+            <div className="admin-card space-y-3">
+              <h3 className="text-sm font-semibold text-gray-900">Category</h3>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {allCategories.map(cat => (
+                  <label key={cat.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedCategories.includes(cat.id)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setSelectedCategories(prev => [...prev, cat.id])
+                        } else {
+                          setSelectedCategories(prev => prev.filter(id => id !== cat.id))
+                        }
+                      }}
+                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    {cat.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Featured Image */}
           <div className="admin-card space-y-3">

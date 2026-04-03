@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from('blog_generation_queue')
     .select('*, productions!inner(id, title, computed_status)', { count: 'exact' })
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: true })
     .range((page - 1) * perPage, page * perPage - 1)
 
   if (status) {
@@ -56,9 +56,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { action, productionIds } = await req.json() as {
-    action: 'add' | 'populate' | 'retry-failed' | 'clear-completed'
+  const { action, productionIds, queueIds, orderedIds } = await req.json() as {
+    action: 'add' | 'populate' | 'retry-failed' | 'clear-completed' | 'delete' | 'reorder'
     productionIds?: number[]
+    queueIds?: number[]
+    orderedIds?: number[]
   }
 
   const supabase = createAdminClient()
@@ -181,6 +183,29 @@ export async function POST(req: NextRequest) {
       .eq('status', 'completed')
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  if (action === 'delete' && queueIds?.length) {
+    const { error } = await supabase
+      .from('blog_generation_queue')
+      .delete()
+      .in('id', queueIds)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, deleted: queueIds.length })
+  }
+
+  if (action === 'reorder' && orderedIds?.length) {
+    // Update created_at timestamps so the queue order matches the desired order.
+    // Items at the top get the earliest timestamps.
+    const baseTime = new Date('2020-01-01T00:00:00Z')
+    for (let i = 0; i < orderedIds.length; i++) {
+      const t = new Date(baseTime.getTime() + i * 1000)
+      await supabase
+        .from('blog_generation_queue')
+        .update({ created_at: t.toISOString() })
+        .eq('id', orderedIds[i])
+    }
     return NextResponse.json({ ok: true })
   }
 

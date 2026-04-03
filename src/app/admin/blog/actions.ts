@@ -72,12 +72,27 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
     row.published_at = null
   }
 
+  let postId = id
   if (id) {
     const { error } = await supabase.from('blog_posts').update(row).eq('id', id)
     if (error) return { error: error.message }
   } else {
-    const { error } = await supabase.from('blog_posts').insert(row)
+    const { data: inserted, error } = await supabase.from('blog_posts').insert(row).select('id').single()
     if (error) return { error: error.message }
+    postId = inserted.id
+  }
+
+  // Save categories
+  const categoryIdsRaw = formData.get('category_ids') as string
+  if (categoryIdsRaw && postId) {
+    const categoryIds: number[] = JSON.parse(categoryIdsRaw)
+    // Clear existing and re-insert
+    await supabase.from('blog_post_categories').delete().eq('post_id', postId)
+    if (categoryIds.length > 0) {
+      await supabase.from('blog_post_categories').insert(
+        categoryIds.map(cid => ({ post_id: postId!, category_id: cid }))
+      )
+    }
   }
 
   revalidatePath('/admin/blog')

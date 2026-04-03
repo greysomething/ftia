@@ -327,11 +327,20 @@ export async function getAdminBlogPostById(id: number) {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('blog_posts')
-    .select('*')
+    .select('*, blog_post_categories(category_id, blog_categories(id, name, slug))')
     .eq('id', id)
     .single()
   if (error) throw error
   return data
+}
+
+export async function getAllBlogCategories() {
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('blog_categories')
+    .select('id, name, slug')
+    .order('name')
+  return data ?? []
 }
 
 // ─── DNW Notices ─────────────────────────────────────────────────────────────
