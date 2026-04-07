@@ -2170,28 +2170,43 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                           </div>
                         </div>
                         {expandedSocial.has(`company-${i}`) && (
-                          <div className="ml-2 grid grid-cols-4 gap-2 pt-1 pb-2 mb-1 border-b border-dashed border-gray-200">
-                            <input placeholder="LinkedIn" value={c.inline_linkedin || ''} onChange={e => {
-                              const updated = [...companies]; updated[i] = { ...updated[i], inline_linkedin: e.target.value }; setCompanies(updated)
-                            }} className="form-input text-xs" />
-                            <input placeholder="Twitter / X" value={c.inline_twitter || ''} onChange={e => {
-                              const updated = [...companies]; updated[i] = { ...updated[i], inline_twitter: e.target.value }; setCompanies(updated)
-                            }} className="form-input text-xs" />
-                            <input placeholder="Instagram" value={c.inline_instagram || ''} onChange={e => {
-                              const updated = [...companies]; updated[i] = { ...updated[i], inline_instagram: e.target.value }; setCompanies(updated)
-                            }} className="form-input text-xs" />
-                            <input placeholder="Website" value={c.inline_website || ''} onChange={e => {
-                              const updated = [...companies]; updated[i] = { ...updated[i], inline_website: e.target.value }; setCompanies(updated)
-                            }} className="form-input text-xs" />
+                          <div className="ml-2 pt-1 pb-2 mb-1 border-b border-dashed border-gray-200 space-y-2">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              <input placeholder="Phone (comma sep.)" value={c.inline_phones?.join(', ') || ''} onChange={e => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_phones: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCompanies(updated)
+                              }} className="form-input text-xs" />
+                              <input placeholder="Fax (comma sep.)" value={c.inline_faxes?.join(', ') || ''} onChange={e => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_faxes: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setCompanies(updated)
+                              }} className="form-input text-xs" />
+                              <input placeholder="LinkedIn" value={c.inline_linkedin || ''} onChange={e => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_linkedin: e.target.value }; setCompanies(updated)
+                              }} className="form-input text-xs" />
+                              <input placeholder="Twitter / X" value={c.inline_twitter || ''} onChange={e => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_twitter: e.target.value }; setCompanies(updated)
+                              }} className="form-input text-xs" />
+                              <input placeholder="Instagram" value={c.inline_instagram || ''} onChange={e => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_instagram: e.target.value }; setCompanies(updated)
+                              }} className="form-input text-xs" />
+                              <input placeholder="Website" value={c.inline_website || ''} onChange={e => {
+                                const updated = [...companies]; updated[i] = { ...updated[i], inline_website: e.target.value }; setCompanies(updated)
+                              }} className="form-input text-xs" />
+                            </div>
                           </div>
                         )}
                         {/* DB match indicator */}
                         {c.company_id ? (
                           <div className="flex items-center gap-2 ml-2 text-[11px]">
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                            <Link
+                              href={`/admin/companies/${c.company_id}/edit`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Open company edit page in a new tab"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium hover:bg-green-200 hover:underline transition-colors"
+                            >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
                               Linked: {linkedFromFuzzy?.title ?? c.inline_name} {linkedFromFuzzy ? `(${linkedFromFuzzy.score}%)` : `(#${c.company_id})`}
-                            </span>
+                              <svg className="w-2.5 h-2.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                            </Link>
                             {linkedFromFuzzy?.detail && <span className="text-gray-400">{linkedFromFuzzy.detail}</span>}
                             <button type="button" onClick={() => {
                               const updated = [...companies]; updated[i] = { ...updated[i], company_id: null }; setCompanies(updated)
