@@ -47,11 +47,15 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
     featured_image_url: (formData.get('featured_image_url') as string) || null,
   }
 
-  // Handle published_at / scheduling
+  // Handle published_at / scheduling / backdating
   const scheduledAt = (formData.get('scheduled_at') as string) || null
+  const publishedAtOverride = (formData.get('published_at_override') as string) || null
 
-  if (visibility === 'publish' && scheduledAt) {
-    // Scheduling for a future date
+  if (visibility === 'publish' && publishedAtOverride) {
+    // Admin explicitly set a custom publish date (past, present, or future)
+    row.published_at = new Date(publishedAtOverride).toISOString()
+  } else if (visibility === 'publish' && scheduledAt) {
+    // Scheduling for a future date via the legacy "Scheduled" status
     row.published_at = new Date(scheduledAt).toISOString()
   } else if (visibility === 'publish') {
     if (id) {

@@ -42,6 +42,24 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
     return ''
   })
 
+  // Local-time formatter for datetime-local inputs (avoids UTC drift)
+  const toLocalInputValue = (dateInput: Date | string): string => {
+    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  // Published date — used when status is "Published" so admins can backdate
+  // (or set a future time to schedule). Defaults to the post's existing
+  // published_at, or now for new posts.
+  const [publishedDate, setPublishedDate] = useState<string>(() => {
+    if (post?.published_at) return toLocalInputValue(post.published_at)
+    return toLocalInputValue(new Date())
+  })
+  const [overridePublishDate, setOverridePublishDate] = useState<boolean>(
+    !!post?.published_at && new Date(post.published_at).toDateString() !== new Date().toDateString()
+  )
+
   async function handleFeaturedImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -104,8 +122,12 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
             <h3 className="text-sm font-semibold text-gray-900">Publish</h3>
             {/* Actual visibility sent to server */}
             <input type="hidden" name="visibility" value={visibility === 'schedule' ? 'publish' : visibility} />
+            {/* Publish date: send whichever value applies */}
             {visibility === 'schedule' && scheduleDate && (
               <input type="hidden" name="scheduled_at" value={scheduleDate} />
+            )}
+            {visibility === 'publish' && overridePublishDate && publishedDate && (
+              <input type="hidden" name="published_at_override" value={publishedDate} />
             )}
             <div>
               <label className="form-label">Status</label>
@@ -118,7 +140,7 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
                     const tomorrow = new Date()
                     tomorrow.setDate(tomorrow.getDate() + 1)
                     tomorrow.setHours(9, 0, 0, 0)
-                    setScheduleDate(tomorrow.toISOString().slice(0, 16))
+                    setScheduleDate(toLocalInputValue(tomorrow))
                   }
                 }}
                 className="form-input"
@@ -129,6 +151,48 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
               </select>
             </div>
 
+            {visibility === 'publish' && (
+              <div>
+                <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={overridePublishDate}
+                    onChange={e => {
+                      setOverridePublishDate(e.target.checked)
+                      if (e.target.checked && !publishedDate) {
+                        setPublishedDate(toLocalInputValue(new Date()))
+                      }
+                    }}
+                    className="rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  Set custom publish date (backdate or future)
+                </label>
+                {overridePublishDate && (
+                  <div className="mt-2">
+                    <input
+                      type="datetime-local"
+                      value={publishedDate}
+                      onChange={e => setPublishedDate(e.target.value)}
+                      className="form-input text-sm"
+                      required
+                    />
+                    {publishedDate && (
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        {new Date(publishedDate) > new Date()
+                          ? `Will publish at ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                          : `Backdated to ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {!overridePublishDate && post?.published_at && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Currently published {new Date(post.published_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                )}
+              </div>
+            )}
+
             {visibility === 'schedule' && (
               <div>
                 <label className="form-label">Publish Date & Time</label>
@@ -136,7 +200,7 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
                   type="datetime-local"
                   value={scheduleDate}
                   onChange={e => setScheduleDate(e.target.value)}
-                  min={new Date().toISOString().slice(0, 16)}
+                  min={toLocalInputValue(new Date())}
                   className="form-input text-sm"
                   required
                 />
