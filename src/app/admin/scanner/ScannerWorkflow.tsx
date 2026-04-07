@@ -257,6 +257,12 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [bulkCurrentIndex, setBulkCurrentIndex] = useState(0)
   const [bulkResults, setBulkResults] = useState<any[]>([])
 
+  // Stitch queue state — multiple screenshots that combine into ONE production
+  const [stitchQueue, setStitchQueue] = useState<QueueItem[]>([])
+  const [stitchProcessing, setStitchProcessing] = useState(false)
+  const [stitchDragOver, setStitchDragOver] = useState(false)
+  const stitchInputRef = useRef<HTMLInputElement>(null)
+
   // Data state
   const [scannedData, setScannedData] = useState<any>(null)
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([])
@@ -545,6 +551,99 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
       return remaining
     })
   }, [])
+
+  // ── Stitch (multi-screenshot → ONE production) ──
+  const addToStitch = useCallback((files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
+      setError('Please upload image files')
+      return
+    }
+    setStitchQueue(prev => {
+      const combined = [...prev, ...imageFiles.map(file => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        file,
+        preview: URL.createObjectURL(file),
+        status: 'queued' as const,
+      }))]
+      if (combined.length > 8) {
+        setError('Maximum 8 screenshots can be stitched into a single production.')
+        // Trim extras
+        combined.slice(8).forEach(c => URL.revokeObjectURL(c.preview))
+        return combined.slice(0, 8)
+      }
+      return combined
+    })
+  }, [])
+
+  const removeFromStitch = useCallback((id: string) => {
+    setStitchQueue(prev => {
+      const item = prev.find(q => q.id === id)
+      if (item) URL.revokeObjectURL(item.preview)
+      return prev.filter(q => q.id !== id)
+    })
+  }, [])
+
+  const clearStitchQueue = useCallback(() => {
+    setStitchQueue(prev => {
+      prev.forEach(q => URL.revokeObjectURL(q.preview))
+      return []
+    })
+  }, [])
+
+  const processStitch = useCallback(async () => {
+    if (stitchQueue.length === 0) return
+    setError(null)
+    setStitchProcessing(true)
+    setStep('extracting')
+
+    try {
+      // Convert all files to base64 in parallel
+      const base64s = await Promise.all(stitchQueue.map(item => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(item.file)
+      })))
+
+      // Use the first screenshot as the preview thumbnail
+      setPreview(base64s[0])
+
+      // Single API call with all images — Claude will merge them into one record
+      const res = await fetch('/api/admin/scan-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: base64s, type: 'production' }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Stitched scan failed')
+
+      const data = result.data
+      setScannedData(data)
+      populateFromScan(data)
+      matchEntities(data)
+
+      // Duplicate check + advance to next step (mirrors processFile)
+      if (data.title) {
+        const dupRes = await fetch('/api/admin/check-production-duplicates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: data.title }),
+        })
+        const dupResult = await dupRes.json()
+        const matches = dupResult.matches ?? []
+        setDuplicates(matches)
+        setStep(matches.length > 0 ? 'duplicates' : 'research')
+      } else {
+        setStep('research')
+      }
+    } catch (err: any) {
+      setError(err.message || 'Stitched extraction failed')
+      setStep('upload')
+    } finally {
+      setStitchProcessing(false)
+    }
+  }, [stitchQueue, typeOptions, statusOptions])
 
   const processBulkQueue = useCallback(async () => {
     setBulkProcessing(true)
@@ -1156,6 +1255,8 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     queue.forEach(q => URL.revokeObjectURL(q.preview))
     setQueue([]); setBulkMode(false); setBulkProcessing(false); setBulkCurrentIndex(0); setBulkResults([])
     setSavedBulkIndices(new Set()); setActiveBulkIndex(null); setBulkSaving(false); setBulkSaveError(null)
+    stitchQueue.forEach(q => URL.revokeObjectURL(q.preview))
+    setStitchQueue([]); setStitchProcessing(false); setStitchDragOver(false)
   }
 
   const stepIdx = STEPS.findIndex(s => s.key === step)
@@ -1364,6 +1465,118 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                   Clear Queue
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ── Multi-screenshot stitch drop zone ── */}
+          {inputMode === 'image' && (
+            <div className="admin-card border-2 border-dashed border-purple-300 bg-purple-50/40">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-purple-900 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2v-2m0-8h16M4 8v8m16-8v8" />
+                    </svg>
+                    Multi-screenshot → ONE production
+                  </h3>
+                  <p className="text-xs text-purple-700/70 mt-0.5">
+                    Use this when a single production listing is too tall to fit in one screenshot. All images will be sent together and merged into one record.
+                  </p>
+                </div>
+                {stitchQueue.length > 0 && (
+                  <button onClick={clearStitchQueue} disabled={stitchProcessing}
+                    className="btn-outline text-xs py-1 px-3 disabled:opacity-50">
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {stitchQueue.length === 0 ? (
+                <div
+                  className={`relative rounded-lg p-10 text-center transition-colors cursor-pointer border-2 border-dashed ${
+                    stitchDragOver ? 'border-purple-500 bg-purple-100/60' : 'border-purple-200 hover:bg-purple-100/30'
+                  }`}
+                  onDragOver={(e) => { e.preventDefault(); setStitchDragOver(true) }}
+                  onDragLeave={() => setStitchDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setStitchDragOver(false)
+                    const files = Array.from(e.dataTransfer.files)
+                    if (files.length > 0) addToStitch(files)
+                  }}
+                  onClick={() => stitchInputRef.current?.click()}
+                >
+                  <input ref={stitchInputRef} type="file" accept="image/*" multiple className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      if (files.length > 0) addToStitch(files)
+                      e.target.value = ''
+                    }} />
+                  <svg className="w-12 h-12 text-purple-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                  </svg>
+                  <p className="text-sm font-semibold text-purple-900 mb-0.5">Drop multiple screenshots of the same listing</p>
+                  <p className="text-xs text-purple-600/70">or click to browse — up to 8 images, all merged into one production</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 mb-4">
+                    {stitchQueue.map((item, idx) => (
+                      <div key={item.id} className="relative group">
+                        <img
+                          src={item.preview}
+                          alt={`Screenshot ${idx + 1}`}
+                          className="w-full h-20 object-cover rounded-lg border-2 border-purple-300"
+                        />
+                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-purple-600 text-white text-[10px] font-bold">
+                          {idx + 1}
+                        </span>
+                        {!stitchProcessing && (
+                          <button
+                            onClick={() => removeFromStitch(item.id)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            &times;
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {stitchQueue.length < 8 && (
+                      <button
+                        type="button"
+                        onClick={() => stitchInputRef.current?.click()}
+                        disabled={stitchProcessing}
+                        className="w-full h-20 rounded-lg border-2 border-dashed border-purple-300 text-purple-500 hover:bg-purple-100/40 flex items-center justify-center text-2xl disabled:opacity-50"
+                        title="Add more screenshots"
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
+                  <input ref={stitchInputRef} type="file" accept="image/*" multiple className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      if (files.length > 0) addToStitch(files)
+                      e.target.value = ''
+                    }} />
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={processStitch}
+                      disabled={stitchProcessing || stitchQueue.length === 0}
+                      className="btn-primary disabled:opacity-50"
+                    >
+                      {stitchProcessing
+                        ? 'Combining & extracting…'
+                        : `Combine & Extract (${stitchQueue.length} ${stitchQueue.length === 1 ? 'image' : 'images'})`}
+                    </button>
+                    <span className="text-xs text-purple-700/70">
+                      Sent to AI as one merged listing
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

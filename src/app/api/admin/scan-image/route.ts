@@ -134,10 +134,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { image, type } = body as { image: string; type: string }
+    const { image, images, type } = body as { image?: string; images?: string[]; type: string }
 
-    if (!image || !type) {
-      return NextResponse.json({ error: 'Image and type are required.' }, { status: 400 })
+    // Accept either a single `image` (legacy) or an `images` array (multi-screenshot stitching)
+    const imageList: string[] = Array.isArray(images) && images.length > 0
+      ? images
+      : (image ? [image] : [])
+
+    if (imageList.length === 0 || !type) {
+      return NextResponse.json({ error: 'Image(s) and type are required.' }, { status: 400 })
+    }
+
+    if (imageList.length > 8) {
+      return NextResponse.json({ error: 'Maximum 8 images per scan.' }, { status: 400 })
     }
 
     const prompt = PROMPTS[type]
@@ -145,15 +154,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Unknown type: ${type}` }, { status: 400 })
     }
 
-    // Determine media type from base64 header
-    let mediaType = 'image/png'
-    if (image.startsWith('data:')) {
-      const match = image.match(/^data:(image\/\w+);base64,/)
-      if (match) mediaType = match[1]
-    }
+    // Build image content blocks (one per source image), all from the same listing
+    const imageBlocks = imageList.map(img => {
+      let mediaType = 'image/png'
+      if (img.startsWith('data:')) {
+        const match = img.match(/^data:(image\/\w+);base64,/)
+        if (match) mediaType = match[1]
+      }
+      const base64Data = img.includes(',') ? img.split(',')[1] : img
+      return {
+        type: 'image' as const,
+        source: {
+          type: 'base64' as const,
+          media_type: mediaType,
+          data: base64Data,
+        },
+      }
+    })
 
-    // Strip data URL prefix if present
-    const base64Data = image.includes(',') ? image.split(',')[1] : image
+    // When multiple images are provided, prepend a stitching hint so the model
+    // merges them into ONE production rather than treating each as separate.
+    const stitchPreface = imageList.length > 1
+      ? `IMPORTANT: The following ${imageList.length} images are screenshots of the SAME production listing — likely captured because the listing did not fit on a single screen. Treat them as ONE continuous source. Merge all crew, companies, locations, dates, and details across the screenshots into a SINGLE production record. Do NOT return multiple productions and do NOT duplicate entries that appear on more than one screenshot.\n\n`
+      : ''
 
     // Call Claude API with vision
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -170,17 +193,10 @@ export async function POST(req: NextRequest) {
           {
             role: 'user',
             content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: mediaType,
-                  data: base64Data,
-                },
-              },
+              ...imageBlocks,
               {
                 type: 'text',
-                text: prompt,
+                text: stitchPreface + prompt,
               },
             ],
           },
