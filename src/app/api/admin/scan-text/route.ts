@@ -23,7 +23,8 @@ CONTENT/DESCRIPTION RULES:
 - The "content" field should ONLY contain information about the project itself: plot synopsis, storyline, what the show/film is about, where and when it's filming, and who is producing it.
 - Do NOT include metadata like "Type: Television", "Network: ABC", "Genres: Crime / Drama", "Status: Active Development", "Added: August 07, 2023", "Last Update: March 18, 2026" in the content field. That information belongs in the structured fields (production_types, production_statuses, etc.).
 - Do NOT copy posting dates, update dates, or source publication metadata into content.
-- The "excerpt" should be a clean one-line logline about the project.
+- Do NOT include casting-call / talent-recruitment language in the content field. Specifically EXCLUDE any sentences about: who the production is hiring or seeking, local-hire restrictions ("local talent only in Toronto/GTA", "must reside in NY"), union/non-union status for actors, audition details, rates of pay or per diem for performers, compensation amounts ("$100/day flat rate"), nudity, intimacy, simulated sex, kissing or other physical-content advisories aimed at actors, diversity/inclusion notes about who may audition (e.g. "LGBTQ+ positive project", "seeking BIPOC actors"), age ranges for casting, or any phrase that reads like a casting breakdown rather than a description of the project. Plot-level mentions of romance, identity, or relationships are fine — only EXCLUDE the recruitment-facing framing.
+- The "excerpt" should be a clean one-line logline about the project. Apply the same casting-exclusion rule to the excerpt.
 
 Return ONLY valid JSON with this structure (use null for missing fields, empty arrays [] if no items):
 {
