@@ -702,6 +702,197 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [bulkDraftSavedCount, setBulkDraftSavedCount] = useState(0)
   const [bulkDraftErrors, setBulkDraftErrors] = useState<string[]>([])
 
+  // Bulk AI research state
+  const [bulkResearchingAll, setBulkResearchingAll] = useState(false)
+  const [bulkResearchedIndices, setBulkResearchedIndices] = useState<Set<number>>(new Set())
+  const [bulkResearchCurrentIndex, setBulkResearchCurrentIndex] = useState<number | null>(null)
+  const [bulkResearchErrors, setBulkResearchErrors] = useState<string[]>([])
+  const bulkResearchAbortRef = useRef(false)
+
+  /**
+   * Pure helper: merge research result fields into a single bulk-extraction
+   * data object and return a new (enriched) data object. Mirrors the
+   * stateful `mergeResearchData()` used in single-production mode but operates
+   * on plain objects so it's safe to call inside a tight bulk loop.
+   */
+  const mergeResearchIntoExtraction = useCallback((data: any, research: any): any => {
+    const merged: any = { ...data }
+
+    // Fill empty top-level fields from research (extraction takes priority)
+    if (!merged.excerpt && research?.synopsis) merged.excerpt = research.synopsis
+    if (!merged.content && research?.additional_notes) merged.content = research.additional_notes
+    if (!merged.production_date_start && research?.production_date_start) {
+      merged.production_date_start = research.production_date_start
+    }
+    if (!merged.production_date_end && research?.production_date_end) {
+      merged.production_date_end = research.production_date_end
+    }
+
+    // Append Network/Studio + Genres into content (matching single-mode behavior)
+    if (research?.network_or_studio || research?.genres?.length) {
+      const extraLines: string[] = []
+      if (research.network_or_studio) extraLines.push(`Network/Studio: ${research.network_or_studio}`)
+      if (research.genres?.length) extraLines.push(`Genres: ${research.genres.join(', ')}`)
+      const existingContent: string = merged.content || ''
+      const networkAlreadyPresent = research.network_or_studio
+        ? existingContent.includes(research.network_or_studio)
+        : false
+      if (extraLines.length && !networkAlreadyPresent) {
+        merged.content = [existingContent, ...extraLines].filter(Boolean).join('\n')
+      }
+    }
+
+    // Locations: dedupe by lowercase city
+    const existingLocs = new Set<string>(
+      (merged.locations || [])
+        .map((l: any) => (l?.city || '').toLowerCase())
+        .filter(Boolean)
+    )
+    const newLocs = (research?.locations || [])
+      .filter((l: any) => l?.city && !existingLocs.has(l.city.toLowerCase()))
+      .map((l: any) => ({
+        location: l.location || '',
+        city: l.city || '',
+        stage: l.stage || '',
+        country: l.country || '',
+        confidence: l.confidence,
+        source: l.source,
+        origin: 'research',
+      }))
+    if (newLocs.length) {
+      merged.locations = [...(merged.locations || []), ...newLocs]
+    }
+
+    // Crew: dedupe by lowercase inline_name; also fill missing contact info
+    const existingCrewNames = new Set<string>(
+      (merged.crew || [])
+        .map((c: any) => (c?.inline_name || c?.name || '').toLowerCase())
+        .filter(Boolean)
+    )
+    const newCrew = (research?.crew || [])
+      .filter((c: any) => c?.inline_name && !existingCrewNames.has(c.inline_name.toLowerCase()))
+      .map((c: any) => ({
+        role_name: c.role_name || '',
+        inline_name: c.inline_name || '',
+        inline_phones: c.inline_phones || [],
+        inline_emails: c.inline_emails || [],
+        confidence: c.confidence,
+        status: c.status,
+        source: c.source,
+        origin: 'research',
+      }))
+    if (newCrew.length) {
+      merged.crew = [...(merged.crew || []), ...newCrew]
+    }
+    // Backfill phones/emails for crew already present in extraction
+    if (research?.crew?.length && merged.crew?.length) {
+      merged.crew = merged.crew.map((c: any) => {
+        const match = research.crew.find(
+          (rc: any) => rc?.inline_name && c?.inline_name &&
+            rc.inline_name.toLowerCase() === c.inline_name.toLowerCase()
+        )
+        if (!match) return c
+        return {
+          ...c,
+          inline_phones: c.inline_phones?.length ? c.inline_phones : (match.inline_phones || []),
+          inline_emails: c.inline_emails?.length ? c.inline_emails : (match.inline_emails || []),
+        }
+      })
+    }
+
+    // Companies: dedupe by lowercase inline_name
+    const existingCompanyNames = new Set<string>(
+      (merged.companies || [])
+        .map((c: any) => (c?.inline_name || '').toLowerCase())
+        .filter(Boolean)
+    )
+    const newCompanies = (research?.companies || [])
+      .filter((c: any) => c?.inline_name && !existingCompanyNames.has(c.inline_name.toLowerCase()))
+      .map((c: any) => ({
+        inline_name: c.inline_name || '',
+        inline_address: c.inline_address || '',
+        inline_phones: c.inline_phones || [],
+        inline_faxes: [],
+        inline_emails: c.inline_emails || [],
+        confidence: c.confidence,
+        source: c.source,
+        origin: 'research',
+      }))
+    if (newCompanies.length) {
+      merged.companies = [...(merged.companies || []), ...newCompanies]
+    }
+
+    // Mark as researched so the per-row Review & Save flow can skip the Research step
+    merged._researched = true
+    return merged
+  }, [])
+
+  /** Run AI research on every bulk result sequentially. Interruptible via cancelBulkResearch(). */
+  const researchAllBulkResults = useCallback(async () => {
+    if (bulkResearchingAll || bulkResults.length === 0) return
+    bulkResearchAbortRef.current = false
+    setBulkResearchingAll(true)
+    setBulkResearchErrors([])
+    setBulkResearchCurrentIndex(0)
+
+    const errors: string[] = []
+
+    for (let i = 0; i < bulkResults.length; i++) {
+      // Honor cancel
+      if (bulkResearchAbortRef.current) break
+
+      // Skip already-researched rows so users can re-run after fixing failures
+      if (bulkResearchedIndices.has(i)) continue
+
+      setBulkResearchCurrentIndex(i)
+      const data = bulkResults[i]
+      if (!data?.title) {
+        errors.push(`#${i + 1}: missing title — skipped`)
+        continue
+      }
+
+      try {
+        const res = await fetch('/api/admin/ai-research-production', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: data.title, existingData: data }),
+        })
+        const result = await res.json()
+        if (!res.ok) {
+          errors.push(`${data.title}: ${result.error || res.statusText}`)
+          continue
+        }
+
+        // Re-read the latest version of this row from state in case other
+        // operations modified it between iterations, then merge.
+        setBulkResults(prev => {
+          const next = [...prev]
+          if (next[i]) {
+            next[i] = mergeResearchIntoExtraction(next[i], result.data)
+          }
+          return next
+        })
+        setBulkResearchedIndices(prev => {
+          const next = new Set(prev)
+          next.add(i)
+          return next
+        })
+      } catch (err: any) {
+        errors.push(`${data.title}: ${err?.message || 'request failed'}`)
+      }
+    }
+
+    setBulkResearchErrors(errors)
+    setBulkResearchCurrentIndex(null)
+    setBulkResearchingAll(false)
+    bulkResearchAbortRef.current = false
+  }, [bulkResearchingAll, bulkResults, bulkResearchedIndices, mergeResearchIntoExtraction])
+
+  /** Request graceful interrupt of an in-progress bulk research run. */
+  const cancelBulkResearch = useCallback(() => {
+    bulkResearchAbortRef.current = true
+  }, [])
+
   /** Build a FormData payload from a single bulk-extracted result, marked as draft. */
   const buildDraftFormData = useCallback((data: any): FormData | null => {
     const title = String(data?.title ?? '').trim()
@@ -837,14 +1028,17 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
 
         if (matches.length > 0) {
           setStep('duplicates')
+        } else if (data._researched) {
+          // Already enriched in bulk research — skip the research step
+          setStep('review')
         } else {
           setStep('research')
         }
       } catch {
-        setStep('research')
+        setStep(data._researched ? 'review' : 'research')
       }
     } else {
-      setStep('research')
+      setStep(data._researched ? 'review' : 'research')
     }
   }, [typeOptions, statusOptions])
 
@@ -1257,6 +1451,10 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
     setSavedBulkIndices(new Set()); setActiveBulkIndex(null); setBulkSaving(false); setBulkSaveError(null)
     stitchQueue.forEach(q => URL.revokeObjectURL(q.preview))
     setStitchQueue([]); setStitchProcessing(false); setStitchDragOver(false)
+    setBulkResearchingAll(false); setBulkResearchedIndices(new Set())
+    setBulkResearchCurrentIndex(null); setBulkResearchErrors([])
+    bulkResearchAbortRef.current = false
+    setBulkDraftSavingAll(false); setBulkDraftSavedCount(0); setBulkDraftErrors([])
   }
 
   const stepIdx = STEPS.findIndex(s => s.key === step)
@@ -1967,12 +2165,42 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {(() => {
+                  const unResearched = bulkResults.length - bulkResearchedIndices.size
+                  if (bulkResearchingAll) {
+                    return (
+                      <>
+                        <span className="text-xs text-purple-700 font-medium px-2 py-1 rounded bg-purple-50 border border-purple-200">
+                          Researching… {(bulkResearchCurrentIndex ?? 0) + 1}/{bulkResults.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={cancelBulkResearch}
+                          className="btn-outline text-sm border-red-300 text-red-700 hover:bg-red-50"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={researchAllBulkResults}
+                      disabled={unResearched === 0 || bulkDraftSavingAll}
+                      className="btn-outline text-sm border-purple-300 text-purple-700 hover:bg-purple-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Run Research & Enrich with AI on every extraction one by one"
+                    >
+                      ✨ Research & Enrich All{unResearched > 0 && unResearched < bulkResults.length ? ` (${unResearched})` : ''}
+                    </button>
+                  )
+                })()}
+                {(() => {
                   const remaining = bulkResults.length - savedBulkIndices.size
                   return (
                     <button
                       type="button"
                       onClick={saveAllAsDrafts}
-                      disabled={bulkDraftSavingAll || remaining === 0}
+                      disabled={bulkDraftSavingAll || bulkResearchingAll || remaining === 0}
                       className="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Save every remaining extraction as a Draft so you can review later"
                     >
@@ -1982,9 +2210,19 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                     </button>
                   )
                 })()}
-                <button onClick={resetAll} disabled={bulkDraftSavingAll} className="btn-outline text-sm disabled:opacity-50">Start Over</button>
+                <button onClick={resetAll} disabled={bulkDraftSavingAll || bulkResearchingAll} className="btn-outline text-sm disabled:opacity-50">Start Over</button>
               </div>
             </div>
+
+            {/* Bulk research error summary */}
+            {bulkResearchErrors.length > 0 && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <p className="font-semibold mb-1">{bulkResearchErrors.length} research request{bulkResearchErrors.length !== 1 ? 's' : ''} failed:</p>
+                {bulkResearchErrors.map((msg, idx) => (
+                  <span key={idx} className="block text-xs mt-0.5">• {msg}</span>
+                ))}
+              </div>
+            )}
 
             {/* Draft-save error summary */}
             {bulkDraftErrors.length > 0 && (
@@ -2009,18 +2247,32 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
             <div className="space-y-2">
               {bulkResults.map((data, i) => {
                 const isSaved = savedBulkIndices.has(i)
+                const isResearched = bulkResearchedIndices.has(i)
+                const isResearchingNow = bulkResearchingAll && bulkResearchCurrentIndex === i
                 return (
                   <div
                     key={i}
                     className={`flex items-center justify-between p-4 bg-white border rounded-lg transition-colors ${
                       isSaved
                         ? 'border-green-300 bg-green-50/50'
+                        : isResearchingNow
+                        ? 'border-purple-400 bg-purple-50/50'
                         : 'border-gray-200 hover:border-[#3ea8c8]/40 hover:bg-[#3ea8c8]/5'
                     }`}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-semibold text-gray-900 truncate">{data.title || 'Untitled'}</p>
+                        {isResearchingNow && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-300 flex-shrink-0 animate-pulse">
+                            Researching…
+                          </span>
+                        )}
+                        {isResearched && !isResearchingNow && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-300 flex-shrink-0">
+                            ✨ Researched
+                          </span>
+                        )}
                         {isSaved && (
                           <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-300 flex-shrink-0">
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -2048,7 +2300,8 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
                     </div>
                     <button
                       onClick={() => loadBulkResult(data, i)}
-                      className={`text-xs py-1.5 px-4 ml-4 flex-shrink-0 ${isSaved ? 'btn-outline' : 'btn-primary'}`}
+                      disabled={bulkResearchingAll || bulkDraftSavingAll}
+                      className={`text-xs py-1.5 px-4 ml-4 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${isSaved ? 'btn-outline' : 'btn-primary'}`}
                     >
                       {isSaved ? 'Review Again' : 'Review & Save'}
                     </button>
