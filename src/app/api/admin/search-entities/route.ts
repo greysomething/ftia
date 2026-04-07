@@ -17,8 +17,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const q = req.nextUrl.searchParams.get('q')?.trim()
+  // A trailing space in the query is treated as a *word boundary* hint:
+  //   "Vice"  → substring match (matches "Service", "Advice", "Vice Media", …)
+  //   "Vice " → whole-word match  (matches "Vice", "Vice Media", but NOT "Service" or "Advice")
+  // This lets admins disambiguate short generic terms by adding a trailing space.
+  const rawQ = req.nextUrl.searchParams.get('q') ?? ''
   const type = req.nextUrl.searchParams.get('type') // 'company' or 'crew'
+  const wholeWord = rawQ.endsWith(' ')
+  const q = rawQ.trim()
 
   if (!q || q.length < 2) {
     return NextResponse.json({ results: [] })
@@ -26,17 +32,24 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient()
   const pattern = `%${q}%`
+  // Postgres POSIX word-boundary regex: \m = start of word, \M = end of word.
+  // Escape any regex metacharacters in the search term so user input is treated literally.
+  const escapedQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const wordPattern = `\\m${escapedQ}\\M`
 
   if (type === 'company') {
-    const { data } = await supabase
+    let query = supabase
       .from('companies')
       .select('id, title, slug, addresses, phones, emails')
-      .ilike('title', pattern)
       .eq('visibility', 'publish')
       .order('title')
       .limit(8)
+    query = wholeWord
+      ? query.filter('title', 'imatch', wordPattern)
+      : query.ilike('title', pattern)
+    const { data } = await query
 
-    const results = (data ?? []).map(co => ({
+    const results = (data ?? []).map((co: any) => ({
       id: co.id,
       title: co.title,
       slug: co.slug,
@@ -47,15 +60,18 @@ export async function GET(req: NextRequest) {
   }
 
   if (type === 'crew') {
-    const { data } = await supabase
+    let query = supabase
       .from('crew_members')
       .select('id, name, slug, emails, phones')
-      .ilike('name', pattern)
       .eq('visibility', 'publish')
       .order('name')
       .limit(8)
+    query = wholeWord
+      ? query.filter('name', 'imatch', wordPattern)
+      : query.ilike('name', pattern)
+    const { data } = await query
 
-    const results = (data ?? []).map(cm => ({
+    const results = (data ?? []).map((cm: any) => ({
       id: cm.id,
       title: cm.name,
       slug: cm.slug,

@@ -599,6 +599,123 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
   const [activeBulkIndex, setActiveBulkIndex] = useState<number | null>(null)
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkSaveError, setBulkSaveError] = useState<string | null>(null)
+  const [bulkDraftSavingAll, setBulkDraftSavingAll] = useState(false)
+  const [bulkDraftSavedCount, setBulkDraftSavedCount] = useState(0)
+  const [bulkDraftErrors, setBulkDraftErrors] = useState<string[]>([])
+
+  /** Build a FormData payload from a single bulk-extracted result, marked as draft. */
+  const buildDraftFormData = useCallback((data: any): FormData | null => {
+    const title = String(data?.title ?? '').trim()
+    if (!title) return null
+
+    const fd = new FormData()
+    fd.set('title', title)
+    fd.set('visibility', 'draft')
+    fd.set('excerpt', data?.excerpt ?? '')
+    fd.set('content', data?.content ?? '')
+    fd.set('computed_status', data?.computed_status ?? '')
+    fd.set('production_date_start', data?.production_date_start ?? '')
+    fd.set('production_date_end', data?.production_date_end ?? '')
+
+    // Map types by name → id
+    const typeNames: string[] = data?.production_types ?? []
+    const typeIds: number[] = []
+    for (const name of typeNames) {
+      const match = typeOptions.find(t => t.name.toLowerCase() === String(name).toLowerCase())
+      if (match) typeIds.push(match.id)
+    }
+    typeIds.forEach(id => fd.append('type_ids', String(id)))
+    if (typeIds[0]) fd.set('primary_type_id', String(typeIds[0]))
+
+    // Map statuses by name → id
+    const statusNames: string[] = data?.production_statuses ?? []
+    const statusIds: number[] = []
+    for (const name of statusNames) {
+      const match = statusOptions.find(s => s.name.toLowerCase() === String(name).toLowerCase())
+      if (match) statusIds.push(match.id)
+    }
+    statusIds.forEach(id => fd.append('status_ids', String(id)))
+    if (statusIds[0]) fd.set('primary_status_id', String(statusIds[0]))
+
+    // Locations / crew / companies — JSON-encoded as the endpoint expects
+    const locations = (data?.locations ?? []).filter((l: any) => l?.location || l?.city)
+    fd.set('locations_json', JSON.stringify(locations))
+
+    const crew = (data?.crew ?? [])
+      .map((c: any) => ({
+        role_name: c.role_name || '',
+        inline_name: c.inline_name || c.name || '',
+        crew_id: c.crew_id || null,
+        inline_phones: c.inline_phones || [],
+        inline_emails: c.inline_emails || [],
+        inline_linkedin: c.inline_linkedin || '',
+        inline_twitter: c.inline_twitter || '',
+        inline_instagram: c.inline_instagram || '',
+        inline_website: c.inline_website || '',
+      }))
+      .filter((c: any) => c.inline_name)
+    fd.set('crew_json', JSON.stringify(crew))
+
+    const companies = (data?.companies ?? [])
+      .map((c: any) => ({
+        inline_name: c.inline_name || '',
+        inline_address: c.inline_address || '',
+        company_id: c.company_id || null,
+        inline_phones: c.inline_phones || [],
+        inline_faxes: c.inline_faxes || [],
+        inline_emails: c.inline_emails || [],
+        inline_linkedin: c.inline_linkedin || '',
+        inline_twitter: c.inline_twitter || '',
+        inline_instagram: c.inline_instagram || '',
+        inline_website: c.inline_website || '',
+      }))
+      .filter((c: any) => c.inline_name)
+    fd.set('companies_json', JSON.stringify(companies))
+
+    return fd
+  }, [typeOptions, statusOptions])
+
+  /** Save every un-saved bulk result as a Draft, sequentially. */
+  const saveAllAsDrafts = useCallback(async () => {
+    if (bulkDraftSavingAll) return
+    setBulkDraftSavingAll(true)
+    setBulkDraftSavedCount(0)
+    setBulkDraftErrors([])
+
+    const errors: string[] = []
+    let saved = 0
+
+    for (let i = 0; i < bulkResults.length; i++) {
+      if (savedBulkIndices.has(i)) continue
+      const data = bulkResults[i]
+      const fd = buildDraftFormData(data)
+      if (!fd) {
+        errors.push(`#${i + 1}: missing title — skipped`)
+        continue
+      }
+      try {
+        const res = await fetch('/api/admin/save-production', { method: 'POST', body: fd })
+        const result = await res.json()
+        if (!res.ok || result.error) {
+          errors.push(`${data?.title || `#${i + 1}`}: ${result.error || res.statusText}`)
+          continue
+        }
+        // Mark this index as saved (capture index for closure-safety)
+        setSavedBulkIndices(prev => {
+          const next = new Set(prev)
+          next.add(i)
+          return next
+        })
+        saved++
+        setBulkDraftSavedCount(saved)
+      } catch (err: any) {
+        errors.push(`${data?.title || `#${i + 1}`}: ${err?.message || 'request failed'}`)
+      }
+    }
+
+    setBulkDraftErrors(errors)
+    setBulkDraftSavingAll(false)
+  }, [bulkResults, savedBulkIndices, bulkDraftSavingAll, buildDraftFormData])
 
   const loadBulkResult = useCallback(async (data: any, index: number) => {
     setScannedData(data)
@@ -1628,15 +1745,43 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
       {step === 'bulk-results' && (
         <div className="space-y-4">
           <div className="admin-card">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 gap-3">
               <div>
                 <h3 className="text-base font-bold text-gray-900">Bulk Extraction Results</h3>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  {bulkResults.length} production{bulkResults.length !== 1 ? 's' : ''} extracted. Click any to review and save.
+                  {bulkResults.length} production{bulkResults.length !== 1 ? 's' : ''} extracted. Click any to review and save — or save them all as drafts.
                 </p>
               </div>
-              <button onClick={resetAll} className="btn-outline text-sm">Start Over</button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {(() => {
+                  const remaining = bulkResults.length - savedBulkIndices.size
+                  return (
+                    <button
+                      type="button"
+                      onClick={saveAllAsDrafts}
+                      disabled={bulkDraftSavingAll || remaining === 0}
+                      className="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Save every remaining extraction as a Draft so you can review later"
+                    >
+                      {bulkDraftSavingAll
+                        ? `Saving drafts… ${bulkDraftSavedCount}/${remaining}`
+                        : `Save All as Drafts${remaining > 0 ? ` (${remaining})` : ''}`}
+                    </button>
+                  )
+                })()}
+                <button onClick={resetAll} disabled={bulkDraftSavingAll} className="btn-outline text-sm disabled:opacity-50">Start Over</button>
+              </div>
             </div>
+
+            {/* Draft-save error summary */}
+            {bulkDraftErrors.length > 0 && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                <p className="font-semibold mb-1">{bulkDraftErrors.length} draft{bulkDraftErrors.length !== 1 ? 's' : ''} failed to save:</p>
+                {bulkDraftErrors.map((msg, idx) => (
+                  <span key={idx} className="block text-xs mt-0.5">• {msg}</span>
+                ))}
+              </div>
+            )}
 
             {/* Error summary */}
             {queue.filter(q => q.status === 'error').length > 0 && (
