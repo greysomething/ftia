@@ -72,8 +72,14 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
       row.published_at = new Date().toISOString()
     }
   } else if (visibility === 'draft') {
-    // Drafts clear the published_at
-    row.published_at = null
+    if (publishedAtOverride) {
+      // Admin set a custom publish date on a draft — preserve it so it's
+      // ready when they later switch to Published
+      row.published_at = new Date(publishedAtOverride).toISOString()
+    } else {
+      // Drafts without an override clear the published_at
+      row.published_at = null
+    }
   }
 
   let postId = id

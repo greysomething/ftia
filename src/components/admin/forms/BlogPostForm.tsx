@@ -126,7 +126,7 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
             {visibility === 'schedule' && scheduleDate && (
               <input type="hidden" name="scheduled_at" value={scheduleDate} />
             )}
-            {visibility === 'publish' && overridePublishDate && publishedDate && (
+            {overridePublishDate && publishedDate && (
               <input type="hidden" name="published_at_override" value={publishedDate} />
             )}
             <div>
@@ -151,9 +151,10 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
               </select>
             </div>
 
-            {visibility === 'publish' && (
+            {visibility !== 'schedule' && (
               <div>
-                <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                <label className="form-label">Publish Date</label>
+                <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer mb-2">
                   <input
                     type="checkbox"
                     checked={overridePublishDate}
@@ -165,10 +166,10 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
                     }}
                     className="rounded border-gray-300 text-primary focus:ring-primary"
                   />
-                  Set custom publish date (backdate or future)
+                  Set custom date (backdate or future)
                 </label>
-                {overridePublishDate && (
-                  <div className="mt-2">
+                {overridePublishDate ? (
+                  <>
                     <input
                       type="datetime-local"
                       value={publishedDate}
@@ -178,16 +179,21 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
                     />
                     {publishedDate && (
                       <p className="text-[11px] text-gray-500 mt-1">
-                        {new Date(publishedDate) > new Date()
+                        {visibility === 'draft'
+                          ? `Will be saved as ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} when you publish`
+                          : new Date(publishedDate) > new Date()
                           ? `Will publish at ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`
                           : `Backdated to ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
                       </p>
                     )}
-                  </div>
-                )}
-                {!overridePublishDate && post?.published_at && (
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    Currently published {new Date(post.published_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </>
+                ) : (
+                  <p className="text-[11px] text-gray-500">
+                    {visibility === 'draft'
+                      ? 'Will be set to the current time when published'
+                      : post?.published_at
+                      ? `Currently published ${new Date(post.published_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                      : 'Will be set to the current time'}
                   </p>
                 )}
               </div>
