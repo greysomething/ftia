@@ -1,39 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminUser } from '@/lib/auth'
-import { getActiveStripeKeys } from '@/lib/stripe-settings'
-import Stripe from 'stripe'
+import { createAdminClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
 
-// US Eastern time matches Stripe dashboard's default account timezone
+// Use US Eastern time for date bucketing — matches Stripe dashboard
 const TIMEZONE = 'America/New_York'
 
-/** Convert a UTC unix-seconds timestamp to YYYY-MM-DD in ET */
-function toLocalDateFromUnix(seconds: number): string {
-  return new Date(seconds * 1000).toLocaleDateString('en-CA', { timeZone: TIMEZONE })
+/** Convert a UTC timestamp to a YYYY-MM-DD string in ET */
+function toLocalDate(timestamp: string): string {
+  return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: TIMEZONE })
 }
 
+/** Get today's date in ET */
 function todayLocal(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: TIMEZONE })
-}
-
-interface Bucket {
-  newSignups: number
-  rebills: number
-  signupRevenue: number
-  rebillRevenue: number
-  revenue: number
-  refunds: number
-  refundAmount: number
-}
-
-function emptyBucket(): Bucket {
-  return {
-    newSignups: 0, rebills: 0,
-    signupRevenue: 0, rebillRevenue: 0, revenue: 0,
-    refunds: 0, refundAmount: 0,
-  }
 }
 
 export async function GET(req: NextRequest) {
@@ -43,154 +24,152 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const days = Math.max(1, Math.min(366, parseInt(searchParams.get('days') ?? '30', 10)))
 
-  const { secretKey } = await getActiveStripeKeys()
-  if (!secretKey || secretKey.length < 20) {
-    return NextResponse.json(
-      { error: 'Stripe secret key not configured. Go to Admin > Merchant Settings.' },
-      { status: 400 }
-    )
+  const supabase = createAdminClient()
+  const since = new Date()
+  since.setDate(since.getDate() - days)
+  const sinceISO = since.toISOString()
+
+  // Fetch all orders in the date range (both success and refunded)
+  const allOrders: Array<{
+    user_id: string
+    timestamp: string
+    total: number
+    billing_reason: string | null
+    status: string
+  }> = []
+
+  let page = 0
+  while (true) {
+    const from = page * 1000
+    const { data, error } = await supabase
+      .from('membership_orders')
+      .select('user_id, timestamp, total, billing_reason, status')
+      .gte('timestamp', sinceISO)
+      .in('status', ['success', 'refunded'])
+      .order('timestamp', { ascending: true })
+      .range(from, from + 999)
+    if (error) {
+      console.error('[analytics] supabase error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    if (!data || data.length === 0) break
+    allOrders.push(...data)
+    if (data.length < 1000) break
+    page++
   }
 
-  const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any })
+  // Identify users whose first-ever order date we need to know, so we can
+  // decide new vs recurring when billing_reason is missing/ambiguous.
+  // We include any successful order, since legacy/backfilled rows may
+  // have billing_reason === 'charge' or null instead of 'subscription_create'.
+  const usersNeedingLookup = new Set<string>()
+  for (const order of allOrders) {
+    if (order.status !== 'success') continue
+    if (order.billing_reason === 'subscription_create' || order.billing_reason === 'subscription_cycle') continue
+    usersNeedingLookup.add(order.user_id)
+  }
 
-  // Pre-build empty daily buckets in ET (no future dates)
+  const firstOrderMap: Record<string, string> = {}
+  if (usersNeedingLookup.size > 0) {
+    const userIds = [...usersNeedingLookup]
+    for (let i = 0; i < userIds.length; i += 100) {
+      const batch = userIds.slice(i, i + 100)
+      const { data } = await supabase
+        .from('membership_orders')
+        .select('user_id, timestamp')
+        .in('user_id', batch)
+        .eq('status', 'success')
+        .order('timestamp', { ascending: true })
+
+      for (const row of data ?? []) {
+        if (!firstOrderMap[row.user_id] || row.timestamp < firstOrderMap[row.user_id]) {
+          firstOrderMap[row.user_id] = row.timestamp
+        }
+      }
+    }
+  }
+
+  // Build daily buckets using ET dates
+  const buckets: Record<string, {
+    newSignups: number; rebills: number
+    signupRevenue: number; rebillRevenue: number; revenue: number
+    refunds: number; refundAmount: number
+  }> = {}
+
   const today = todayLocal()
-  const buckets: Record<string, Bucket> = {}
   for (let i = 0; i < days; i++) {
     const d = new Date()
     d.setDate(d.getDate() - (days - 1 - i))
     const key = d.toLocaleDateString('en-CA', { timeZone: TIMEZONE })
     if (key > today) continue
-    buckets[key] = emptyBucket()
+    buckets[key] = {
+      newSignups: 0, rebills: 0,
+      signupRevenue: 0, rebillRevenue: 0, revenue: 0,
+      refunds: 0, refundAmount: 0,
+    }
   }
 
-  // Compute the unix-seconds cutoff with a 1-day buffer so we don't miss
-  // any charges that fall within the earliest ET bucket but are slightly
-  // outside its UTC midnight.
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - (days + 1))
-  cutoffDate.setHours(0, 0, 0, 0)
-  const createdGte = Math.floor(cutoffDate.getTime() / 1000)
+  // Categorize each order
+  for (const order of allOrders) {
+    if (!order.timestamp) continue
+    const key = toLocalDate(order.timestamp)
+    if (!buckets[key]) continue
 
-  try {
-    // ── Pull all charges in window with invoice expanded ──
-    // Stripe lets us expand data.invoice in charge.list — that gives us
-    // billing_reason directly so we can classify new vs recurring
-    // exactly the way Stripe dashboard does.
-    let chargeHasMore = true
-    let chargeStartingAfter: string | undefined
-
-    while (chargeHasMore) {
-      const params: Stripe.ChargeListParams = {
-        created: { gte: createdGte },
-        limit: 100,
-        expand: ['data.invoice'],
-      }
-      if (chargeStartingAfter) params.starting_after = chargeStartingAfter
-
-      const page = await stripe.charges.list(params)
-
-      for (const charge of page.data) {
-        // Only count successful captured charges as revenue
-        if (charge.status !== 'succeeded' || !charge.paid) continue
-
-        const dateKey = toLocalDateFromUnix(charge.created)
-        const bucket = buckets[dateKey]
-        if (!bucket) continue
-
-        const amount = (charge.amount ?? 0) / 100
-
-        // Determine billing reason from expanded invoice.
-        // `charge.invoice` exists at runtime for 2024-06-20 API but the
-        // newer Stripe TS types narrowed it away — cast to any.
-        const invoice = (charge as any).invoice as Stripe.Invoice | string | null | undefined
-        let billingReason: string | null = null
-        if (invoice && typeof invoice !== 'string') {
-          billingReason = invoice.billing_reason ?? null
-        }
-
-        const isNewSignup = billingReason === 'subscription_create'
-
-        if (isNewSignup) {
-          bucket.newSignups++
-          bucket.signupRevenue += amount
-        } else {
-          bucket.rebills++
-          bucket.rebillRevenue += amount
-        }
-        bucket.revenue += amount
-      }
-
-      chargeHasMore = page.has_more
-      if (page.data.length > 0) {
-        chargeStartingAfter = page.data[page.data.length - 1].id
-      } else {
-        chargeHasMore = false
-      }
+    // Refunds
+    if (order.status === 'refunded') {
+      buckets[key].refunds++
+      buckets[key].refundAmount += Math.abs(order.total ?? 0)
+      buckets[key].revenue -= Math.abs(order.total ?? 0)
+      continue
     }
 
-    // ── Pull refunds separately (refund.created may differ from charge.created) ──
-    let refundHasMore = true
-    let refundStartingAfter: string | undefined
-
-    while (refundHasMore) {
-      const params: Stripe.RefundListParams = {
-        created: { gte: createdGte },
-        limit: 100,
-      }
-      if (refundStartingAfter) params.starting_after = refundStartingAfter
-
-      const page = await stripe.refunds.list(params)
-
-      for (const refund of page.data) {
-        if (refund.status !== 'succeeded') continue
-        const dateKey = toLocalDateFromUnix(refund.created)
-        const bucket = buckets[dateKey]
-        if (!bucket) continue
-
-        const amount = (refund.amount ?? 0) / 100
-        bucket.refunds++
-        bucket.refundAmount += amount
-        bucket.revenue -= amount
-      }
-
-      refundHasMore = page.has_more
-      if (page.data.length > 0) {
-        refundStartingAfter = page.data[page.data.length - 1].id
-      } else {
-        refundHasMore = false
-      }
+    // New vs recurring classification
+    let isNewSignup: boolean
+    if (order.billing_reason === 'subscription_create') {
+      isNewSignup = true
+    } else if (order.billing_reason === 'subscription_cycle') {
+      isNewSignup = false
+    } else {
+      // Legacy / null / 'charge' — fall back to first-order heuristic.
+      // CRITICAL: compare both sides in ET to avoid a day drift that
+      // previously misclassified evening-ET signups as recurring.
+      const firstTs = firstOrderMap[order.user_id]
+      const firstDate = firstTs ? toLocalDate(firstTs) : null
+      isNewSignup = firstDate === toLocalDate(order.timestamp)
     }
 
-    const chartData = Object.entries(buckets)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, data]) => ({ date, ...data }))
-
-    const totalNewSignups = chartData.reduce((s, d) => s + d.newSignups, 0)
-    const totalRebills = chartData.reduce((s, d) => s + d.rebills, 0)
-    const totalRevenue = chartData.reduce((s, d) => s + d.revenue, 0)
-    const totalSignupRevenue = chartData.reduce((s, d) => s + d.signupRevenue, 0)
-    const totalRebillRevenue = chartData.reduce((s, d) => s + d.rebillRevenue, 0)
-    const totalRefunds = chartData.reduce((s, d) => s + d.refunds, 0)
-    const totalRefundAmount = chartData.reduce((s, d) => s + d.refundAmount, 0)
-
-    return NextResponse.json({
-      chartData,
-      summary: {
-        newSignups: totalNewSignups,
-        rebills: totalRebills,
-        revenue: totalRevenue,
-        signupRevenue: totalSignupRevenue,
-        rebillRevenue: totalRebillRevenue,
-        refunds: totalRefunds,
-        refundAmount: totalRefundAmount,
-      },
-    })
-  } catch (err: any) {
-    console.error('[analytics] Stripe error:', err)
-    return NextResponse.json(
-      { error: err.message || 'Failed to fetch Stripe analytics' },
-      { status: 500 }
-    )
+    if (isNewSignup) {
+      buckets[key].newSignups++
+      buckets[key].signupRevenue += order.total ?? 0
+    } else {
+      buckets[key].rebills++
+      buckets[key].rebillRevenue += order.total ?? 0
+    }
+    buckets[key].revenue += order.total ?? 0
   }
+
+  const chartData = Object.entries(buckets)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, data]) => ({ date, ...data }))
+
+  const totalNewSignups = chartData.reduce((s, d) => s + d.newSignups, 0)
+  const totalRebills = chartData.reduce((s, d) => s + d.rebills, 0)
+  const totalRevenue = chartData.reduce((s, d) => s + d.revenue, 0)
+  const totalSignupRevenue = chartData.reduce((s, d) => s + d.signupRevenue, 0)
+  const totalRebillRevenue = chartData.reduce((s, d) => s + d.rebillRevenue, 0)
+  const totalRefunds = chartData.reduce((s, d) => s + d.refunds, 0)
+  const totalRefundAmount = chartData.reduce((s, d) => s + d.refundAmount, 0)
+
+  return NextResponse.json({
+    chartData,
+    summary: {
+      newSignups: totalNewSignups,
+      rebills: totalRebills,
+      revenue: totalRevenue,
+      signupRevenue: totalSignupRevenue,
+      rebillRevenue: totalRebillRevenue,
+      refunds: totalRefunds,
+      refundAmount: totalRefundAmount,
+    },
+  })
 }
