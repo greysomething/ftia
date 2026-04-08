@@ -18,20 +18,12 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { runWeeklyDigestPipeline, getCurrentWeekMonday } from '@/lib/weekly-digest'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
-function getCurrentWeekMonday(): string {
-  const now = new Date()
-  const day = now.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  const monday = new Date(now)
-  monday.setDate(now.getDate() + diff)
-  return monday.toISOString().split('T')[0]
-}
 
 export async function GET(req: NextRequest) {
   // Verify cron secret (skip for admin-triggered manual sends)
@@ -139,26 +131,26 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // 5. List is ready — trigger the digest send
+  // 5. List is ready — run the digest pipeline inline (no cross-function fetch)
   console.log(`[Cron] Weekly list ready: ${productionCount} productions for ${weekMonday}. Sending digest.`)
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://productionlist.com'
-
   try {
-    const trigger = isManualTrigger ? 'manual' : 'auto'
-    const res = await fetch(`${baseUrl}/api/admin/send-weekly-digest?trigger=${trigger}`, {
-      method: 'POST',
-      headers: {
-        'x-cron-secret': cronSecret || '',
-      },
+    const result = await runWeeklyDigestPipeline({
+      triggerType: isManualTrigger ? 'manual' : 'auto',
     })
 
-    const data = await res.json()
-    console.log(`[Cron] Weekly digest result:`, data)
+    console.log(`[Cron] Weekly digest result:`, result)
+
+    if (result.error) {
+      return NextResponse.json(
+        { error: result.error, triggeredAt: new Date().toISOString() },
+        { status: 400 }
+      )
+    }
 
     return NextResponse.json({
-      success: res.ok,
-      ...data,
+      success: true,
+      ...result,
       triggeredAt: new Date().toISOString(),
     })
   } catch (err: any) {
