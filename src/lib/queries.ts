@@ -256,6 +256,37 @@ export async function getProductionWeeks() {
 }
 
 /**
+ * Lightweight count of unique productions in the current week (Mon–Sun).
+ * Used by the Browse/Cards stats bar so it doesn't have to paginate the
+ * full production_week_entries table. Updates dynamically as new entries
+ * are inserted during the week.
+ */
+export async function getCurrentWeekProductionCount(): Promise<number> {
+  const supabase = await createClient()
+
+  // Compute current week's Monday (ISO Mon–Sun week)
+  const now = new Date()
+  const day = now.getDay() // 0=Sun, 1=Mon, …, 6=Sat
+  const diff = day === 0 ? -6 : 1 - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + diff)
+  monday.setHours(0, 0, 0, 0)
+  const mondayStr = monday.toISOString().split('T')[0]
+
+  const { data, error } = await (supabase as any)
+    .from('production_week_entries')
+    .select('production_id')
+    .eq('week_monday', mondayStr) as { data: { production_id: number }[] | null; error: any }
+
+  if (error || !data) return 0
+
+  // Deduplicate in case the same production_id appears multiple times
+  const unique = new Set<number>()
+  for (const row of data) unique.add(row.production_id)
+  return unique.size
+}
+
+/**
  * Get productions for a specific week (Mon–Sun).
  * Uses production_week_entries join table so a production can appear in multiple weeks.
  * Falls back to wp_updated_at filtering if the table doesn't exist yet.

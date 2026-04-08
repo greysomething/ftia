@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Suspense } from 'react'
-import { getProductions, getProductionWeeks, getWeeklyStats, getLocationFilterOptions } from '@/lib/queries'
+import { getProductions, getProductionWeeks, getWeeklyStats, getLocationFilterOptions, getCurrentWeekProductionCount } from '@/lib/queries'
 import { getUser, isMember } from '@/lib/auth'
 import { formatProductionDate, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, cn } from '@/lib/utils'
 import { ProductionCard } from '@/components/ProductionCard'
@@ -74,24 +74,31 @@ export default async function ProductionsPage({ searchParams }: Props) {
     }
   }
 
+  let browseWeeklyCount = 0
   if (isBrowse) {
-    const result = await getProductions({
-      page,
-      search: params.s,
-      typeSlug: params.type,
-      statusSlug: params.status,
-      locationFilter: params.location,
-      sort: params.sort,
-    })
+    const [result, weekCount] = await Promise.all([
+      getProductions({
+        page,
+        search: params.s,
+        typeSlug: params.type,
+        statusSlug: params.status,
+        locationFilter: params.location,
+        sort: params.sort,
+      }),
+      getCurrentWeekProductionCount(),
+    ])
     productions = result.productions
     total = result.total
     currentPerPage = result.perPage
+    browseWeeklyCount = weekCount
   }
 
   const totalPages = Math.ceil(total / currentPerPage)
 
   // Stats for the header
-  const weeklyAdditions = weeks.length > 0 ? weeks[0].count : 0
+  const weeklyAdditions = isBrowse
+    ? browseWeeklyCount
+    : (weeks.length > 0 ? weeks[0].count : 0)
   const activeLocationCount = weeklyStats?.totalLocations ?? locationOptions.length
 
   return (
