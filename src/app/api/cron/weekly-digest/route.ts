@@ -53,7 +53,17 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // 2. Check if it's the right day and at or after the configured hour.
+  // 2. Check if we're at or after the configured send time in the current ISO week.
+  //
+  // The cron runs hourly. On the configured day-of-week at the configured
+  // hour, we start attempting to send. If the weekly list isn't ready yet
+  // (not enough productions), we skip and re-check on the next hourly run
+  // throughout the rest of the ISO week (Mon–Sun). Once the list becomes
+  // ready on any day from the target day forward, we send.
+  //
+  // The atomic digest_runs lock and the email_logs pre-check in
+  // runWeeklyDigestPipeline guarantee we never double-send, regardless
+  // of which hour the cron fires on.
   const tz = settings.timezone || 'America/New_York'
   const now = new Date()
 
@@ -73,32 +83,46 @@ export async function GET(req: NextRequest) {
   const targetDay = settings.day_of_week
   const targetHour = settings.send_hour
 
-  // Must be the configured day AND at or after the configured hour.
-  if (currentDay !== targetDay || currentHour < targetHour) {
+  // Normalize to ISO week semantics (Monday=1 … Sunday=7) so the comparison
+  // works correctly when target=Monday and today=Sunday (which would be
+  // Day 0 in JS's Sun-first convention and incorrectly look "before Monday").
+  const toIsoDay = (d: number) => (d === 0 ? 7 : d)
+  const isoCurrentDay = toIsoDay(currentDay)
+  const isoTargetDay = toIsoDay(targetDay)
+
+  const isBeforeTargetDay = isoCurrentDay < isoTargetDay
+  const isTargetDayButTooEarly =
+    isoCurrentDay === isoTargetDay && currentHour < targetHour
+
+  if (isBeforeTargetDay || isTargetDayButTooEarly) {
     return NextResponse.json({
       skipped: true,
-      reason: `Not the right time. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:00+ ${tz}`,
+      reason: `Not yet the send window. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:00+ ${tz}. Will re-check next hour.`,
       checkedAt: new Date().toISOString(),
     })
   }
 
-  // 3. Check if we already sent this week (prevent duplicate auto-sends).
-  const weekStart = new Date(now)
-  weekStart.setDate(now.getDate() - now.getDay()) // Sunday
-  weekStart.setHours(0, 0, 0, 0)
+  // 3. Check if we already sent this ISO week (Mon–Sun) to prevent
+  //    duplicate auto-sends. This is a fast short-circuit — the pipeline
+  //    itself also has a pre-check and an atomic lock, so this is the
+  //    outermost layer of defense-in-depth.
+  const isoWeekStart = new Date(now)
+  const daysSinceMonday = isoCurrentDay - 1 // 0 for Mon, 6 for Sun
+  isoWeekStart.setDate(now.getDate() - daysSinceMonday)
+  isoWeekStart.setHours(0, 0, 0, 0)
 
   const { data: recentSend } = await supabase
     .from('email_logs')
     .select('id')
     .eq('template_slug', 'weekly-digest')
     .like('recipient', 'bulk:%')
-    .gte('sent_at', weekStart.toISOString())
+    .gte('sent_at', isoWeekStart.toISOString())
     .limit(1)
 
   if (recentSend && recentSend.length > 0) {
     return NextResponse.json({
       skipped: true,
-      reason: 'Digest already sent this week',
+      reason: 'Digest already sent this ISO week',
       checkedAt: new Date().toISOString(),
     })
   }

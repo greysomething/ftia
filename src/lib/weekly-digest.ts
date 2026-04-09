@@ -196,15 +196,15 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
   // it only knows about runs that went through this pipeline. Historical
   // sends (from before digest_runs existed, or after a manual row delete)
   // only leave a `bulk:N` row in email_logs. Check for one matching this
-  // week's send window and bail if found.
+  // week's ISO-week window and bail if found.
   //
-  // We use a 10-day window starting 1 day before week_monday to catch
-  // any bulk row regardless of send time within the week.
+  // Window is exactly [weekMonday 00:00 UTC, weekMonday+7d 00:00 UTC) so
+  // a late-Sunday send from week N doesn't create a false positive when
+  // checking for week N+1's send.
   if (!isDryRun) {
     const windowStart = new Date(weekMonday + 'T00:00:00Z')
-    windowStart.setUTCDate(windowStart.getUTCDate() - 1)
     const windowEnd = new Date(weekMonday + 'T00:00:00Z')
-    windowEnd.setUTCDate(windowEnd.getUTCDate() + 9)
+    windowEnd.setUTCDate(windowEnd.getUTCDate() + 7)
 
     const { data: existingBulk } = await supabase
       .from('email_logs')
