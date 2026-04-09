@@ -13,7 +13,9 @@
  *  3. Once the list has enough productions, send the digest.
  *  4. Never re-send if a digest was already sent this week.
  *
- * Protected by CRON_SECRET to prevent unauthorized triggers.
+ * Authentication: REQUIRES a valid `Authorization: Bearer <CRON_SECRET>`
+ * header. There is no query-parameter bypass of any kind. All safety
+ * checks (day, hour, already-sent) always run — they cannot be skipped.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -26,12 +28,11 @@ export const maxDuration = 300
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export async function GET(req: NextRequest) {
-  // Verify cron secret (skip for admin-triggered manual sends)
+  // Verify cron secret — no bypass, no exceptions.
   const authHeader = req.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
-  const isManualTrigger = req.nextUrl.searchParams.get('force') === '1'
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && !isManualTrigger) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -52,61 +53,54 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // 2. Check if it's the right day and at or after the configured hour
-  //    (skip this check for manual triggers)
+  // 2. Check if it's the right day and at or after the configured hour.
   const tz = settings.timezone || 'America/New_York'
   const now = new Date()
 
-  if (!isManualTrigger) {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      weekday: 'long',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false,
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'long',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  })
+
+  const parts = formatter.formatToParts(now)
+  const currentDay = DAY_NAMES.indexOf(parts.find(p => p.type === 'weekday')?.value ?? '')
+  const currentHour = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10)
+  const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
+
+  const targetDay = settings.day_of_week
+  const targetHour = settings.send_hour
+
+  // Must be the configured day AND at or after the configured hour.
+  if (currentDay !== targetDay || currentHour < targetHour) {
+    return NextResponse.json({
+      skipped: true,
+      reason: `Not the right time. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:00+ ${tz}`,
+      checkedAt: new Date().toISOString(),
     })
-
-    const parts = formatter.formatToParts(now)
-    const currentDay = DAY_NAMES.indexOf(parts.find(p => p.type === 'weekday')?.value ?? '')
-    const currentHour = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10)
-    const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
-
-    const targetDay = settings.day_of_week
-    const targetHour = settings.send_hour
-
-    // Must be the configured day AND at or after the configured hour.
-    if (currentDay !== targetDay || currentHour < targetHour) {
-      return NextResponse.json({
-        skipped: true,
-        reason: `Not the right time. Current: ${DAY_NAMES[currentDay]} ${currentHour}:${String(currentMinute).padStart(2, '0')} ${tz}. Target: ${DAY_NAMES[targetDay]} ${targetHour}:00+ ${tz}`,
-        checkedAt: new Date().toISOString(),
-      })
-    }
   }
 
-  // 3. Check if we already sent this week (prevent duplicate auto-sends)
-  //    Manual triggers skip this check — the send endpoint itself deduplicates
-  //    at the individual recipient level, so re-sends only go to new recipients.
-  if (!isManualTrigger) {
-    const weekStart = new Date(now)
-    weekStart.setDate(now.getDate() - now.getDay()) // Sunday
-    weekStart.setHours(0, 0, 0, 0)
+  // 3. Check if we already sent this week (prevent duplicate auto-sends).
+  const weekStart = new Date(now)
+  weekStart.setDate(now.getDate() - now.getDay()) // Sunday
+  weekStart.setHours(0, 0, 0, 0)
 
-    const { data: recentSend } = await supabase
-      .from('email_logs')
-      .select('id')
-      .eq('template_slug', 'weekly-digest')
-      .like('recipient', 'bulk:%')
-      .gte('sent_at', weekStart.toISOString())
-      .limit(1)
+  const { data: recentSend } = await supabase
+    .from('email_logs')
+    .select('id')
+    .eq('template_slug', 'weekly-digest')
+    .like('recipient', 'bulk:%')
+    .gte('sent_at', weekStart.toISOString())
+    .limit(1)
 
-    if (recentSend && recentSend.length > 0) {
-      return NextResponse.json({
-        skipped: true,
-        reason: 'Digest already sent this week',
-        checkedAt: new Date().toISOString(),
-      })
-    }
+  if (recentSend && recentSend.length > 0) {
+    return NextResponse.json({
+      skipped: true,
+      reason: 'Digest already sent this week',
+      checkedAt: new Date().toISOString(),
+    })
   }
 
   // 4. Check if the current week's production list is ready
@@ -136,7 +130,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await runWeeklyDigestPipeline({
-      triggerType: isManualTrigger ? 'manual' : 'auto',
+      triggerType: 'auto',
     })
 
     console.log(`[Cron] Weekly digest result:`, result)
