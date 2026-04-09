@@ -190,6 +190,39 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
     }
   }
 
+  // 3.25. HARD ALREADY-SENT PRE-CHECK — defense in depth.
+  //
+  // The atomic digest_runs lock (below) catches concurrent runs, but
+  // it only knows about runs that went through this pipeline. Historical
+  // sends (from before digest_runs existed, or after a manual row delete)
+  // only leave a `bulk:N` row in email_logs. Check for one matching this
+  // week's send window and bail if found.
+  //
+  // We use a 10-day window starting 1 day before week_monday to catch
+  // any bulk row regardless of send time within the week.
+  if (!isDryRun) {
+    const windowStart = new Date(weekMonday + 'T00:00:00Z')
+    windowStart.setUTCDate(windowStart.getUTCDate() - 1)
+    const windowEnd = new Date(weekMonday + 'T00:00:00Z')
+    windowEnd.setUTCDate(windowEnd.getUTCDate() + 9)
+
+    const { data: existingBulk } = await supabase
+      .from('email_logs')
+      .select('recipient, sent_at, resend_id')
+      .eq('template_slug', 'weekly-digest')
+      .like('recipient', 'bulk:%')
+      .gte('sent_at', windowStart.toISOString())
+      .lt('sent_at', windowEnd.toISOString())
+      .limit(1)
+
+    if (existingBulk && existingBulk.length > 0) {
+      const row = existingBulk[0] as any
+      return {
+        error: `Weekly digest for week ${weekMonday} was already sent (${row.recipient} at ${row.sent_at}). Refusing to re-send.`,
+      }
+    }
+  }
+
   // 3.5. ATOMIC RUN LOCK — prevent overlapping runs via digest_runs PK.
   //
   // Insert a row keyed on week_monday. If another run (from this cron
