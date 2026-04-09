@@ -190,6 +190,53 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
     }
   }
 
+  // 3.5. ATOMIC RUN LOCK — prevent overlapping runs via digest_runs PK.
+  //
+  // Insert a row keyed on week_monday. If another run (from this cron
+  // or anywhere else) has already inserted a row for this week, the
+  // INSERT fails with a unique-violation and we bail early. This is
+  // the database's atomic guarantee — there is no race window.
+  //
+  // Dry runs skip the lock since they don't actually send anything.
+  if (!isDryRun) {
+    const { error: acquireLockError } = await supabase
+      .from('digest_runs')
+      .insert({
+        week_monday: weekMonday,
+        status: 'running',
+        trigger_type: triggerType,
+      })
+
+    if (acquireLockError) {
+      const { data: existing } = await supabase
+        .from('digest_runs')
+        .select('status, started_at, finished_at, sent_count')
+        .eq('week_monday', weekMonday)
+        .maybeSingle()
+
+      const ex = existing as any
+      let msg = `Digest run lock for week ${weekMonday} could not be acquired: ${acquireLockError.message}`
+      if (ex?.status === 'completed') {
+        msg = `Digest for week ${weekMonday} was already sent (completed ${ex.finished_at}, ${ex.sent_count ?? '?'} recipients). Refusing to re-send.`
+      } else if (ex?.status === 'running') {
+        msg = `Digest for week ${weekMonday} is currently being sent by another process (started ${ex.started_at}). Refusing concurrent run.`
+      } else if (ex?.status === 'failed') {
+        msg = `Digest for week ${weekMonday} previously failed. Delete the digest_runs row for ${weekMonday} in Supabase to allow a retry.`
+      }
+      return { error: msg }
+    }
+  }
+
+  // Lock acquired. Everything from here is wrapped in try/finally so the
+  // lock row is always updated with a final status — even on early
+  // error-returns or uncaught exceptions.
+  let lockFinalStatus: 'completed' | 'failed' = 'failed'
+  let lockSentCount = 0
+  let lockFailedCount = 0
+  let lockRecipientsCount = 0
+  let lockErrorMessage: string | null = null
+
+  try {
   // 4. Fetch production details
   const { data: productions } = await supabase
     .from('productions')
@@ -211,6 +258,7 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
 
   const template = getTemplate('weekly-digest')
   if (!template) {
+    lockErrorMessage = 'Template not found'
     return { error: 'Template not found' }
   }
 
@@ -265,6 +313,7 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
 
   if (recipientEmails.size === 0) {
     emit({ phase: 'error', error: `No contacts found in the "${audience}" audience.` })
+    lockErrorMessage = `No contacts found in the "${audience}" audience`
     return { error: `No contacts found in the "${audience}" audience to send digest to.` }
   }
 
@@ -315,6 +364,11 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
       },
     }
     emit({ phase: 'done', ...result })
+    // Treat as completed — this week is done, don't retry.
+    lockFinalStatus = 'completed'
+    lockSentCount = 0
+    lockFailedCount = 0
+    lockRecipientsCount = 0
     return result
   }
 
@@ -532,5 +586,35 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
   }
 
   emit({ phase: 'done', ...result })
+  // Mark lock completed with final counts
+  lockFinalStatus = 'completed'
+  lockSentCount = sent
+  lockFailedCount = failed
+  lockRecipientsCount = emails.length
+  if (errors.length > 0) {
+    lockErrorMessage = errors.slice(0, 3).join('; ')
+  }
   return result
+  } catch (err: any) {
+    lockErrorMessage = err?.message || 'Unknown error in weekly digest pipeline'
+    throw err
+  } finally {
+    if (!isDryRun) {
+      try {
+        await supabase
+          .from('digest_runs')
+          .update({
+            status: lockFinalStatus,
+            finished_at: new Date().toISOString(),
+            sent_count: lockSentCount,
+            failed_count: lockFailedCount,
+            recipients_count: lockRecipientsCount,
+            error_message: lockErrorMessage,
+          })
+          .eq('week_monday', weekMonday)
+      } catch (releaseErr) {
+        console.error('[weekly-digest] Failed to update digest_runs lock:', releaseErr)
+      }
+    }
+  }
 }
