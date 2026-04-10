@@ -15,10 +15,13 @@ export async function POST(req: NextRequest) {
 
     // Also mark as unsubscribed in Supabase
     const supabase = createAdminClient()
-    await supabase.from('newsletter_subscribers')
-      .update({ unsubscribed: true, updated_at: new Date().toISOString() })
-      .eq('email', normalizedEmail)
-      .catch(() => {})
+    try {
+      await supabase.from('newsletter_subscribers')
+        .update({ unsubscribed: true, updated_at: new Date().toISOString() })
+        .eq('email', normalizedEmail)
+    } catch {
+      // Swallow — Resend audience unsub above is the critical path
+    }
 
     return NextResponse.json({
       success: true,
