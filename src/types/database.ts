@@ -3,6 +3,9 @@ export type MembershipStatus = 'active' | 'inactive' | 'cancelled' | 'expired' |
 export type MembershipPeriod = 'Day' | 'Week' | 'Month' | 'Year'
 export type ProductionPhase = 'in-pre-production' | 'in-production' | 'in-post-production' | 'completed'
 export type DnwNoticeStatus = 'active' | 'resolved'
+export type PitchFormat = 'feature-film' | 'tv-pilot' | 'tv-series' | 'limited-series' | 'documentary' | 'short-film' | 'book-ip'
+export type PitchBudgetRange = 'micro' | 'low' | 'mid' | 'high' | 'tentpole'
+export type PitchDevelopmentStage = 'concept' | 'treatment' | 'script-in-progress' | 'script-complete' | 'package-attached'
 
 export interface Database {
   public: {
@@ -152,6 +155,31 @@ export interface Database {
         Insert: Omit<Media, 'id' | 'created_at'>
         Update: Partial<Omit<Media, 'id'>>
       }
+      pitches: {
+        Row: Pitch
+        Insert: Omit<Pitch, 'id' | 'created_at' | 'updated_at' | 'view_count'>
+        Update: Partial<Omit<Pitch, 'id'>>
+      }
+      pitch_genres: {
+        Row: TaxonomyTerm
+        Insert: Omit<TaxonomyTerm, 'id'>
+        Update: Partial<Omit<TaxonomyTerm, 'id'>>
+      }
+      pitch_genre_links: {
+        Row: { pitch_id: number; genre_id: number; is_primary: boolean }
+        Insert: { pitch_id: number; genre_id: number; is_primary?: boolean }
+        Update: { is_primary?: boolean }
+      }
+      pitch_attachments: {
+        Row: PitchAttachment
+        Insert: Omit<PitchAttachment, 'id' | 'created_at'>
+        Update: Partial<Omit<PitchAttachment, 'id'>>
+      }
+      pitch_favorites: {
+        Row: PitchFavorite
+        Insert: Omit<PitchFavorite, 'created_at'>
+        Update: never
+      }
     }
     Views: Record<string, never>
     Functions: {
@@ -165,6 +193,9 @@ export interface Database {
       membership_status: MembershipStatus
       membership_period: MembershipPeriod
       production_phase: ProductionPhase
+      pitch_format: PitchFormat
+      pitch_budget_range: PitchBudgetRange
+      pitch_development_stage: PitchDevelopmentStage
     }
   }
 }
@@ -478,4 +509,91 @@ export interface Media {
   width: number | null
   height: number | null
   created_at: string
+}
+
+export interface Pitch {
+  id: number
+  user_id: string
+  title: string
+  slug: string
+  logline: string
+  synopsis: string | null
+  format: PitchFormat
+  budget_range: PitchBudgetRange | null
+  development_stage: PitchDevelopmentStage
+  target_audience: string | null
+  comparable_titles: string | null
+  unique_selling_points: string | null
+  visibility: PostVisibility
+  featured: boolean
+  view_count: number
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PitchWithRelations extends Pitch {
+  pitch_genre_links?: Array<{ pitch_genres: TaxonomyTerm; is_primary: boolean }>
+  pitch_attachments?: PitchAttachment[]
+  user_profiles?: Pick<UserProfile, 'id' | 'display_name' | 'first_name' | 'last_name' | 'organization_name' | 'avatar_url'> | null
+}
+
+export interface PitchAttachment {
+  id: number
+  pitch_id: number
+  user_id: string
+  file_name: string
+  storage_path: string
+  file_type: string
+  mime_type: string
+  file_size: number | null
+  created_at: string
+}
+
+export interface PitchFavorite {
+  user_id: string
+  pitch_id: number
+  created_at: string
+}
+
+// ── Production Submissions ──────────────────────────────────────────
+
+export type SubmissionStatus = 'draft' | 'pending' | 'approved' | 'rejected'
+
+export interface SubmissionCrewEntry {
+  role: string
+  name: string
+}
+
+export interface SubmissionLocationEntry {
+  city: string
+  stage?: string
+  country: string
+}
+
+export interface ProductionSubmission {
+  id: number
+  user_id: string
+  status: SubmissionStatus
+  title: string | null
+  description: string | null
+  start_date: string | null
+  end_date: string | null
+  production_company: string | null
+  director: string | null
+  producer: string | null
+  writer: string | null
+  casting_director: string | null
+  extra_crew: SubmissionCrewEntry[]
+  locations: SubmissionLocationEntry[]
+  type_name: string | null
+  status_name: string | null
+  notes: string | null
+  published_production_id: number | null
+  submitted_at: string | null
+  reviewed_at: string | null
+  reviewed_by: string | null
+  rejection_reason: string | null
+  created_at: string
+  updated_at: string
 }

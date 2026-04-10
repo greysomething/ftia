@@ -50,6 +50,7 @@ export async function middleware(request: NextRequest) {
   const protectedPaths = [
     '/productions',
     '/membership-account',
+    '/submit-production',
     '/welcome',
     '/admin',
     '/do-not-work',

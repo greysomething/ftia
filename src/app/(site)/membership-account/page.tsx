@@ -41,6 +41,8 @@ export default async function MembershipAccountPage() {
           <nav className="white-bg p-4 space-y-1">
             {[
               ['My Account', '/membership-account'],
+              ['My Pitches', '/membership-account/my-pitches'],
+              ['My Submissions', '/membership-account/my-submissions'],
               ['Billing', '/membership-account/membership-billing'],
               ['Cancel', '/membership-account/membership-cancel'],
               ['Membership Plans', '/membership-plans'],
