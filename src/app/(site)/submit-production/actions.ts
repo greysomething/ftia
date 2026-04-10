@@ -151,6 +151,37 @@ export async function submitForReview(prevState: any, formData: FormData): Promi
 
   if (updateError) return { error: updateError.message }
 
+  // Send confirmation email
+  try {
+    const { getTemplate } = await import('@/lib/email-templates')
+    const { sendEmail } = await import('@/lib/send-email')
+
+    const template = getTemplate('production-submission-received')
+    if (template && user.email) {
+      // Fetch user's first name
+      const { data: profile } = await adminSupabase
+        .from('user_profiles')
+        .select('first_name')
+        .eq('id', user.id)
+        .single()
+
+      const { subject, html } = template.render({
+        firstName: (profile as any)?.first_name || '',
+        productionTitle: title,
+      })
+
+      await sendEmail({
+        to: user.email,
+        subject,
+        html,
+        templateSlug: 'production-submission-received',
+      })
+    }
+  } catch (emailErr) {
+    console.error('[submit-production] Failed to send confirmation email:', emailErr)
+    // Don't fail the submission over an email error
+  }
+
   revalidatePath('/membership-account/my-submissions')
   return {
     success: true,

@@ -238,6 +238,73 @@ export const emailTemplates: EmailTemplate[] = [
       `),
     }),
   },
+
+  // ── Production Submissions ──────────────────────────────────────
+
+  {
+    slug: 'production-submission-received',
+    name: 'Submission Received',
+    description: 'Sent when a user submits a production for review.',
+    category: 'notification',
+    variables: ['firstName', 'productionTitle'],
+    render: (vars) => ({
+      subject: `We received your submission: ${vars.productionTitle || 'New Production'}`,
+      html: wrap(`
+        <h2 style="color: ${BRAND.color};">Submission Received</h2>
+        <p>Hi ${vars.firstName || 'there'},</p>
+        <p>Thanks for submitting <strong>${vars.productionTitle || 'your production'}</strong> to Production List. Our team will review it and get back to you shortly.</p>
+        <p>You can track the status of your submission anytime:</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="https://productionlist.com/membership-account/my-submissions" style="background-color: ${BRAND.accent}; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            View My Submissions
+          </a>
+        </p>
+      `),
+    }),
+  },
+  {
+    slug: 'production-submission-approved',
+    name: 'Submission Approved',
+    description: 'Sent when an admin approves a user-submitted production.',
+    category: 'notification',
+    variables: ['firstName', 'productionTitle', 'productionUrl'],
+    render: (vars) => ({
+      subject: `Your submission has been approved: ${vars.productionTitle || 'Production'}`,
+      html: wrap(`
+        <h2 style="color: ${BRAND.color};">Your Submission Is Live!</h2>
+        <p>Hi ${vars.firstName || 'there'},</p>
+        <p>Great news! <strong>${vars.productionTitle || 'Your production'}</strong> has been approved and is now listed on Production List.</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="${vars.productionUrl || 'https://productionlist.com/productions'}" style="background-color: ${BRAND.accent}; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            View Your Production
+          </a>
+        </p>
+        <p>Thank you for contributing to Production List!</p>
+      `),
+    }),
+  },
+  {
+    slug: 'production-submission-rejected',
+    name: 'Submission Rejected',
+    description: 'Sent when an admin rejects a user-submitted production.',
+    category: 'notification',
+    variables: ['firstName', 'productionTitle', 'rejectionReason'],
+    render: (vars) => ({
+      subject: `Update on your submission: ${vars.productionTitle || 'Production'}`,
+      html: wrap(`
+        <h2 style="color: ${BRAND.color};">Submission Update</h2>
+        <p>Hi ${vars.firstName || 'there'},</p>
+        <p>After reviewing <strong>${vars.productionTitle || 'your production'}</strong>, we were unable to publish it at this time.</p>
+        ${vars.rejectionReason ? `<div style="background: #f9fafb; border-left: 3px solid #e5e7eb; padding: 12px 16px; margin: 16px 0;"><strong>Reason:</strong> ${vars.rejectionReason}</div>` : ''}
+        <p>You're welcome to submit a new production anytime:</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="https://productionlist.com/submit-production" style="background-color: ${BRAND.accent}; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            Submit Another Production
+          </a>
+        </p>
+      `),
+    }),
+  },
 ]
 
 export function getTemplate(slug: string): EmailTemplate | undefined {
