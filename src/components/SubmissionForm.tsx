@@ -75,9 +75,8 @@ export default function SubmissionForm({ submission, typeOptions, statusOptions,
     autoSaveTimerRef.current = setTimeout(() => {
       if (isDirtyRef.current && formRef.current) {
         setSaving(true)
-        // Trigger save via hidden button
-        const saveBtn = formRef.current.querySelector('button[name="action"][value="save"]') as HTMLButtonElement
-        saveBtn?.click()
+        const formData = new FormData(formRef.current)
+        saveAction(formData)
       }
     }, 3000)
   }, [])
@@ -124,19 +123,18 @@ export default function SubmissionForm({ submission, typeOptions, statusOptions,
   const isReadOnly = submission?.status === 'pending' || submission?.status === 'approved' || submission?.status === 'rejected'
   const error = submitState?.error || (saveState?.error && !saving ? saveState.error : null)
 
-  function handleFormAction(formData: FormData) {
-    const action = formData.get('action')
-    if (action === 'submit') {
-      setSubmitting(true)
-      submitAction(formData)
-    } else {
-      setSaving(true)
-      saveAction(formData)
-    }
+  function handleSave(formData: FormData) {
+    setSaving(true)
+    saveAction(formData)
+  }
+
+  function handleSubmit(formData: FormData) {
+    setSubmitting(true)
+    submitAction(formData)
   }
 
   return (
-    <form ref={formRef} action={handleFormAction} className="space-y-6">
+    <form ref={formRef} className="space-y-6">
       {submissionId && <input type="hidden" name="id" value={submissionId} />}
       <input type="hidden" name="extra_crew" value={JSON.stringify(extraCrew)} />
       <input type="hidden" name="locations" value={JSON.stringify(locations)} />
@@ -400,8 +398,7 @@ export default function SubmissionForm({ submission, typeOptions, statusOptions,
             <div className="white-bg p-4 space-y-3">
               <button
                 type="submit"
-                name="action"
-                value="save"
+                formAction={handleSave}
                 disabled={saving}
                 className="w-full px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
@@ -410,8 +407,7 @@ export default function SubmissionForm({ submission, typeOptions, statusOptions,
 
               <button
                 type="submit"
-                name="action"
-                value="submit"
+                formAction={handleSubmit}
                 disabled={submitting || !rateLimit.allowed}
                 className="w-full px-4 py-2 bg-primary text-white text-sm font-medium rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
