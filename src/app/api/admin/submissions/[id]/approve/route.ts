@@ -28,6 +28,8 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid submission ID' }, { status: 400 })
   }
 
+  const asDraft = req.nextUrl.searchParams.get('draft') === '1'
+
   const supabase = createAdminClient()
 
   // 1. Fetch the submission
@@ -81,7 +83,7 @@ export async function POST(
         slug,
         content: submission.description || null,
         excerpt: submission.description?.slice(0, 200) || null,
-        visibility: 'publish',
+        visibility: asDraft ? 'draft' : 'publish',
         production_date_start: submission.start_date || null,
         production_date_end: submission.end_date || null,
         computed_status: mapStatusName(submission.status_name),
@@ -179,8 +181,8 @@ export async function POST(
       })
       .eq('id', submissionId)
 
-    // 10. Send approval email to submitter
-    try {
+    // 10. Send approval email to submitter (only when publishing live)
+    if (!asDraft) try {
       const { data: submitterProfile } = await supabase
         .from('user_profiles')
         .select('first_name')
@@ -229,7 +231,7 @@ export async function POST(
     revalidatePath('/admin/productions')
     revalidatePath('/productions')
 
-    return NextResponse.json({ ok: true, productionId, slug })
+    return NextResponse.json({ ok: true, productionId, slug, visibility: asDraft ? 'draft' : 'publish' })
   } catch (err: any) {
     console.error('[approve-submission] Error:', err)
     return NextResponse.json({ error: err.message || 'Unknown error' }, { status: 500 })

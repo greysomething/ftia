@@ -153,8 +153,8 @@ export default function AdminSubmissionReview({ submission, typeOptions, statusO
     }
   }
 
-  // Approve
-  async function handleApprove() {
+  // Approve (shared logic for publish + draft)
+  async function handleApprove(asDraft = false) {
     if (!title) { setError('Title is required to approve.'); return }
     if (!typeName) { setError('Production type is required to approve.'); return }
 
@@ -173,13 +173,16 @@ export default function AdminSubmissionReview({ submission, typeOptions, statusO
       }
 
       // Approve
-      const res = await fetch(`/api/admin/submissions/${submission.id}/approve`, {
-        method: 'POST',
-      })
+      const url = `/api/admin/submissions/${submission.id}/approve${asDraft ? '?draft=1' : ''}`
+      const res = await fetch(url, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to approve')
 
-      setSuccess(`Approved! Production created (ID: ${data.productionId}).`)
+      if (asDraft) {
+        setSuccess(`Approved as draft! Production created (ID: ${data.productionId}). You can publish it from the Productions page when ready.`)
+      } else {
+        setSuccess(`Approved and published! Production created (ID: ${data.productionId}).`)
+      }
       router.refresh()
     } catch (err: any) {
       setError(err.message)
@@ -438,11 +441,19 @@ export default function AdminSubmissionReview({ submission, typeOptions, statusO
               <hr className="border-gray-200" />
 
               <button
-                onClick={handleApprove}
+                onClick={() => handleApprove(false)}
                 disabled={approving}
                 className="w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors disabled:opacity-50"
               >
                 {approving ? 'Approving...' : 'Approve & Publish'}
+              </button>
+
+              <button
+                onClick={() => handleApprove(true)}
+                disabled={approving}
+                className="w-full px-4 py-2 border-2 border-green-600 text-green-700 text-sm font-medium rounded hover:bg-green-50 transition-colors disabled:opacity-50"
+              >
+                Approve as Draft
               </button>
 
               <button
