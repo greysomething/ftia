@@ -77,6 +77,28 @@ export default async function MySubmissionsPage({ searchParams }: Props) {
             </div>
           )}
 
+          {/* CTA banner — prominent for first-time users, compact after first submission */}
+          {counts.all === 0 ? (
+            <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 rounded-lg p-8">
+              <h2 className="text-xl font-bold text-primary mb-2">Help Build the Industry&apos;s Most Complete Production Database</h2>
+              <p className="text-gray-700 mb-4 max-w-2xl">
+                Know about a production that&apos;s not listed? Whether it&apos;s in development, pre-production, or already filming &mdash; submit it here and help fellow industry professionals discover new opportunities to connect, collaborate, and find work.
+              </p>
+              <Link
+                href="/submit-production"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-primary text-white font-medium rounded hover:bg-primary/90 transition-colors"
+              >
+                + Submit a Production
+              </Link>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-primary/5 border border-primary/10 rounded-lg px-5 py-3">
+              <p className="text-sm text-gray-600">
+                Know about a production that&apos;s not listed? <Link href="/submit-production" className="text-primary font-medium hover:underline">Submit it here</Link> and help the community discover new opportunities.
+              </p>
+            </div>
+          )}
+
           <div className="white-bg p-6">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">

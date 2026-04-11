@@ -134,7 +134,7 @@ export async function getAdminSubmissions(
 
   let query = supabase
     .from('production_submissions')
-    .select('*, user_profiles:user_id(first_name, last_name, email:id)', { count: 'exact' })
+    .select('*', { count: 'exact' })
     .order('submitted_at', { ascending: false, nullsFirst: false })
     .range(offset, offset + perPage - 1)
 
@@ -148,7 +148,7 @@ export async function getAdminSubmissions(
   const { data, count, error } = await query
 
   return {
-    submissions: (data ?? []) as (ProductionSubmission & { user_profiles?: any })[],
+    submissions: (data ?? []) as ProductionSubmission[],
     total: count ?? 0,
     perPage,
     error,
