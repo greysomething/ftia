@@ -96,6 +96,8 @@ export default function EmailAdminClient({
   const [tab, setTab] = useState<Tab>('Overview')
   const [audiences, setAudiences] = useState(initialAudiences)
   const [audienceLoading, setAudienceLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ activeCount: number; pastCount: number; skipped: number; errors: number } | null>(null)
 
   // Logs state
   const [logs, setLogs] = useState(initialLogs)
@@ -137,6 +139,22 @@ export default function EmailAdminClient({
       }
     } finally {
       setAudienceLoading(false)
+    }
+  }
+
+  async function syncAudiences() {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/api/admin/sync-audiences', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setSyncResult({ activeCount: data.activeCount, pastCount: data.pastCount, skipped: data.skipped, errors: data.errors })
+        // Refresh audience counts after sync
+        refreshAudienceCounts()
+      }
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -328,14 +346,28 @@ export default function EmailAdminClient({
           {/* Audience Cards */}
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold text-gray-900">Audiences</h2>
-            <button
-              onClick={refreshAudienceCounts}
-              disabled={audienceLoading}
-              className="btn-outline text-xs px-3 py-1"
-            >
-              {audienceLoading ? 'Refreshing...' : 'Refresh Counts'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={syncAudiences}
+                disabled={syncing}
+                className="btn-outline text-xs px-3 py-1"
+              >
+                {syncing ? 'Syncing...' : 'Sync from Database'}
+              </button>
+              <button
+                onClick={refreshAudienceCounts}
+                disabled={audienceLoading}
+                className="btn-outline text-xs px-3 py-1"
+              >
+                {audienceLoading ? 'Refreshing...' : 'Refresh Counts'}
+              </button>
+            </div>
           </div>
+          {syncResult && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 mb-4">
+              Sync complete: {syncResult.activeCount} active, {syncResult.pastCount} past, {syncResult.skipped} skipped{syncResult.errors > 0 ? `, ${syncResult.errors} errors` : ''}.
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             {audiences.length > 0 ? audiences.map((aud) => (
               <div key={aud.id} className="admin-card flex items-center gap-4">
