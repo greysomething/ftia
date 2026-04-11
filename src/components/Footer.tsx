@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
+import FooterNewsletter from './FooterNewsletter'
 
 export function Footer() {
   return (
@@ -22,7 +23,7 @@ export function Footer() {
                 </p>
               </div>
             </div>
-            <p className="text-sm text-white/70 leading-relaxed">
+            <p className="text-sm text-white/70 leading-relaxed mb-5">
               FTIA&apos;s Production List is the most comprehensive directory of
               active film and television productions in pre-production and
               production worldwide. Updated daily by our editorial team, we
@@ -30,6 +31,9 @@ export function Footer() {
               major market, helping industry professionals find work and connect
               with the productions that are hiring.
             </p>
+
+            <p className="text-xs text-white/50 mb-2">Stay in the loop — get weekly production updates:</p>
+            <FooterNewsletter />
           </div>
 
           <div className="md:col-span-2">
@@ -62,19 +66,6 @@ export function Footer() {
               <li><Link href="/privacy-policy" className="text-white/80 hover:text-white transition-colors">Privacy Policy</Link></li>
             </ul>
           </div>
-        </div>
-
-        {/* Newsletter CTA */}
-        <div className="border-t border-white/20 mt-8 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-white/70">
-            Get weekly production updates and new project alerts delivered to your inbox.
-          </p>
-          <Link
-            href="/membership-plans"
-            className="flex-shrink-0 px-5 py-2 bg-accent text-charcoal text-sm font-semibold rounded hover:bg-accent/90 transition-colors"
-          >
-            Subscribe to Weekly Digest
-          </Link>
         </div>
 
         <div className="border-t border-white/20 mt-8 pt-8 flex flex-col md:flex-row items-center justify-between text-sm text-white/50">
