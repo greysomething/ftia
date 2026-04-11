@@ -24,10 +24,11 @@ export function Footer() {
             </div>
             <p className="text-sm text-white/70 leading-relaxed">
               FTIA&apos;s Production List is the most comprehensive directory of
-              active film and television productions in pre-production across
-              North America. Updated daily by our editorial team, we help
-              industry professionals find work and connect with the productions
-              that are hiring.
+              active film and television productions in pre-production and
+              production worldwide. Updated daily by our editorial team, we
+              track productions and maintain an active database across every
+              major market, helping industry professionals find work and connect
+              with the productions that are hiring.
             </p>
           </div>
 
@@ -61,6 +62,19 @@ export function Footer() {
               <li><Link href="/privacy-policy" className="text-white/80 hover:text-white transition-colors">Privacy Policy</Link></li>
             </ul>
           </div>
+        </div>
+
+        {/* Newsletter CTA */}
+        <div className="border-t border-white/20 mt-8 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-sm text-white/70">
+            Get weekly production updates and new project alerts delivered to your inbox.
+          </p>
+          <Link
+            href="/membership-plans"
+            className="flex-shrink-0 px-5 py-2 bg-accent text-charcoal text-sm font-semibold rounded hover:bg-accent/90 transition-colors"
+          >
+            Subscribe to Weekly Digest
+          </Link>
         </div>
 
         <div className="border-t border-white/20 mt-8 pt-8 flex flex-col md:flex-row items-center justify-between text-sm text-white/50">
