@@ -33,7 +33,7 @@ export default async function RegisterPage({ searchParams }: Props) {
             <p className="text-sm text-gray-500 mt-1">
               {isFree
                 ? 'Set up your professional industry profile in under a minute'
-                : 'Join and access 1,500+ active productions'
+                : 'Join and access 10,000+ active productions'
               }
             </p>
             {isFree && (

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     template: '%s | Production List',
   },
   description:
-    'Access 1,500+ active film and television productions in pre-production. Find contacts, crew, and project details for productions filming near you.',
+    'Access 10,000+ active film and television productions in pre-production. Find contacts, crew, and project details for productions filming near you.',
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://productionlist.com'),
   openGraph: {
     siteName: 'Production List',

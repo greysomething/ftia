@@ -537,7 +537,7 @@ export default async function CompanyPage({ params }: Props) {
                 </div>
                 <h3 className="font-bold text-primary text-sm mb-1.5">Unlock Full Access</h3>
                 <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-                  Get direct contact details, staff emails, and access to 1,500+ productions.
+                  Get direct contact details, staff emails, and access to 10,000+ productions.
                 </p>
                 <Link href="/membership-plans" className="btn-accent w-full text-sm">
                   Join Now — See Plans

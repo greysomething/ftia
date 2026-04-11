@@ -10,7 +10,7 @@ export function MemberGate({ message }: MemberGateProps) {
       <div className="text-4xl mb-4">🔒</div>
       <h3 className="text-xl font-semibold text-primary mb-2">Members Only</h3>
       <p className="text-gray-600 mb-6 max-w-md mx-auto">
-        {message ?? 'Join FTIA and get full access to 1,500+ active projects filming near you.'}
+        {message ?? 'Join FTIA and get full access to 10,000+ active projects filming near you.'}
       </p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <Link href="/membership-plans" className="btn-accent">

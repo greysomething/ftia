@@ -148,7 +148,7 @@ export default async function DoNotWorkPage({ searchParams }: Props) {
             </div>
             <h3 className="font-bold text-white text-sm mb-1">Get Full Access</h3>
             <p className="text-white/60 text-xs leading-relaxed mb-4">
-              1,500+ active productions with contacts, crew details, and weekly updated project lists.
+              10,000+ active productions with contacts, crew details, and weekly updated project lists.
             </p>
             <Link
               href="/membership-plans"

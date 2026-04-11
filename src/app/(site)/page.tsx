@@ -9,7 +9,7 @@ import { JoinButton } from '@/components/JoinButton'
 export const metadata: Metadata = {
   title: 'Production List | Film & Television Industry Alliance',
   description:
-    'Access 1,500+ active film and television productions in pre-production. Find contacts, crew, and project details.',
+    'Access 10,000+ active film and television productions in pre-production. Find contacts, crew, and project details.',
 }
 
 export default async function HomePage() {
@@ -54,17 +54,17 @@ export default async function HomePage() {
         <div className="page-wrap">
           <div className="flex flex-wrap justify-center items-center gap-6 text-sm font-semibold tracking-wide">
             <span className="flex items-center gap-2">
-              <span className="text-xl font-bold">1,500+</span>
+              <span className="text-xl font-bold">10,000+</span>
               <span className="text-white/90">Active Productions</span>
             </span>
             <span className="text-white/40 hidden sm:inline">|</span>
             <span className="flex items-center gap-2">
-              <span className="text-xl font-bold">2,000+</span>
+              <span className="text-xl font-bold">5,000+</span>
               <span className="text-white/90">Production Companies</span>
             </span>
             <span className="text-white/40 hidden sm:inline">|</span>
             <span className="flex items-center gap-2">
-              <span className="text-xl font-bold">500+</span>
+              <span className="text-xl font-bold">8,000+</span>
               <span className="text-white/90">Crew Listings</span>
             </span>
             <span className="text-white/40 hidden sm:inline">|</span>

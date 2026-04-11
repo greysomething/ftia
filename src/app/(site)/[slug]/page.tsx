@@ -283,7 +283,7 @@ export default async function SlugPage({ params }: Props) {
                   Stay Ahead of the Industry
                 </h3>
                 <p className="text-white/70 mb-5 max-w-lg mx-auto">
-                  Get full access to 1,500+ active productions with contacts, crew details, and weekly
+                  Get full access to 10,000+ active productions with contacts, crew details, and weekly
                   updated project lists. Everything you need to find your next opportunity.
                 </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">

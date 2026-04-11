@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS: PopupSettings = {
   dismissDurationDays: 7,
   hideForLoggedIn: true,
   heading: 'Join Production List',
-  subheading: 'Get instant access to 1,500+ active film & TV productions in pre-production. Find contacts, crew, and project details.',
+  subheading: 'Get instant access to 10,000+ active film & TV productions in pre-production. Find contacts, crew, and project details.',
   ctaText: 'Get Started — Free',
 }
 

@@ -644,7 +644,7 @@ export default async function ProductionPage({ params }: Props) {
                 </div>
                 <h3 className="font-bold text-primary text-sm mb-1.5">Unlock Full Access</h3>
                 <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-                  Get contact details, crew information, and full access to 1,500+ active productions.
+                  Get contact details, crew information, and full access to 10,000+ active productions.
                 </p>
                 <Link href="/membership-plans" className="btn-accent w-full text-sm">
                   Join Now — See Plans

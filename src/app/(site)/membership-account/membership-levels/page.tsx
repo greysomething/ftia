@@ -6,7 +6,7 @@ import { getUser } from '@/lib/auth'
 export const metadata: Metadata = {
   title: 'Membership Plans | Production List',
   description:
-    'Choose your Production List membership plan and get access to 1,500+ active film and TV productions.',
+    'Choose your Production List membership plan and get access to 10,000+ active film and TV productions.',
 }
 
 export default async function MembershipLevelsPage() {
@@ -34,7 +34,7 @@ export default async function MembershipLevelsPage() {
             Choose Your Membership Plan
           </h1>
           <p className="text-lg text-white/80 max-w-xl mx-auto">
-            Get immediate access to 1,500+ active productions in pre-production.
+            Get immediate access to 10,000+ active productions in pre-production.
             Find contacts, crew, and project details.
           </p>
         </div>
