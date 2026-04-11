@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { requireAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
+import ChangePasswordForm from '@/components/ChangePasswordForm'
 
 export const metadata: Metadata = {
   title: 'My Account | Production List',
@@ -157,6 +158,12 @@ export default async function MembershipAccountPage() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Change Password */}
+          <div className="white-bg p-6">
+            <h2 className="font-semibold text-gray-700 mb-4">Change Password</h2>
+            <ChangePasswordForm />
           </div>
 
           {/* Recent orders */}
