@@ -147,11 +147,26 @@ export default function EmailAdminClient({
     setSyncResult(null)
     try {
       const res = await fetch('/api/admin/sync-audiences', { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setSyncResult({ activeCount: data.activeCount, pastCount: data.pastCount, skipped: data.skipped, errors: data.errors })
-        // Refresh audience counts after sync
-        refreshAudienceCounts()
+      if (!res.ok || !res.body) return
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(line.slice(6))
+            if (evt.type === 'done') {
+              setSyncResult({ activeCount: evt.activeCount, pastCount: evt.pastCount, skipped: evt.skipped, errors: evt.errors })
+              refreshAudienceCounts()
+            }
+          } catch { /* skip malformed lines */ }
+        }
       }
     } finally {
       setSyncing(false)
