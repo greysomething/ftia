@@ -542,7 +542,7 @@ export async function POST(req: NextRequest) {
         case 'active':
           updatedStatus = sub.cancel_at_period_end ? 'cancelled' : 'active'; break
         case 'trialing':
-          updatedStatus = 'active'; break  // no real trial plans exist yet
+          updatedStatus = sub.cancel_at_period_end ? 'cancelled' : 'active'; break
         case 'past_due':
           updatedStatus = 'active'; break  // keep access while payment retries
         case 'canceled':

@@ -30,9 +30,10 @@ export default async function MembershipAccountPage() {
       .limit(5),
   ])
 
+  const isCancelled = membership?.status === 'cancelled'
   const hasActiveMembership =
-    membership?.status === 'active' &&
-    (!membership.enddate || new Date(membership.enddate) > new Date())
+    (membership?.status === 'active' || isCancelled) &&
+    (!membership?.enddate || new Date(membership.enddate) > new Date())
 
   return (
     <div className="page-wrap py-8">
@@ -137,12 +138,16 @@ export default async function MembershipAccountPage() {
                 {hasActiveMembership ? (
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                      <span className="text-green-700 font-medium">Active</span>
+                      <span className={`w-2 h-2 rounded-full ${isCancelled ? 'bg-yellow-500' : 'bg-green-500'}`}></span>
+                      <span className={`font-medium ${isCancelled ? 'text-yellow-700' : 'text-green-700'}`}>
+                        {isCancelled ? 'Cancelled' : 'Active'}
+                      </span>
                     </div>
                     <p className="text-gray-600">{(membership as any)?.membership_levels?.name}</p>
                     {membership?.enddate && (
-                      <p className="text-gray-500">Renews: {formatDate(membership.enddate)}</p>
+                      <p className="text-gray-500">
+                        {isCancelled ? 'Expires' : 'Renews'}: {formatDate(membership.enddate)}
+                      </p>
                     )}
                   </div>
                 ) : (
