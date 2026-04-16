@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getProductionBySlug, getProductionSlugs } from '@/lib/queries'
+import { getProductionBySlug, getProductionSlugs, getProductionSlugRedirect } from '@/lib/queries'
 import { getUser, isMember, isAdmin } from '@/lib/auth'
 import { formatProductionDate, formatLocation, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, formatPhone, maskEmail, maskPhone, parsePhpSerialized } from '@/lib/utils'
 import { MemberGate } from '@/components/MemberGate'
@@ -51,7 +51,12 @@ export async function generateStaticParams() {
 export default async function ProductionPage({ params }: Props) {
   const { slug } = await params
   const prod = await getProductionBySlug(slug)
-  if (!prod) notFound()
+  if (!prod) {
+    // Check if this slug was merged into another production — if so, 301 redirect
+    const newSlug = await getProductionSlugRedirect(slug)
+    if (newSlug && newSlug !== slug) redirect(`/production/${newSlug}`)
+    notFound()
+  }
 
   const user = await getUser()
   const [member, admin] = user

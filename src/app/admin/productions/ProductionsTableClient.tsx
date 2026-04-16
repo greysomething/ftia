@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { PHASE_LABELS, PHASE_COLORS, formatDate } from '@/lib/utils'
 import type { ProductionPhase } from '@/types/database'
 import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
@@ -31,9 +32,17 @@ const BULK_ACTIONS = [
 ]
 
 export function ProductionsTableClient({ productions, currentTab }: Props) {
+  const router = useRouter()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [processing, setProcessing] = useState(false)
   const [result, setResult] = useState<{ ok?: boolean; message?: string } | null>(null)
+
+  const canMerge = selected.size === 2
+
+  function startMerge() {
+    const ids = Array.from(selected).sort((a, b) => a - b)
+    router.push(`/admin/productions/merge?ids=${ids.join(',')}`)
+  }
 
   const allIds = productions.map(p => p.id)
   const allSelected = allIds.length > 0 && allIds.every(id => selected.has(id))
@@ -99,6 +108,19 @@ export function ProductionsTableClient({ productions, currentTab }: Props) {
             {selected.size} selected
           </span>
           <div className="flex items-center gap-2 flex-wrap">
+            {canMerge && (
+              <button
+                type="button"
+                onClick={startMerge}
+                className="text-xs text-white px-3 py-1.5 rounded-md font-medium transition-colors bg-purple-600 hover:bg-purple-700 flex items-center gap-1"
+                title="Merge these two productions into one"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7l4-4m0 0l4 4m-4-4v18" />
+                </svg>
+                Merge Selected
+              </button>
+            )}
             {BULK_ACTIONS.map(action => {
               // Hide irrelevant actions based on current tab
               if (currentTab === 'publish' && action.value === 'publish') return null

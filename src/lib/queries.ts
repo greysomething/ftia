@@ -485,6 +485,21 @@ export async function getProductionBySlug(slug: string) {
   return data
 }
 
+/**
+ * Look up a slug redirect for a given (now-trashed/merged) production slug.
+ * Returns the new slug if a redirect exists, or null.
+ */
+export async function getProductionSlugRedirect(oldSlug: string): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('slug_redirects')
+    .select('new_slug')
+    .eq('entity_type', 'production')
+    .eq('old_slug', oldSlug)
+    .maybeSingle()
+  return data?.new_slug ?? null
+}
+
 export async function getProductionsByType(typeSlug: string, page = 1) {
   const supabase = await createClient()
   const from = (page - 1) * PER_PAGE
