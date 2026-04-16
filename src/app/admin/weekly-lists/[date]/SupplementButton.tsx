@@ -7,16 +7,27 @@ export function SupplementButton({ weekMonday, currentCount }: { weekMonday: str
   const [result, setResult] = useState<{ message: string; added: number } | null>(null)
 
   async function handleSupplement() {
-    // Randomize target between 40-50 each time
-    const target = 40 + Math.floor(Math.random() * 11)
-    const needed = Math.max(0, target - currentCount)
+    const MAX_LIST_SIZE = 50
+    const SUPPLEMENT_BATCH_MAX = 10
 
-    if (currentCount >= 40) {
-      setResult({ message: `List already has ${currentCount} productions (meets 40+ minimum).`, added: 0 })
+    if (currentCount >= MAX_LIST_SIZE) {
+      setResult({ message: `List already at maximum of ${MAX_LIST_SIZE} productions.`, added: 0 })
       return
     }
 
-    if (!confirm(`Add up to ${needed} supplemental productions to reach ${target}?\n\nThis will find published productions from older weekly lists, prioritizing those with future filming dates and recycling from the oldest lists first.`)) {
+    // Target is somewhere in (currentCount, currentCount + 10], capped at MAX_LIST_SIZE.
+    // For lists below 40, ensure target is at least 40 (the minimum).
+    const minTarget = Math.max(40, currentCount + 1)
+    const maxTarget = Math.min(currentCount + SUPPLEMENT_BATCH_MAX, MAX_LIST_SIZE)
+    const effectiveMin = Math.min(minTarget, maxTarget)
+    const target = effectiveMin + Math.floor(Math.random() * (maxTarget - effectiveMin + 1))
+    const needed = target - currentCount
+
+    const confirmMsg = currentCount >= 40
+      ? `List already has ${currentCount} productions. Add ${needed} more (up to a max of ${MAX_LIST_SIZE})?\n\nThis will find additional published productions from older weekly lists, prioritizing those with future filming dates and recycling from the oldest lists first.`
+      : `Add up to ${needed} supplemental productions to reach ${target}?\n\nThis will find published productions from older weekly lists, prioritizing those with future filming dates and recycling from the oldest lists first.`
+
+    if (!confirm(confirmMsg)) {
       return
     }
 
