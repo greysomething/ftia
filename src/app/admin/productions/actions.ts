@@ -196,7 +196,14 @@ export async function saveProduction(prevState: any, formData: FormData) {
   revalidatePath('/productions')
   revalidatePath('/admin/weekly-lists')
   if (productionId) revalidatePath(`/production/${slug}`)
-  redirect('/admin/productions')
+
+  // For edits: stay on the edit page so admin can keep working.
+  // For new productions: send them to the freshly-created edit page.
+  if (id) {
+    revalidatePath(`/admin/productions/${id}/edit`)
+    redirect(`/admin/productions/${id}/edit`)
+  }
+  redirect(`/admin/productions/${productionId}/edit`)
 }
 
 export async function deleteProduction(id: number) {

@@ -474,6 +474,61 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
     }
   }
 
+  // Track per-row AI research state for the company section
+  const [researchingCompany, setResearchingCompany] = useState<Record<number, boolean>>({})
+
+  // Use Claude to research a company and autofill empty fields only
+  const researchCompany = async (index: number) => {
+    const c = companies[index]
+    if (!c.inline_name?.trim()) {
+      alert('Enter a company name first')
+      return
+    }
+    setResearchingCompany(prev => ({ ...prev, [index]: true }))
+    try {
+      const res = await fetch('/api/admin/ai-research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'company',
+          name: c.inline_name,
+          existingData: {
+            address: c.inline_address || undefined,
+            phones: c.inline_phones?.length ? c.inline_phones : undefined,
+            emails: c.inline_emails?.length ? c.inline_emails : undefined,
+            website: c.inline_website || undefined,
+            linkedin: c.inline_linkedin || undefined,
+            twitter: c.inline_twitter || undefined,
+            instagram: c.inline_instagram || undefined,
+          },
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Research failed')
+
+      const d = json.data ?? {}
+      // Only fill EMPTY fields — never overwrite admin-entered data
+      setCompanies(prev => prev.map((co, i) => {
+        if (i !== index) return co
+        const merged: CompanyRow = { ...co }
+        if (!merged.inline_address && d.address) merged.inline_address = String(d.address)
+        if ((!merged.inline_phones || merged.inline_phones.length === 0) && d.phone) merged.inline_phones = [String(d.phone)]
+        if ((!merged.inline_emails || merged.inline_emails.length === 0) && d.email) merged.inline_emails = [String(d.email)]
+        if (!merged.inline_website && d.website) merged.inline_website = String(d.website)
+        if (!merged.inline_linkedin && d.linkedin) merged.inline_linkedin = String(d.linkedin)
+        if (!merged.inline_twitter && d.twitter) merged.inline_twitter = String(d.twitter)
+        if (!merged.inline_instagram && d.instagram) merged.inline_instagram = String(d.instagram)
+        return merged
+      }))
+      // Auto-expand social section so admin can see what was filled
+      setExpandedSocial(prev => new Set([...prev, `company-${index}`]))
+    } catch (err: any) {
+      alert(`AI research failed: ${err.message}`)
+    } finally {
+      setResearchingCompany(prev => ({ ...prev, [index]: false }))
+    }
+  }
+
   // AI Enrich state
   const [enriching, setEnriching] = useState(false)
   const [enrichResult, setEnrichResult] = useState<{ count: number; error?: string } | null>(null)
@@ -1123,6 +1178,18 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                       Saved
                     </span>
+                  )}
+                  {co.inline_name && (
+                    <button type="button" onClick={() => researchCompany(i)}
+                      disabled={researchingCompany[i]}
+                      title="Use Claude AI to find publicly available contact info for this company"
+                      className="text-[11px] text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1 disabled:opacity-60">
+                      {researchingCompany[i] ? (
+                        <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Researching...</>
+                      ) : (
+                        <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg> Research with AI</>
+                      )}
+                    </button>
                   )}
                   {isLinked && co.inline_name && (
                     <button type="button" onClick={() => updateCompanyListing(i)}
