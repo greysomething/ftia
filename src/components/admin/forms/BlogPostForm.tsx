@@ -4,6 +4,7 @@ import { useActionState, useState, useRef } from 'react'
 import { saveBlogPost } from '@/app/admin/blog/actions'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { utcToPtLocalString, ptLocalStringToUtcIso, PACIFIC_TZ } from '@/lib/pacific-time'
 
 const RichTextEditor = dynamic(
   () => import('@/components/admin/RichTextEditor').then((m) => m.RichTextEditor),
@@ -34,27 +35,20 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
   // Determine if post is currently scheduled
   const isScheduled = post?.visibility === 'publish' && post?.published_at && new Date(post.published_at) > new Date()
   const [visibility, setVisibility] = useState<string>(isScheduled ? 'schedule' : (v('visibility') || 'draft'))
+
+  // All datetime-local input values are authored in PACIFIC TIME regardless of
+  // the admin's browser timezone. See src/lib/pacific-time.ts for the helpers.
   const [scheduleDate, setScheduleDate] = useState<string>(() => {
-    if (isScheduled && post?.published_at) {
-      const d = new Date(post.published_at)
-      return d.toISOString().slice(0, 16) // YYYY-MM-DDTHH:MM
-    }
+    if (isScheduled && post?.published_at) return utcToPtLocalString(post.published_at)
     return ''
   })
 
-  // Local-time formatter for datetime-local inputs (avoids UTC drift)
-  const toLocalInputValue = (dateInput: Date | string): string => {
-    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
-
   // Published date — used when status is "Published" so admins can backdate
   // (or set a future time to schedule). Defaults to the post's existing
-  // published_at, or now for new posts.
+  // published_at (displayed in PT), or now (in PT) for new posts.
   const [publishedDate, setPublishedDate] = useState<string>(() => {
-    if (post?.published_at) return toLocalInputValue(post.published_at)
-    return toLocalInputValue(new Date())
+    if (post?.published_at) return utcToPtLocalString(post.published_at)
+    return utcToPtLocalString(new Date())
   })
   const [overridePublishDate, setOverridePublishDate] = useState<boolean>(
     !!post?.published_at && new Date(post.published_at).toDateString() !== new Date().toDateString()
@@ -136,11 +130,9 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
                 onChange={e => {
                   setVisibility(e.target.value)
                   if (e.target.value === 'schedule' && !scheduleDate) {
-                    // Default to tomorrow at 9am
-                    const tomorrow = new Date()
-                    tomorrow.setDate(tomorrow.getDate() + 1)
-                    tomorrow.setHours(9, 0, 0, 0)
-                    setScheduleDate(toLocalInputValue(tomorrow))
+                    // Default to tomorrow at 9:00 AM PT (regardless of admin's browser tz)
+                    const tomorrowPt = utcToPtLocalString(new Date(Date.now() + 24 * 60 * 60 * 1000))
+                    setScheduleDate(`${tomorrowPt.slice(0, 10)}T09:00`)
                   }
                 }}
                 className="form-input"
@@ -153,7 +145,7 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
 
             {visibility !== 'schedule' && (
               <div>
-                <label className="form-label">Publish Date</label>
+                <label className="form-label">Publish Date <span className="text-[10px] font-normal text-gray-400">(Pacific Time)</span></label>
                 <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer mb-2">
                   <input
                     type="checkbox"
@@ -161,7 +153,7 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
                     onChange={e => {
                       setOverridePublishDate(e.target.checked)
                       if (e.target.checked && !publishedDate) {
-                        setPublishedDate(toLocalInputValue(new Date()))
+                        setPublishedDate(utcToPtLocalString(new Date()))
                       }
                     }}
                     className="rounded border-gray-300 text-primary focus:ring-primary"
@@ -177,22 +169,29 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
                       className="form-input text-sm"
                       required
                     />
-                    {publishedDate && (
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        {visibility === 'draft'
-                          ? `Will be saved as ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} when you publish`
-                          : new Date(publishedDate) > new Date()
-                          ? `Will publish at ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`
-                          : `Backdated to ${new Date(publishedDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
-                      </p>
-                    )}
+                    {publishedDate && (() => {
+                      // publishedDate is a PT-local string — convert to a real Date and render in PT
+                      const iso = ptLocalStringToUtcIso(publishedDate)
+                      const d = iso ? new Date(iso) : null
+                      if (!d) return null
+                      const fmt = d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: PACIFIC_TZ })
+                      return (
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          {visibility === 'draft'
+                            ? `Will be saved as ${fmt} PT when you publish`
+                            : d > new Date()
+                            ? `Will publish at ${fmt} PT`
+                            : `Backdated to ${fmt} PT`}
+                        </p>
+                      )
+                    })()}
                   </>
                 ) : (
                   <p className="text-[11px] text-gray-500">
                     {visibility === 'draft'
                       ? 'Will be set to the current time when published'
                       : post?.published_at
-                      ? `Currently published ${new Date(post.published_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                      ? `Currently published ${new Date(post.published_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: PACIFIC_TZ })} PT`
                       : 'Will be set to the current time'}
                   </p>
                 )}
@@ -201,20 +200,26 @@ export function BlogPostForm({ post, allCategories = [], postCategoryIds = [] }:
 
             {visibility === 'schedule' && (
               <div>
-                <label className="form-label">Publish Date & Time</label>
+                <label className="form-label">Publish Date & Time <span className="text-[10px] font-normal text-gray-400">(Pacific Time)</span></label>
                 <input
                   type="datetime-local"
                   value={scheduleDate}
                   onChange={e => setScheduleDate(e.target.value)}
-                  min={toLocalInputValue(new Date())}
+                  min={utcToPtLocalString(new Date())}
                   className="form-input text-sm"
                   required
                 />
-                {scheduleDate && (
-                  <p className="text-[11px] text-blue-600 mt-1">
-                    Will be published on {new Date(scheduleDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Los_Angeles' })} at {new Date(scheduleDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })} PT
-                  </p>
-                )}
+                {scheduleDate && (() => {
+                  // scheduleDate is a PT-local string — convert to a real Date then render in PT
+                  const iso = ptLocalStringToUtcIso(scheduleDate)
+                  const d = iso ? new Date(iso) : null
+                  if (!d) return null
+                  return (
+                    <p className="text-[11px] text-blue-600 mt-1">
+                      Will be published on {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: PACIFIC_TZ })} at {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: PACIFIC_TZ })} PT
+                    </p>
+                  )
+                })()}
               </div>
             )}
 

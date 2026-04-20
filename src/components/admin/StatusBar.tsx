@@ -19,11 +19,13 @@ export function StatusBar({ visibility, updatedAt, type = 'item' }: {
 
   const config = statusConfig[visibility ?? ''] ?? statusConfig.draft
 
+  // Always render in Pacific Time for consistency across the admin panel
   const formattedDate = updatedAt
-    ? new Date(updatedAt).toLocaleDateString('en-US', {
+    ? new Date(updatedAt).toLocaleString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric',
         hour: 'numeric', minute: '2-digit',
-      })
+        timeZone: 'America/Los_Angeles',
+      }) + ' PT'
     : null
 
   return (

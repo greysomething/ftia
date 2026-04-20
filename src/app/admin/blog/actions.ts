@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { slugify } from '@/lib/utils'
+import { ptLocalStringToUtcIso } from '@/lib/pacific-time'
 
 export async function saveBlogPost(prevState: any, formData: FormData) {
   await requireAdmin()
@@ -51,12 +52,15 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
   const scheduledAt = (formData.get('scheduled_at') as string) || null
   const publishedAtOverride = (formData.get('published_at_override') as string) || null
 
+  // The form submits naive "YYYY-MM-DDTHH:MM" strings which represent Pacific
+  // Time regardless of where the admin is editing from. Convert to UTC for
+  // storage so scheduling works the same no matter the server/browser tz.
   if (visibility === 'publish' && publishedAtOverride) {
     // Admin explicitly set a custom publish date (past, present, or future)
-    row.published_at = new Date(publishedAtOverride).toISOString()
+    row.published_at = ptLocalStringToUtcIso(publishedAtOverride)
   } else if (visibility === 'publish' && scheduledAt) {
     // Scheduling for a future date via the legacy "Scheduled" status
-    row.published_at = new Date(scheduledAt).toISOString()
+    row.published_at = ptLocalStringToUtcIso(scheduledAt)
   } else if (visibility === 'publish') {
     if (id) {
       // Only set published_at if it wasn't already set (or was a future date being published now)
@@ -75,7 +79,7 @@ export async function saveBlogPost(prevState: any, formData: FormData) {
     if (publishedAtOverride) {
       // Admin set a custom publish date on a draft — preserve it so it's
       // ready when they later switch to Published
-      row.published_at = new Date(publishedAtOverride).toISOString()
+      row.published_at = ptLocalStringToUtcIso(publishedAtOverride)
     } else {
       // Drafts without an override clear the published_at
       row.published_at = null
