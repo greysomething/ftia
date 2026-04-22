@@ -445,15 +445,29 @@ function SourcesTab() {
     } finally { setSaving(false) }
   }
 
+  async function redecodeItems() {
+    if (!confirm('Re-decode HTML entities in all existing discovery items? This fixes legacy items polled before the entity-decoder fix. Safe to run anytime.')) return
+    const res = await fetch('/api/admin/discovery/redecode', { method: 'POST' })
+    const data = await res.json()
+    if (!res.ok) alert(data.error || 'Failed')
+    else alert(`Scanned ${data.scanned}, updated ${data.updated} items.`)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">
           {sources.filter(s => s.enabled).length} of {sources.length} enabled
         </p>
-        <button onClick={() => setShowAdd(v => !v)} className="btn-primary text-sm">
-          {showAdd ? 'Cancel' : '+ Add Source'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={redecodeItems} className="btn-outline text-xs"
+            title="Re-decode HTML entities in existing discovery items">
+            Fix legacy entities
+          </button>
+          <button onClick={() => setShowAdd(v => !v)} className="btn-primary text-sm">
+            {showAdd ? 'Cancel' : '+ Add Source'}
+          </button>
+        </div>
       </div>
 
       {showAdd && (

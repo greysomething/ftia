@@ -22,22 +22,34 @@ const ALL_ITEMS_RE = /<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi
 const ALL_ENTRIES_RE = /<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/gi
 const LINK_HREF_RE = /<link[^>]*\bhref=(?:"|')([^"']+)(?:"|')/i
 
+// Common HTML named entities that appear in RSS feeds. Anything not in this
+// table falls through to numeric handling or is left as-is.
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  ldquo: '\u201C', rdquo: '\u201D', lsquo: '\u2018', rsquo: '\u2019',
+  hellip: '\u2026', mdash: '\u2014', ndash: '\u2013',
+  copy: '\u00A9', reg: '\u00AE', trade: '\u2122', deg: '\u00B0',
+}
+
+export function decodeHtmlEntities(s: string): string {
+  return s.replace(/&(#?)([a-zA-Z0-9]+);/g, (match, hash, code) => {
+    if (hash === '#') {
+      const isHex = code.toLowerCase().startsWith('x')
+      const codePoint = isHex ? parseInt(code.slice(1), 16) : parseInt(code, 10)
+      if (!isNaN(codePoint) && codePoint > 0 && codePoint <= 0x10FFFF) {
+        try { return String.fromCodePoint(codePoint) } catch { return match }
+      }
+      return match
+    }
+    return NAMED_ENTITIES[code.toLowerCase()] ?? match
+  })
+}
+
 function decode(s: string | null | undefined): string {
   if (!s) return ''
-  return s
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#?[a-z0-9]+;/gi, m => {
-      // amp last so other entities resolve first
-      if (m === '&amp;') return '&'
-      return m
-    })
-    .replace(/&amp;/g, '&')
-    .trim()
+  // CDATA first so its contents flow through entity decoding too
+  const stripped = s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  return decodeHtmlEntities(stripped).trim()
 }
 
 function stripHtml(s: string): string {
