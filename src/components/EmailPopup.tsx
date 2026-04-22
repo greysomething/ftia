@@ -1,6 +1,19 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
+import { usePathname } from 'next/navigation'
+
+// Pages where the popup should never appear — auth flows interrupt the user
+// experience the popup is designed to capture.
+const EXCLUDED_PATH_PREFIXES = [
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/reset-password',
+  '/checkout',
+  '/membership-account',
+  '/admin',
+]
 
 // ─── Industry Roles ──────────────────────────────────────────
 const INDUSTRY_ROLES = [
@@ -68,6 +81,8 @@ export function EmailPopup({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const [submittedData, setSubmittedData] = useState<{ name: string; email: string; role: string; country: string } | null>(null)
   const [error, setError] = useState('')
   const hasTriggered = useRef(false)
+  const pathname = usePathname()
+  const isExcludedPath = EXCLUDED_PATH_PREFIXES.some(p => pathname?.startsWith(p))
 
   // Fetch popup settings
   useEffect(() => {
@@ -81,6 +96,7 @@ export function EmailPopup({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const shouldShow = useCallback(() => {
     if (!settings?.enabled) return false
     if (settings.hideForLoggedIn && isLoggedIn) return false
+    if (isExcludedPath) return false
     if (hasTriggered.current) return false
 
     // Check dismiss cookie
@@ -89,7 +105,7 @@ export function EmailPopup({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
     if (dismissed) return false
 
     return true
-  }, [settings, isLoggedIn])
+  }, [settings, isLoggedIn, isExcludedPath])
 
   const showPopup = useCallback(() => {
     if (!shouldShow()) return

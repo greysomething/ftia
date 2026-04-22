@@ -273,13 +273,13 @@ export function MergeProductionsClient({ ids }: Props) {
       </div>
 
       {/* Action bar */}
-      <div className="sticky bottom-0 bg-gray-100 border-t border-gray-200 -mx-6 px-6 py-4 flex items-center gap-3">
+      <div className="sticky bottom-0 bg-gray-100 border-t border-gray-200 -mx-6 px-6 py-4 flex flex-wrap items-center gap-3">
         <button type="button" onClick={executeMerge} disabled={submitting}
           className="btn-primary bg-purple-600 hover:bg-purple-700 disabled:opacity-50">
           {submitting ? 'Merging…' : `Merge into #${preview.productions[keptIndex].id}`}
         </button>
         <Link href="/admin/productions" className="btn-outline">Cancel</Link>
-        {error && <span className="text-sm text-red-600">{error}</span>}
+        {error && <span className="text-sm text-red-600 break-words w-full sm:w-auto">{error}</span>}
       </div>
     </div>
   )
