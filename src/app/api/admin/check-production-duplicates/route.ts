@@ -16,11 +16,44 @@ interface DuplicateMatch {
 }
 
 /**
+ * Strip update-style parentheticals from a title — things like "(New Roles)",
+ * "(Date and Spec Change for Young Jackie)", "(Casting Update)", "(Revised)".
+ * These are posting metadata, not part of the production's identity, and they
+ * were causing false-negative duplicate checks (e.g. "Spoiled Roots (New Roles)"
+ * failing to match the existing "Spoiled Roots" row). Season/episode info is
+ * handled separately above and explicitly preserved.
+ */
+function stripUpdateTags(s: string): string {
+  const UPDATE_TAG_RE = /\(([^)]*)\)/g
+  const updateKeywords = [
+    'new role', 'new spec', 'new dates', 'new draft', 'new cast',
+    'role update', 'casting update', 'script update', 'spec update',
+    'spec change', 'date change', 'title change', 'rewrite', 'revised',
+    'updated', 'update', 'recast', 'recasting',
+    'additional roles', 'additional specs', 'additional casting',
+  ]
+  return s.replace(UPDATE_TAG_RE, (match, inner: string) => {
+    const lower = inner.toLowerCase()
+    // Preserve anything that looks like a season/episode marker
+    if (/\b(season|episode|s\d|e\d|part\s*\d|vol(ume)?\s*\d)\b/i.test(lower)) return match
+    // Preserve "(working title)"
+    if (/working\s*title/.test(lower)) return match
+    // Strip anything matching an update keyword
+    if (updateKeywords.some(k => lower.includes(k))) return ''
+    // Preserve everything else (might be an alternate title / subtitle)
+    return match
+  }).replace(/\s{2,}/g, ' ').trim()
+}
+
+/**
  * Extract the base title and season/episode info from a production title.
  * e.g. "High Potential - Series (Season 03)" → { base: "high potential", season: "03", type: "series" }
  */
 function parseTitle(title: string) {
   let normalized = title.trim()
+
+  // Strip update-style parentheticals FIRST so they don't bleed into the base.
+  normalized = stripUpdateTags(normalized)
 
   // Extract season info
   const seasonPatterns = [

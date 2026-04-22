@@ -983,6 +983,37 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
         errors.push(`#${i + 1}: missing title — skipped`)
         continue
       }
+
+      // Dedup gate: before auto-saving, check for an existing production that
+      // matches this title. Role/spec/date "update" screenshots would otherwise
+      // silently create duplicates (e.g. "Spoiled Roots (New Roles)" → a new
+      // row next to the existing "Spoiled Roots"). We block and leave it for
+      // the admin to resolve via the single-item flow.
+      try {
+        const dupRes = await fetch('/api/admin/check-production-duplicates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: data?.title ?? '' }),
+        })
+        if (dupRes.ok) {
+          const dupResult = await dupRes.json()
+          const matches: DuplicateMatch[] = dupResult.matches ?? []
+          // A match is "strong" if the score is high OR the seasons line up.
+          const strong = matches.find(m =>
+            m.similarity_score >= 85 || (m.is_same_season && m.similarity_score >= 70)
+          )
+          if (strong) {
+            errors.push(
+              `${data?.title || `#${i + 1}`}: skipped — looks like a duplicate of #${strong.id} "${strong.title}" (${strong.similarity_score}% match${strong.is_same_season ? ', same season' : ''}). Open the bulk result to merge into the existing production instead.`
+            )
+            continue
+          }
+        }
+      } catch {
+        // If dedup check fails for any reason, fall through to save — don't
+        // block the whole bulk run on a network blip.
+      }
+
       try {
         const res = await fetch('/api/admin/save-production', { method: 'POST', body: fd })
         const result = await res.json()
