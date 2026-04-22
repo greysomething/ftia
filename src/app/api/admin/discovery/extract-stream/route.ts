@@ -17,7 +17,7 @@ import { NextRequest } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { extractProductionFromArticle } from '@/lib/discovery/extractor'
-import { findBestMatch } from '@/lib/discovery/title-normalize'
+import { findBestMatch, loadProductionTitles } from '@/lib/discovery/title-normalize'
 import { createDraftFromExtraction } from '@/lib/discovery/draft-creator'
 
 export const dynamic = 'force-dynamic'
@@ -97,11 +97,10 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Pre-load production titles for dedup
-  const { data: productions } = await supabase
-    .from('productions').select('id, title').neq('visibility', 'trash')
-    .order('id', { ascending: false }).limit(15000)
-  const candidates = (productions ?? []).map((p: any) => ({ id: p.id, title: String(p.title || '') }))
+  // Pre-load every production (paginated, since Supabase caps single requests
+  // at 1000 rows). Without this we'd silently miss any duplicate older than
+  // the newest 1000 productions.
+  const candidates = await loadProductionTitles(supabase)
 
   // Stream
   const encoder = new TextEncoder()
@@ -171,19 +170,34 @@ export async function POST(req: NextRequest) {
 
           if (ext.verifiability_score >= threshold) {
             const sourceRow = await supabase.from('discovery_sources').select('name').eq('id', item.source_id).maybeSingle()
-            const { productionId } = await createDraftFromExtraction(supabase, ext, {
+            const result = await createDraftFromExtraction(supabase, ext, {
               sourceLink: item.link, sourceName: sourceRow.data?.name ?? null,
             })
-            await supabase.from('discovery_items').update({
-              status: 'created',
-              production_id: productionId,
-              extraction_score: ext.verifiability_score,
-              extraction_data: ext,
-              processed_at: new Date().toISOString(),
-            }).eq('id', item.id)
-            candidates.unshift({ id: productionId, title: ext.title })
-            created++
-            send({ type: 'item', id: item.id, title: ext.title, status: 'created', score: ext.verifiability_score, productionId, index })
+            if (!result.isNew) {
+              // Slug-collision backstop fired — an existing production already
+              // has this slug. Treat as duplicate.
+              await supabase.from('discovery_items').update({
+                status: 'duplicate',
+                duplicate_of: result.duplicateOfId,
+                extraction_score: ext.verifiability_score,
+                extraction_data: ext,
+                processed_at: new Date().toISOString(),
+                error: `Slug match: existing production #${result.duplicateOfId} "${result.existingTitle}" has the same slug`,
+              }).eq('id', item.id)
+              duplicates++
+              send({ type: 'item', id: item.id, title: ext.title, status: 'duplicate', match: result.duplicateOfId, matchTitle: result.existingTitle, matchScore: 100, score: ext.verifiability_score, index })
+            } else {
+              await supabase.from('discovery_items').update({
+                status: 'created',
+                production_id: result.productionId,
+                extraction_score: ext.verifiability_score,
+                extraction_data: ext,
+                processed_at: new Date().toISOString(),
+              }).eq('id', item.id)
+              candidates.unshift({ id: result.productionId, title: ext.title })
+              created++
+              send({ type: 'item', id: item.id, title: ext.title, status: 'created', score: ext.verifiability_score, productionId: result.productionId, index })
+            }
           } else {
             await supabase.from('discovery_items').update({
               status: 'extracted',

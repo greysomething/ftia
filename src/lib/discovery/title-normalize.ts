@@ -80,3 +80,37 @@ export function findBestMatch(
   if (!best || best.score * 100 < thresholdPct) return null
   return best
 }
+
+/**
+ * Load every production (id, title) into memory, skipping trashed rows,
+ * paginating around Supabase's 1000-row default cap.
+ *
+ * Used by the discovery extractor to dedup new items against the entire
+ * existing catalog. With ~10k productions this is ~10 round-trips and the
+ * full payload is tiny (just id+title).
+ */
+export async function loadProductionTitles(
+  supabase: any,
+): Promise<Array<{ id: number; title: string }>> {
+  const all: Array<{ id: number; title: string }> = []
+  const PAGE_SIZE = 1000
+  let page = 0
+  while (true) {
+    const from = page * PAGE_SIZE
+    const { data, error } = await supabase
+      .from('productions')
+      .select('id, title')
+      .neq('visibility', 'trash')
+      .order('id', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    for (const p of data) {
+      all.push({ id: p.id, title: String(p.title || '') })
+    }
+    if (data.length < PAGE_SIZE) break
+    page++
+    if (page > 100) break // safety: 100k cap
+  }
+  return all
+}

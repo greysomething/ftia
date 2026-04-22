@@ -49,20 +49,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (!result) return NextResponse.json({ error: 'Could not extract — article does not appear to be a production announcement' }, { status: 400 })
       extracted = result
     }
-    const { productionId, slug } = await createDraftFromExtraction(supabase, extracted, {
+    // Admin chose "Create anyway" — bypass slug-collision dedup
+    const result = await createDraftFromExtraction(supabase, extracted, {
       sourceLink: (item as any).link,
       sourceName: ((item as any).discovery_sources as any)?.name ?? null,
-    })
+    }, { forceCreate: true })
+    if (!result.isNew) {
+      // Should be unreachable with forceCreate, but defensive
+      return NextResponse.json({ error: `Existing production #${result.duplicateOfId} blocked creation` }, { status: 409 })
+    }
     await supabase.from('discovery_items').update({
       status: 'created',
-      production_id: productionId,
+      production_id: result.productionId,
       extraction_score: extracted.verifiability_score,
       extraction_data: extracted,
       duplicate_of: null,
       error: null,
       processed_at: new Date().toISOString(),
     }).eq('id', id)
-    return NextResponse.json({ ok: true, productionId, slug, status: 'created' })
+    return NextResponse.json({ ok: true, productionId: result.productionId, slug: result.slug, status: 'created' })
   }
 
   // Default: extract
@@ -85,18 +90,30 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const threshold = parseInt((settingsRows ?? []).find(s => s.key === 'extraction_threshold')?.value || '85', 10)
 
     if (extracted.verifiability_score >= threshold) {
-      const { productionId, slug } = await createDraftFromExtraction(supabase, extracted, {
+      const result = await createDraftFromExtraction(supabase, extracted, {
         sourceLink: (item as any).link,
         sourceName: ((item as any).discovery_sources as any)?.name ?? null,
       })
+      if (!result.isNew) {
+        // Slug-collision backstop fired — record as duplicate
+        await supabase.from('discovery_items').update({
+          status: 'duplicate',
+          duplicate_of: result.duplicateOfId,
+          extraction_score: extracted.verifiability_score,
+          extraction_data: extracted,
+          processed_at: new Date().toISOString(),
+          error: `Slug match: existing production #${result.duplicateOfId} "${result.existingTitle}" has the same slug`,
+        }).eq('id', id)
+        return NextResponse.json({ ok: true, status: 'duplicate', duplicateOf: result.duplicateOfId, existingTitle: result.existingTitle, score: extracted.verifiability_score })
+      }
       await supabase.from('discovery_items').update({
         status: 'created',
-        production_id: productionId,
+        production_id: result.productionId,
         extraction_score: extracted.verifiability_score,
         extraction_data: extracted,
         processed_at: new Date().toISOString(),
       }).eq('id', id)
-      return NextResponse.json({ ok: true, status: 'created', productionId, slug, score: extracted.verifiability_score })
+      return NextResponse.json({ ok: true, status: 'created', productionId: result.productionId, slug: result.slug, score: extracted.verifiability_score })
     } else {
       await supabase.from('discovery_items').update({
         status: 'extracted',

@@ -20,12 +20,17 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
+export type CreateDraftResult =
+  | { isNew: true;  productionId: number; slug: string }
+  | { isNew: false; duplicateOfId: number; existingSlug: string; existingTitle: string }
+
 export async function createDraftFromExtraction(
   supabase: ReturnType<typeof createAdminClient>,
   ext: ExtractedProduction,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _meta: { sourceLink?: string | null; sourceName?: string | null } = {},
-): Promise<{ productionId: number; slug: string }> {
+  options: { forceCreate?: boolean } = {},
+): Promise<CreateDraftResult> {
   // Build the production description: a clean, in-voice writeup from the
   // extractor (no audit data or source citations — both live in
   // discovery_items.extraction_data and discovery_items.source_id, which
@@ -42,13 +47,38 @@ export async function createDraftFromExtraction(
         .join('')
     : ''
 
-  // Make the slug unique (productions has a unique slug constraint)
+  // Slug-collision backstop: if the base slug ALREADY exists in the database,
+  // treat it as a duplicate of that production rather than creating a "-2"
+  // version. Title-bigram dedup should catch most of these earlier, but slug
+  // equivalence is a strong signal that we missed (e.g., when the existing
+  // production's title is older than the dedup candidate window).
+  // Skip this check when the caller passes forceCreate (e.g., admin clicked
+  // "Create anyway" on a known duplicate).
   const baseSlug = slugify(ext.title)
+  if (!options.forceCreate) {
+    const { data: collision } = await supabase
+      .from('productions')
+      .select('id, slug, title, visibility')
+      .eq('slug', baseSlug)
+      .maybeSingle()
+    if (collision && (collision as any).visibility !== 'trash') {
+      return {
+        isNew: false,
+        duplicateOfId: (collision as any).id,
+        existingSlug: (collision as any).slug,
+        existingTitle: (collision as any).title,
+      }
+    }
+  }
+
+  // No exact slug match — but the slug could still collide with a trashed row
+  // (we kept those out of the duplicate check above). Append -2/-3/... to make
+  // it unique against the whole productions table.
   let slug = baseSlug
   for (let suffix = 2; suffix <= 20; suffix++) {
-    const { data: collision } = await supabase
+    const { data: anyCollision } = await supabase
       .from('productions').select('id').eq('slug', slug).maybeSingle()
-    if (!collision) break
+    if (!anyCollision) break
     slug = `${baseSlug}-${suffix}`
   }
 
@@ -137,5 +167,5 @@ export async function createDraftFromExtraction(
     )
   }
 
-  return { productionId, slug: prod.slug }
+  return { isNew: true, productionId, slug: prod.slug }
 }
