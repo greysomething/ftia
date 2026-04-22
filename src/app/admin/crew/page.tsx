@@ -6,6 +6,8 @@ import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate } from '@/lib/utils'
 import { deleteCrew } from './actions'
 import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
+import { CompletenessPill } from '@/components/admin/CompletenessPill'
+import { scoreCrew } from '@/lib/completeness'
 
 export const metadata: Metadata = { title: 'Crew' }
 export const dynamic = 'force-dynamic'
@@ -125,6 +127,7 @@ export default async function AdminCrewPage({ searchParams }: Props) {
               <SortHeader label="ID" field="id" currentSort={sort} currentDir={dir} q={q} status={status} className="w-16" />
               <SortHeader label="Name" field="name" currentSort={sort} currentDir={dir} q={q} status={status} />
               <th>Role / Position</th>
+              <th className="w-24">Profile</th>
               <SortHeader label="Visibility" field="visibility" currentSort={sort} currentDir={dir} q={q} status={status} />
               <SortHeader label="Updated" field="wp_updated_at" currentSort={sort} currentDir={dir} q={q} status={status} />
               <th className="text-right">Actions</th>
@@ -132,7 +135,7 @@ export default async function AdminCrewPage({ searchParams }: Props) {
           </thead>
           <tbody>
             {crew.length === 0 ? (
-              <tr><td colSpan={6} className="text-center text-gray-400 py-10">No crew found.</td></tr>
+              <tr><td colSpan={7} className="text-center text-gray-400 py-10">No crew found.</td></tr>
             ) : crew.map((c: any) => {
               // Get most common role from production_crew_roles
               const roles = (c.production_crew_roles ?? []) as Array<{ role_name: string }>
@@ -141,6 +144,9 @@ export default async function AdminCrewPage({ searchParams }: Props) {
                 if (r.role_name) roleCounts[r.role_name] = (roleCounts[r.role_name] ?? 0) + 1
               }
               const topRole = Object.entries(roleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+
+              const staffCount = Array.isArray(c.company_staff) ? (c.company_staff[0]?.count ?? 0) : 0
+              const completeness = scoreCrew({ ...c, company_link_count: staffCount })
 
               return (
                 <tr key={c.id}>
@@ -151,6 +157,7 @@ export default async function AdminCrewPage({ searchParams }: Props) {
                     </Link>
                   </td>
                   <td className="text-sm text-gray-500 max-w-[200px] truncate">{topRole || '—'}</td>
+                  <td><CompletenessPill result={completeness} /></td>
                   <td>
                     <span className={`badge ${c.visibility === 'publish' ? 'badge-green' : c.visibility === 'members_only' ? 'badge-blue' : 'badge-gray'}`}>
                       {c.visibility === 'publish' ? 'Published' : c.visibility}

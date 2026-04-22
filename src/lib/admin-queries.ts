@@ -177,7 +177,14 @@ export async function getAdminCompanies({
 
   let query = supabase
     .from('companies')
-    .select('id, title, slug, visibility, addresses, phones, wp_updated_at', { count: 'exact' })
+    .select(
+      // Includes every field required by scoreCompany() so the list page can
+      // render a profile-completeness pill without a second query.
+      `id, title, slug, visibility, wp_updated_at,
+       addresses, phones, emails, website, linkedin, twitter, instagram, content,
+       company_staff(count)`,
+      { count: 'exact' },
+    )
     .order(sort, { ascending: dir === 'asc' })
     .range(from, to)
 
@@ -231,7 +238,15 @@ export async function getAdminCrew({
 
   let query = supabase
     .from('crew_members')
-    .select('id, name, slug, visibility, wp_updated_at, production_crew_roles(role_name)', { count: 'exact' })
+    .select(
+      // Includes every field required by scoreCrew() so the list page can
+      // render a profile-completeness pill without a second query.
+      `id, name, slug, visibility, wp_updated_at,
+       emails, phones, roles, location, website, linkedin, twitter, instagram, imdb, content,
+       production_crew_roles(role_name),
+       company_staff(count)`,
+      { count: 'exact' },
+    )
     .order(sort, { ascending: dir === 'asc' })
     .range(from, to)
 
@@ -263,7 +278,9 @@ export async function getAdminCrewById(id: number) {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('crew_members')
-    .select('*')
+    // Pull the company_staff count alongside so the edit page can render
+    // the profile-completeness pill without a second round-trip.
+    .select('*, company_staff(count)')
     .eq('id', id)
     .single()
   if (error) throw error

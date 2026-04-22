@@ -6,6 +6,8 @@ import { AdminPagination } from '@/components/admin/AdminPagination'
 import { formatDate, parsePhpSerializedFirst } from '@/lib/utils'
 import { deleteCompany } from './actions'
 import { ConfirmDeleteButton } from '@/components/admin/ConfirmDeleteButton'
+import { CompletenessPill } from '@/components/admin/CompletenessPill'
+import { scoreCompany } from '@/lib/completeness'
 
 export const metadata: Metadata = { title: 'Companies' }
 export const dynamic = 'force-dynamic'
@@ -125,6 +127,7 @@ export default async function AdminCompaniesPage({ searchParams }: Props) {
               <SortHeader label="ID" field="id" currentSort={sort} currentDir={dir} q={q} status={status} className="w-16" />
               <SortHeader label="Name" field="title" currentSort={sort} currentDir={dir} q={q} status={status} />
               <th>Location</th>
+              <th className="w-24">Profile</th>
               <SortHeader label="Visibility" field="visibility" currentSort={sort} currentDir={dir} q={q} status={status} />
               <SortHeader label="Updated" field="wp_updated_at" currentSort={sort} currentDir={dir} q={q} status={status} />
               <th className="text-right">Actions</th>
@@ -132,9 +135,12 @@ export default async function AdminCompaniesPage({ searchParams }: Props) {
           </thead>
           <tbody>
             {companies.length === 0 ? (
-              <tr><td colSpan={6} className="text-center text-gray-400 py-10">No companies found.</td></tr>
+              <tr><td colSpan={7} className="text-center text-gray-400 py-10">No companies found.</td></tr>
             ) : companies.map((c: any) => {
               const location = parsePhpSerializedFirst(c.addresses)
+              // Supabase returns `company_staff(count)` as [{ count: N }]
+              const staffCount = Array.isArray(c.company_staff) ? (c.company_staff[0]?.count ?? 0) : 0
+              const completeness = scoreCompany({ ...c, staff_count: staffCount })
               return (
                 <tr key={c.id}>
                   <td className="text-gray-400 text-xs w-16">{c.id}</td>
@@ -144,6 +150,7 @@ export default async function AdminCompaniesPage({ searchParams }: Props) {
                     </Link>
                   </td>
                   <td className="text-sm text-gray-500 max-w-[200px] truncate">{location || '—'}</td>
+                  <td><CompletenessPill result={completeness} /></td>
                   <td>
                     <span className={`badge ${c.visibility === 'publish' ? 'badge-green' : c.visibility === 'members_only' ? 'badge-blue' : 'badge-gray'}`}>
                       {c.visibility === 'publish' ? 'Published' : c.visibility}
