@@ -70,7 +70,13 @@ export async function getAdminProductions({
     .range(from, to)
 
   if (q) {
-    query = query.ilike('title', `%${q}%`)
+    // Trim whitespace and escape ilike wildcards so users searching for
+    // titles containing %, _, or \ don't get unintended fuzzy matches.
+    const trimmed = q.trim()
+    if (trimmed) {
+      const escaped = trimmed.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+      query = query.ilike('title', `%${escaped}%`)
+    }
   }
 
   if (visibility) {
