@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getPromptConfig } from '@/lib/ai-prompts'
 import { slugify } from '@/lib/utils'
+import { verifyAndStore } from '@/lib/blog-verifier'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -91,11 +92,31 @@ export async function GET(req: NextRequest) {
 
   const config = await getPromptConfig('blog_generation')
   const autoPublish = settings.auto_publish === 'true'
+  const verifyEnabled = settings.verifiability_enabled !== 'false'  // default ON
+  const verifyThreshold = parseInt(settings.verifiability_threshold || '85', 10)
+  const verifyAction = (settings.verifiability_action === 'flag' ? 'flag' : 'discard') as 'discard' | 'flag'
 
   const results: any[] = []
   for (const item of items) {
     try {
       const result = await processQueueItem(item, supabase, apiKey, config, autoPublish)
+      // Run verification pass for successfully generated posts
+      if (verifyEnabled && result.status === 'completed' && result.blogPostId) {
+        try {
+          const v = await verifyAndStore(result.blogPostId, supabase, {
+            apiKey, threshold: verifyThreshold, action: verifyAction,
+          })
+          result.verifiability = { score: v.report.score, trashed: v.trashed, total_claims: v.report.total_claims }
+          if (v.trashed) {
+            // Note the discard reason in the queue so admin can see why
+            await supabase.from('blog_generation_queue')
+              .update({ error: `Auto-discarded: verifiability ${v.report.score}/100 below threshold ${verifyThreshold}` })
+              .eq('id', item.id)
+          }
+        } catch (verr: any) {
+          result.verifiability = { error: verr.message?.slice(0, 200) }
+        }
+      }
       results.push(result)
     } catch (err: any) {
       results.push({ productionId: item.production_id, status: 'failed', error: err.message })
@@ -300,6 +321,7 @@ async function processQueueItem(
         excerpt: blogData.excerpt || '',
         visibility,
         published_at: autoPublish ? new Date().toISOString() : null,
+        ai_generated: true,
       })
       .select('id, slug, title')
       .single()

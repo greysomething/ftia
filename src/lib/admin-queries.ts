@@ -274,7 +274,7 @@ export async function getAdminBlogPosts({ page = 1, q, tab }: { page?: number; q
 
   let query = supabase
     .from('blog_posts')
-    .select('id, title, slug, visibility, published_at, updated_at, created_at, blog_post_categories(blog_categories(id, name, slug))', { count: 'exact' })
+    .select('id, title, slug, visibility, published_at, updated_at, created_at, ai_generated, verifiability_score, verifiability_checked_at, blog_post_categories(blog_categories(id, name, slug))', { count: 'exact' })
 
   // Apply tab filter
   if (tab === 'published') {

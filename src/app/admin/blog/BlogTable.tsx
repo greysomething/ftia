@@ -14,6 +14,35 @@ interface BlogPost {
   published_at: string | null
   created_at: string
   blog_post_categories?: Array<{ blog_categories: { id: number; name: string; slug: string } | null }>
+  ai_generated?: boolean
+  verifiability_score?: number | null
+  verifiability_checked_at?: string | null
+}
+
+/**
+ * Render a verifiability score badge. Returns null if not an AI post.
+ *  ≥85 → green   60-84 → yellow   <60 → red   not yet checked → gray "Unchecked"
+ */
+function ScoreBadge({ post }: { post: BlogPost }) {
+  if (!post.ai_generated) return null
+  if (post.verifiability_score == null) {
+    return (
+      <span title="AI-generated, not yet fact-checked"
+        className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-gray-100 text-gray-500">
+        Unchecked
+      </span>
+    )
+  }
+  const s = post.verifiability_score
+  const cls = s >= 85 ? 'bg-green-100 text-green-700'
+    : s >= 60 ? 'bg-yellow-100 text-yellow-700'
+    : 'bg-red-100 text-red-700'
+  return (
+    <span title={`AI verifiability: ${s}/100 — verified ${post.verifiability_checked_at ? new Date(post.verifiability_checked_at).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' }) : ''}`}
+      className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded ${cls}`}>
+      {s}/100
+    </span>
+  )
 }
 
 interface Category {
@@ -188,6 +217,7 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
               <th className="w-16">ID</th>
               <th>Title</th>
               <th>Status</th>
+              <th>Score</th>
               <th>{tab === 'scheduled' ? 'Publishes' : 'Date'}</th>
               <th className="text-right">Actions</th>
             </tr>
@@ -195,7 +225,7 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
           <tbody>
             {posts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center text-gray-400 py-12">
+                <td colSpan={7} className="text-center text-gray-400 py-12">
                   {isTrash ? 'Trash is empty.' : 'No posts found.'}
                 </td>
               </tr>
@@ -236,6 +266,9 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
                     <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-full ${status.badge}`}>
                       {status.label}
                     </span>
+                  </td>
+                  <td>
+                    <ScoreBadge post={p} />
                   </td>
                   <td className="text-sm text-gray-500">
                     {isScheduled && p.published_at ? (

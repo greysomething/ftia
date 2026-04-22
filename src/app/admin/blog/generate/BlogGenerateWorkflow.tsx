@@ -10,6 +10,9 @@ interface Settings {
   min_production_data_score: string
   exclude_types: string
   batch_size: string
+  verifiability_enabled: string
+  verifiability_threshold: string
+  verifiability_action: string
 }
 
 interface QueueItem {
@@ -50,6 +53,9 @@ const DEFAULT_SETTINGS: Settings = {
   min_production_data_score: '3',
   exclude_types: '[]',
   batch_size: '2',
+  verifiability_enabled: 'true',
+  verifiability_threshold: '85',
+  verifiability_action: 'discard',
 }
 
 export function BlogGenerateWorkflow() {
@@ -445,6 +451,55 @@ export function BlogGenerateWorkflow() {
               </div>
             </div>
 
+            {/* Verifiability subsection */}
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">Fact-checking & Verifiability</h3>
+                <BackfillVerifyButton />
+              </div>
+              <p className="text-xs text-gray-500">
+                After each AI post is generated, a second AI call uses web search to fact-check
+                every claim against trade publications. Posts below the threshold are auto-discarded.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Verification</label>
+                  <select
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#3ea8c8]"
+                    value={settings.verifiability_enabled}
+                    onChange={e => setSettings(s => ({ ...s, verifiability_enabled: e.target.value }))}
+                  >
+                    <option value="true">Enabled (recommended)</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Threshold (0–100)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="5"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#3ea8c8]"
+                    value={settings.verifiability_threshold}
+                    onChange={e => setSettings(s => ({ ...s, verifiability_threshold: e.target.value }))}
+                  />
+                  <p className="text-xs text-gray-400 mt-0.5">Posts scoring below get the action below</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Action below threshold</label>
+                  <select
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#3ea8c8]"
+                    value={settings.verifiability_action}
+                    onChange={e => setSettings(s => ({ ...s, verifiability_action: e.target.value }))}
+                  >
+                    <option value="discard">Discard (move to trash)</option>
+                    <option value="flag">Flag only (keep as draft)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             <div className="flex items-center gap-3 pt-2">
               <button onClick={saveSettings} disabled={settingsSaving} className="btn-primary text-sm">
                 {settingsSaving ? 'Saving...' : 'Save Settings'}
@@ -718,6 +773,82 @@ export function BlogGenerateWorkflow() {
           </table>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * One-shot backfill: runs verification on every AI-generated post that hasn't
+ * been checked yet. Streams progress via SSE.
+ */
+function BackfillVerifyButton() {
+  const [running, setRunning] = useState(false)
+  const [progress, setProgress] = useState<{ processed: number; total: number; current?: string } | null>(null)
+  const [done, setDone] = useState<{ total: number; trashed: number; errors: number } | null>(null)
+
+  async function runBackfill() {
+    if (!confirm('Run verification on every AI-generated blog post that hasn\'t been checked yet?\n\nEach post takes ~10-20s and uses web search (~$0.05-0.15/post). Posts that score below the threshold will be moved to trash.')) return
+    setRunning(true)
+    setProgress({ processed: 0, total: 0 })
+    setDone(null)
+    try {
+      const res = await fetch('/api/admin/blog/backfill-verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onlyMissing: true }),
+      })
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || `Backfill failed (${res.status})`)
+        setRunning(false)
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done: streamDone, value } = await reader.read()
+        if (streamDone) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(line.slice(6))
+            if (evt.type === 'start') {
+              setProgress({ processed: 0, total: evt.total })
+            } else if (evt.type === 'progress') {
+              setProgress({ processed: evt.processed, total: evt.total, current: evt.title })
+            } else if (evt.type === 'done') {
+              setDone({ total: evt.total, trashed: evt.trashed, errors: evt.errors })
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (err: any) {
+      alert(`Backfill error: ${err.message ?? err}`)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      {progress && running && (
+        <span className="text-xs text-gray-500">
+          {progress.processed}/{progress.total} {progress.current ? `· ${progress.current.slice(0, 30)}…` : ''}
+        </span>
+      )}
+      {done && (
+        <span className="text-xs text-green-700 font-medium">
+          Done: {done.total} checked, {done.trashed} trashed{done.errors ? `, ${done.errors} errors` : ''}
+        </span>
+      )}
+      <button type="button" onClick={runBackfill} disabled={running}
+        className="btn-outline text-xs disabled:opacity-50">
+        {running ? 'Running…' : 'Backfill Unchecked Posts'}
+      </button>
     </div>
   )
 }

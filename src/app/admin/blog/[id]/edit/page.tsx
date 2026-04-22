@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { getAdminBlogPostById, getAllBlogCategories } from '@/lib/admin-queries'
 import { BlogPostForm } from '@/components/admin/forms/BlogPostForm'
 import { StatusBar } from '@/components/admin/StatusBar'
+import { VerifiabilityPanel } from '@/components/admin/VerifiabilityPanel'
 
 export const metadata: Metadata = { title: 'Edit Post' }
 
@@ -47,6 +48,14 @@ export default async function EditBlogPostPage({ params }: Props) {
         visibility={(post as any).visibility}
         updatedAt={(post as any).updated_at ?? (post as any).published_at}
         type="blog post"
+      />
+      <VerifiabilityPanel
+        postId={(post as any).id}
+        aiGenerated={!!(post as any).ai_generated}
+        score={(post as any).verifiability_score ?? null}
+        checkedAt={(post as any).verifiability_checked_at ?? null}
+        report={(post as any).verifiability_report ?? null}
+        visibility={(post as any).visibility}
       />
       <BlogPostForm post={post} allCategories={allCategories} postCategoryIds={postCategoryIds} />
     </div>
