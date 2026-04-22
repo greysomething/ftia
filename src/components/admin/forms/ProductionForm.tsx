@@ -268,6 +268,10 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
   }, [typeOptions, statusOptions, fetchMatches])
 
   const v = (key: string, fallback: string = '') => {
+    // After a save error, React 19 resets the form to defaultValue — so we
+    // pull the user's last submitted values out of the action state so their
+    // edits (including intentional blanks) survive the reset.
+    if (state?.values && key in state.values) return String((state.values as Record<string, any>)[key] ?? '')
     if (scannedData?.[key] != null) return String(scannedData[key])
     return production?.[key] ?? fallback
   }
@@ -782,8 +786,30 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
       <input type="hidden" name="companies_json" value={JSON.stringify(companies.filter(c => c.inline_name))} />
 
       {state?.error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-          {state.error}
+        <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700 space-y-2">
+          <div>{state.error}</div>
+          {state.suggestedSlug && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const slugInput = formRef.current?.querySelector('input[name="slug"]') as HTMLInputElement | null
+                  if (slugInput) slugInput.value = state.suggestedSlug
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-red-300 text-red-700 px-2.5 py-1 rounded hover:bg-red-100"
+              >
+                Use suggested slug: <code className="font-mono">{state.suggestedSlug}</code>
+              </button>
+              {state.conflictingProductionId && (
+                <Link
+                  href={`/admin/productions/${state.conflictingProductionId}/edit`}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-red-300 text-red-700 px-2.5 py-1 rounded hover:bg-red-100"
+                >
+                  Open existing production →
+                </Link>
+              )}
+            </div>
+          )}
         </div>
       )}
 

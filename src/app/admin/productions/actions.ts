@@ -15,29 +15,6 @@ export async function saveProduction(prevState: any, formData: FormData) {
   const title = String(formData.get('title') ?? '').trim()
   let slug = String(formData.get('slug') ?? '').trim() || slugify(title)
   const visibility = String(formData.get('visibility') ?? 'publish')
-
-  // Ensure slug is unique (append -2, -3, etc. if collision)
-  if (!id) {
-    const { data: existingSlug } = await supabase
-      .from('productions')
-      .select('id')
-      .eq('slug', slug)
-      .maybeSingle()
-    if (existingSlug) {
-      let suffix = 2
-      while (true) {
-        const candidate = `${slug}-${suffix}`
-        const { data: collision } = await supabase
-          .from('productions')
-          .select('id')
-          .eq('slug', candidate)
-          .maybeSingle()
-        if (!collision) { slug = candidate; break }
-        suffix++
-        if (suffix > 20) { slug = `${slug}-${Date.now()}`; break }
-      }
-    }
-  }
   const content = String(formData.get('content') ?? '') || null
   const excerpt = String(formData.get('excerpt') ?? '') || null
   const production_date_start = (formData.get('production_date_start') as string) || null
@@ -46,7 +23,51 @@ export async function saveProduction(prevState: any, formData: FormData) {
   const production_date_endpost = (formData.get('production_date_endpost') as string) || null
   const computed_status = (formData.get('computed_status') as string) || null
 
-  if (!title) return { error: 'Title is required.' }
+  // Round-trip the user's submitted values so the form can rehydrate on error
+  // (React 19 resets <form> uncontrolled inputs after an action returns).
+  const submittedValues = {
+    title,
+    slug,
+    visibility,
+    content: content ?? '',
+    excerpt: excerpt ?? '',
+    production_date_start: production_date_start ?? '',
+    production_date_end: production_date_end ?? '',
+    production_date_startpost: production_date_startpost ?? '',
+    production_date_endpost: production_date_endpost ?? '',
+    computed_status: computed_status ?? '',
+  }
+
+  if (!title) return { error: 'Title is required.', values: submittedValues }
+
+  // Slug-uniqueness check — runs for BOTH new and edit paths so admins get a
+  // clear message with a suggested alternative instead of losing their work to
+  // a generic UNIQUE constraint error from Postgres.
+  const baseSlug = slug
+  const { data: slugConflict } = await supabase
+    .from('productions')
+    .select('id, slug, title, visibility')
+    .eq('slug', baseSlug)
+    .maybeSingle()
+
+  // Only treat as a conflict if it's a DIFFERENT production
+  if (slugConflict && slugConflict.id !== id) {
+    // Find an available alternative: base-2, base-3, ...
+    let suggestedSlug = baseSlug
+    for (let suffix = 2; suffix <= 50; suffix++) {
+      const candidate = `${baseSlug}-${suffix}`
+      const { data: collision } = await supabase
+        .from('productions').select('id').eq('slug', candidate).maybeSingle()
+      if (!collision) { suggestedSlug = candidate; break }
+    }
+    return {
+      error: `The URL slug "${baseSlug}" is already used by an existing production: "${slugConflict.title}" (#${slugConflict.id}, ${slugConflict.visibility}). Your changes were NOT saved. Pick a different slug — we suggest "${suggestedSlug}" — or open the existing production if this is a duplicate.`,
+      suggestedSlug,
+      conflictingProductionId: slugConflict.id,
+      conflictingProductionTitle: slugConflict.title,
+      values: { ...submittedValues, slug: baseSlug },
+    }
+  }
 
   const row: Record<string, any> = {
     title, slug, visibility, content, excerpt,
@@ -60,14 +81,14 @@ export async function saveProduction(prevState: any, formData: FormData) {
 
   if (id) {
     const { error } = await supabase.from('productions').update(row).eq('id', id)
-    if (error) return { error: error.message }
+    if (error) return { error: error.message, values: submittedValues }
   } else {
     const { data, error } = await supabase.from('productions').insert(row).select('id').single()
     if (error) {
       if (error.message.includes('productions_slug_key')) {
-        return { error: `A production with the URL slug "${slug}" already exists. Try changing the title slightly or editing the existing production instead.` }
+        return { error: `A production with the URL slug "${slug}" already exists. Try changing the title slightly or editing the existing production instead.`, values: submittedValues }
       }
-      return { error: error.message }
+      return { error: error.message, values: submittedValues }
     }
     productionId = data.id
   }
