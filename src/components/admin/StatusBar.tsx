@@ -1,10 +1,15 @@
 /**
  * Prominent status indicator bar shown at the top of edit pages.
  * Shows current visibility/status and last updated date.
+ *
+ * If `publishedAt` is provided AND visibility is 'publish' AND the publish
+ * date is in the future, the bar displays "Scheduled" instead of "Published"
+ * along with the scheduled date/time in Pacific Time.
  */
-export function StatusBar({ visibility, updatedAt, type = 'item' }: {
+export function StatusBar({ visibility, updatedAt, publishedAt, type = 'item' }: {
   visibility?: string
   updatedAt?: string | null
+  publishedAt?: string | null
   type?: string
 }) {
   const statusConfig: Record<string, { label: string; bg: string; dot: string; text: string }> = {
@@ -17,16 +22,26 @@ export function StatusBar({ visibility, updatedAt, type = 'item' }: {
     scheduled:    { label: 'Scheduled',    bg: 'bg-purple-50 border-purple-200', dot: 'bg-purple-500', text: 'text-purple-800' },
   }
 
-  const config = statusConfig[visibility ?? ''] ?? statusConfig.draft
+  // A "publish" row with a future published_at is actually scheduled.
+  const publishDate = publishedAt ? new Date(publishedAt) : null
+  const isFuturePublish = visibility === 'publish' && publishDate && publishDate.getTime() > Date.now()
+  const effectiveStatus = isFuturePublish ? 'scheduled' : (visibility ?? '')
+  const config = statusConfig[effectiveStatus] ?? statusConfig.draft
+
+  const formatPt = (iso: string) => new Date(iso).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+    timeZone: 'America/Los_Angeles',
+  }) + ' PT'
 
   // Always render in Pacific Time for consistency across the admin panel
-  const formattedDate = updatedAt
-    ? new Date(updatedAt).toLocaleString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric',
-        hour: 'numeric', minute: '2-digit',
-        timeZone: 'America/Los_Angeles',
-      }) + ' PT'
-    : null
+  const formattedUpdated = updatedAt ? formatPt(updatedAt) : null
+
+  // Status caption: scheduled posts show the publish date; everything else
+  // gets the existing "currently <status>" copy.
+  const caption = isFuturePublish && publishDate
+    ? `— Scheduled to publish on ${formatPt(publishDate.toISOString())}`
+    : `— This ${type} is currently ${config.label.toLowerCase()}`
 
   return (
     <div className={`flex items-center justify-between px-4 py-3 rounded-lg border mb-6 ${config.bg}`}>
@@ -36,12 +51,12 @@ export function StatusBar({ visibility, updatedAt, type = 'item' }: {
           {config.label}
         </span>
         <span className={`text-xs ${config.text} opacity-60`}>
-          — This {type} is currently {config.label.toLowerCase()}
+          {caption}
         </span>
       </div>
-      {formattedDate && (
+      {formattedUpdated && (
         <span className={`text-xs ${config.text} opacity-70`}>
-          Last updated: {formattedDate}
+          Last updated: {formattedUpdated}
         </span>
       )}
     </div>

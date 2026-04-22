@@ -47,6 +47,7 @@ export default async function EditBlogPostPage({ params }: Props) {
       <StatusBar
         visibility={(post as any).visibility}
         updatedAt={(post as any).updated_at ?? (post as any).published_at}
+        publishedAt={(post as any).published_at}
         type="blog post"
       />
       <VerifiabilityPanel
