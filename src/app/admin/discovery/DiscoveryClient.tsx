@@ -98,6 +98,15 @@ function scoreClass(score: number | null): string {
   return 'bg-red-100 text-red-700'
 }
 
+interface ProgressState {
+  total: number
+  threshold: number
+  current: { id: number; title: string; index: number } | null
+  log: Array<{ id: number; title: string; status: string; score?: number; productionId?: number; matchTitle?: string; matchScore?: number; error?: string; index: number }>
+  done: boolean
+  summary?: { processed: number; created: number; extracted: number; duplicates: number; filtered: number; errors: number; dailyCapRemaining: number }
+}
+
 function QueueTab() {
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,6 +117,7 @@ function QueueTab() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [polling, setPolling] = useState(false)
   const [batchExtracting, setBatchExtracting] = useState(false)
+  const [progress, setProgress] = useState<ProgressState | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -165,17 +175,57 @@ function QueueTab() {
   async function extractBatch() {
     if (!confirm('Run extraction on the next batch of pending items?')) return
     setBatchExtracting(true)
+    setProgress({ total: 0, threshold: 85, current: null, log: [], done: false })
     try {
-      const res = await fetch('/api/admin/discovery/extract-batch', {
+      const res = await fetch('/api/admin/discovery/extract-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const data = await res.json()
-      if (!res.ok) alert(data.error || 'Batch extract failed')
-      else alert(`Processed ${data.processed ?? 0} item(s).`)
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error || `Failed (status ${res.status})`)
+        setProgress(null)
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done: streamDone, value } = await reader.read()
+        if (streamDone) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          let evt: any
+          try { evt = JSON.parse(line.slice(6)) } catch { continue }
+          if (evt.type === 'start') {
+            setProgress(p => p ? { ...p, total: evt.total, threshold: evt.threshold } : p)
+          } else if (evt.type === 'processing') {
+            setProgress(p => p ? { ...p, current: { id: evt.id, title: evt.title, index: evt.index } } : p)
+          } else if (evt.type === 'item') {
+            setProgress(p => p ? { ...p, log: [...p.log, evt] } : p)
+          } else if (evt.type === 'done') {
+            setProgress(p => p ? {
+              ...p, current: null, done: true,
+              summary: {
+                processed: evt.processed, created: evt.created, extracted: evt.extracted,
+                duplicates: evt.duplicates, filtered: evt.filtered, errors: evt.errors,
+                dailyCapRemaining: evt.dailyCapRemaining,
+              },
+            } : p)
+          }
+        }
+      }
+      // Refresh the queue once everything's done
       await load()
-    } finally { setBatchExtracting(false) }
+    } catch (err: any) {
+      alert(`Stream error: ${err.message ?? err}`)
+    } finally {
+      setBatchExtracting(false)
+    }
   }
 
   function toggleExpand(id: number) {
@@ -207,6 +257,10 @@ function QueueTab() {
           <button onClick={load} className="text-sm btn-outline">Search</button>
         </div>
       </div>
+
+      {progress && (
+        <ExtractProgressPanel progress={progress} onClose={() => setProgress(null)} />
+      )}
 
       {/* Status tab bar */}
       <div className="flex items-center gap-1 border-b border-gray-200 flex-wrap">
@@ -347,6 +401,123 @@ function QueueTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+function ExtractProgressPanel({ progress, onClose }: { progress: ProgressState; onClose: () => void }) {
+  const pct = progress.total > 0
+    ? Math.round((progress.log.length / progress.total) * 100)
+    : 0
+
+  return (
+    <div className="admin-card border-l-4 border-l-purple-500">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">
+            {progress.done ? 'Extraction complete' : 'Extracting…'}
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {progress.done
+              ? `Processed ${progress.summary?.processed ?? progress.log.length} of ${progress.total}`
+              : `Processing ${progress.log.length} of ${progress.total} · auto-create threshold ${progress.threshold}/100`}
+          </p>
+        </div>
+        {progress.done && (
+          <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-600">
+            Dismiss
+          </button>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+        <div className={`h-full transition-all ${progress.done ? 'bg-green-500' : 'bg-purple-500 animate-pulse'}`}
+          style={{ width: `${pct}%` }} />
+      </div>
+
+      {/* Currently processing */}
+      {progress.current && (
+        <div className="mb-3 text-xs text-gray-600 flex items-center gap-2">
+          <svg className="w-3 h-3 animate-spin text-purple-500" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="font-medium text-gray-700">[{progress.current.index}/{progress.total}]</span>
+          <span className="truncate">{progress.current.title}</span>
+        </div>
+      )}
+
+      {/* Final summary stats */}
+      {progress.done && progress.summary && (
+        <div className="mb-3 flex items-center gap-3 text-xs flex-wrap">
+          <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 font-semibold">
+            ✓ {progress.summary.created} created
+          </span>
+          <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-700 font-semibold">
+            ⏳ {progress.summary.extracted} below threshold
+          </span>
+          <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">
+            ↗ {progress.summary.duplicates} duplicates
+          </span>
+          <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 font-semibold">
+            – {progress.summary.filtered} filtered out
+          </span>
+          {progress.summary.errors > 0 && (
+            <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold">
+              ✗ {progress.summary.errors} errors
+            </span>
+          )}
+          <span className="ml-auto text-gray-400">
+            Daily cap: {progress.summary.dailyCapRemaining} extractions remaining
+          </span>
+        </div>
+      )}
+
+      {/* Per-item log */}
+      {progress.log.length > 0 && (
+        <div className="border border-gray-100 rounded max-h-60 overflow-y-auto">
+          {progress.log.map((entry, i) => {
+            const tone = entry.status === 'created' ? 'text-green-700'
+              : entry.status === 'extracted' ? 'text-yellow-700'
+              : entry.status === 'duplicate' ? 'text-gray-500'
+              : entry.status === 'filtered_out' ? 'text-gray-400'
+              : entry.status === 'error' ? 'text-red-700'
+              : 'text-gray-500'
+            const symbol = entry.status === 'created' ? '✓'
+              : entry.status === 'extracted' ? '⏳'
+              : entry.status === 'duplicate' ? '↗'
+              : entry.status === 'filtered_out' ? '–'
+              : entry.status === 'error' ? '✗'
+              : '·'
+            return (
+              <div key={i} className={`flex items-start gap-2 px-3 py-1.5 text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                <span className={`font-bold ${tone} flex-shrink-0 w-3`}>{symbol}</span>
+                <span className="text-gray-400 flex-shrink-0">[{entry.index}]</span>
+                <span className="flex-1 truncate text-gray-800">{entry.title}</span>
+                {entry.score != null && (
+                  <span className={`flex-shrink-0 px-1.5 rounded font-semibold ${entry.score >= 85 ? 'bg-green-100 text-green-700' : entry.score >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                    {entry.score}
+                  </span>
+                )}
+                <span className={`flex-shrink-0 uppercase font-semibold tracking-wide ${tone}`}>
+                  {entry.status === 'created' && entry.productionId ? `→ #${entry.productionId}` : entry.status.replace('_', ' ')}
+                </span>
+                {entry.matchTitle && (
+                  <span className="flex-shrink-0 text-gray-400 max-w-[200px] truncate" title={entry.matchTitle}>
+                    matches "{entry.matchTitle}" {entry.matchScore}%
+                  </span>
+                )}
+                {entry.error && (
+                  <span className="flex-shrink-0 text-red-600 max-w-[260px] truncate" title={entry.error}>
+                    {entry.error}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
