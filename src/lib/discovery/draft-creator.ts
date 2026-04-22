@@ -11,29 +11,36 @@ import type { createAdminClient } from '@/lib/supabase/server'
 import type { ExtractedProduction } from './extractor'
 import { slugify } from '@/lib/utils'
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export async function createDraftFromExtraction(
   supabase: ReturnType<typeof createAdminClient>,
   ext: ExtractedProduction,
-  meta: { sourceLink?: string | null; sourceName?: string | null },
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _meta: { sourceLink?: string | null; sourceName?: string | null } = {},
 ): Promise<{ productionId: number; slug: string }> {
-  // Build an HTML "Notes" block at the bottom of content so admins see
-  // exactly what the AI extracted, with sources, before publishing.
-  const sourceTag = meta.sourceName
-    ? `<p><em>Auto-imported from ${meta.sourceName}${meta.sourceLink ? ` — <a href="${meta.sourceLink}" target="_blank" rel="noopener">source article</a>` : ''}</em></p>`
+  // Build the production description: a clean, in-voice writeup from the
+  // extractor (no audit data or source citations — both live in
+  // discovery_items.extraction_data and discovery_items.source_id, which
+  // admins can audit from the Discovery queue).
+  // Falls back to the excerpt if the model omitted the description for any
+  // reason. The admin can always edit before publishing.
+  const description = ext.description?.trim() || ext.excerpt?.trim() || ''
+  const contentParagraphs = description
+    ? description
+        .split(/\n{2,}/)
+        .map(p => p.trim())
+        .filter(Boolean)
+        .map(p => `<p>${escapeHtml(p)}</p>`)
+        .join('')
     : ''
-
-  const fieldSourceLines = Object.entries(ext.field_sources).map(([field, info]) => {
-    const conf = Math.round((info?.confidence ?? 0) * 100)
-    const source = info?.source ?? '—'
-    return `<li><strong>${field}:</strong> ${conf}% — ${source}</li>`
-  }).join('')
-
-  const notesBlock = [
-    sourceTag,
-    `<p><strong>AI extraction notes (verifiability ${ext.verifiability_score}/100):</strong> ${ext.notes || ''}</p>`,
-    fieldSourceLines ? `<details><summary>Field sources</summary><ul>${fieldSourceLines}</ul></details>` : '',
-    ext.searched_but_not_found.length > 0 ? `<p><em>Searched but not found:</em> ${ext.searched_but_not_found.join(', ')}</p>` : '',
-  ].filter(Boolean).join('\n')
 
   // Make the slug unique (productions has a unique slug constraint)
   const baseSlug = slugify(ext.title)
@@ -52,7 +59,7 @@ export async function createDraftFromExtraction(
       title: ext.title,
       slug,
       visibility: 'draft',
-      content: notesBlock,
+      content: contentParagraphs,
       excerpt: ext.excerpt,
       computed_status: ext.production_phase,
       production_date_start: ext.production_date_start,

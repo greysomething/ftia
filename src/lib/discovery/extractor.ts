@@ -30,7 +30,8 @@ export interface ExtractedProduction {
   // Required
   title: string
   // Optional structured fields
-  excerpt: string | null            // logline / synopsis
+  excerpt: string | null            // logline / synopsis (1-2 sentences)
+  description: string | null        // 60–180 word writeup in ProductionList voice
   production_phase: 'in-pre-production' | 'in-production' | 'in-post-production' | 'completed' | null
   production_type_slug: string | null    // 'film' | 'tv' | etc — must match production_types.slug
   production_status_slug: string | null  // matches production_statuses.slug
@@ -40,7 +41,7 @@ export interface ExtractedProduction {
   companies: ExtractedCompany[]
   crew: ExtractedCrew[]
   locations: ExtractedLocation[]
-  // Verifiability
+  // Verifiability (kept for the discovery_items audit trail, NOT shown on the production)
   field_sources: Record<string, ExtractedField>  // per-field provenance
   verifiability_score: number       // 0–100 (computed from per-field confidences)
   searched_but_not_found: string[]
@@ -70,6 +71,9 @@ ABSOLUTE RULES
 ═══════════════════════════════════════════════════════════════════════
 SCHEMA
 ═══════════════════════════════════════════════════════════════════════
+- excerpt: a punchy 1-2 sentence logline. The plot/concept in plain language.
+- description: a 60–180 word professional writeup in ProductionList.com's voice.
+  See VOICE GUIDE below. This is what members see on the production page.
 - production_phase: one of "in-pre-production", "in-production", "in-post-production", "completed", or null
 - production_type_slug: one of "film", "tv", or null
 - production_status_slug: one of "announced", "casting", "in-development", "pre-production", "production", "post-production", "completed", or null
@@ -78,6 +82,33 @@ SCHEMA
 - crew: key creative team. Each: { "role_name": "Director|Writer|Showrunner|Producer|...", "inline_name": "Person Name" }
 - locations: each { "city": "...", "country": "USA", "location": "optional venue" }
 - production_date_start / end: ISO date "YYYY-MM-DD" or null
+
+═══════════════════════════════════════════════════════════════════════
+VOICE GUIDE — for the "description" field
+═══════════════════════════════════════════════════════════════════════
+ProductionList.com is a directory for working film & TV professionals
+(line producers, department heads, crew, casting, location managers).
+
+Tone: Clear, warm, industry-savvy. Like a well-connected colleague
+sharing a verified lead, not a press release and not trade-paper hype.
+- Conversational but factual. No "is set to dazzle" / "highly anticipated"
+  hype words. No "in the vein of..." comparisons.
+- Continuous prose only. No bullets. No headings. No links.
+- Lead with what the project IS (title, type, phase). Then key creative
+  team. Then production company / network. Then locations & timeline IF
+  known. Close with one short forward-looking line.
+- 60–180 words. Shorter is fine if data is sparse.
+- ONLY use facts from the article + your verified web search. Do not invent
+  cast, credits, prior work, or comparisons. Skip anything you can't verify.
+- Do NOT mention "this article", "the announcement", or trade publications by
+  name. Write as the directory's editorial voice, not a recap.
+
+EXAMPLE OF GOOD voice:
+"The Secret Lives of Mormon Wives is back in production for its third
+season, with Hulu continuing its docuseries deal with showrunner Jane Doe.
+The new season returns to Salt Lake City, with a producing team that
+includes XYZ Productions. Production is targeting an early summer 2026
+shoot, with a fall premiere expected on Hulu and Disney+ internationally."
 
 ═══════════════════════════════════════════════════════════════════════
 VERIFIABILITY SCORING
@@ -98,6 +129,7 @@ Return ONLY a JSON object matching:
 {
   "title": "Project Title",
   "excerpt": "1-2 sentence logline",
+  "description": "60-180 word writeup in ProductionList voice (see VOICE GUIDE)",
   "production_phase": "in-pre-production",
   "production_type_slug": "film",
   "production_status_slug": "pre-production",
@@ -117,7 +149,7 @@ Return ONLY a JSON object matching:
 }
 
 If the article is not about a specific active project, return:
-{ "title": "", "verifiability_score": 0, "notes": "Not a production announcement: <reason>", "field_sources": {}, "searched_but_not_found": [], "companies": [], "crew": [], "locations": [], "excerpt": null, "production_phase": null, "production_type_slug": null, "production_status_slug": null, "production_date_start": null, "production_date_end": null, "network": null }`
+{ "title": "", "verifiability_score": 0, "notes": "Not a production announcement: <reason>", "description": null, "field_sources": {}, "searched_but_not_found": [], "companies": [], "crew": [], "locations": [], "excerpt": null, "production_phase": null, "production_type_slug": null, "production_status_slug": null, "production_date_start": null, "production_date_end": null, "network": null }`
 
 interface AnthropicContentBlock {
   type: string
@@ -204,6 +236,7 @@ export async function extractProductionFromArticle(
   return {
     title: String(parsed.title).slice(0, 200),
     excerpt: parsed.excerpt ? String(parsed.excerpt).slice(0, 800) : null,
+    description: parsed.description ? String(parsed.description).slice(0, 2500) : null,
     production_phase: parsed.production_phase ?? null,
     production_type_slug: parsed.production_type_slug ?? null,
     production_status_slug: parsed.production_status_slug ?? null,
