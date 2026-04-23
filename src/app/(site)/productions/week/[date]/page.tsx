@@ -212,7 +212,7 @@ export default async function WeeklyListPage({ params }: Props) {
                     )}
                     <div>
                       <span className="text-xs font-medium text-gray-500 uppercase tracking-wider block">Last Updated</span>
-                      <span className="text-gray-800 font-medium">{formatDate(p.wp_updated_at)}</span>
+                      <span className="text-gray-800 font-medium">{formatDate(p.updated_at ?? p.wp_updated_at)}</span>
                     </div>
                   </div>
 

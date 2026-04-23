@@ -161,10 +161,10 @@ export default async function CrewMemberPage({ params }: Props) {
                 )}
               </div>
             </div>
-            {person.wp_updated_at && (
+            {(person.updated_at ?? person.wp_updated_at) && (
               <div className="text-right text-xs text-white/40 flex-shrink-0">
                 <div>Last Updated</div>
-                <div className="font-medium text-white/60">{formatDate(person.wp_updated_at)}</div>
+                <div className="font-medium text-white/60">{formatDate(person.updated_at ?? person.wp_updated_at)}</div>
               </div>
             )}
           </div>
@@ -600,10 +600,10 @@ export default async function CrewMemberPage({ params }: Props) {
                     </dd>
                   </div>
                 )}
-                {person.wp_updated_at && (
+                {(person.updated_at ?? person.wp_updated_at) && (
                   <div>
                     <dt className="text-xs text-gray-500 uppercase tracking-wider">Last Updated</dt>
-                    <dd className="mt-0.5 text-gray-600">{formatDate(person.wp_updated_at)}</dd>
+                    <dd className="mt-0.5 text-gray-600">{formatDate(person.updated_at ?? person.wp_updated_at)}</dd>
                   </div>
                 )}
               </dl>

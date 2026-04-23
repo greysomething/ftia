@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
       // the staff card shows up to members on the public company page.
       // (Drafts only get rendered for admins, which made AI-added staff
       // silently invisible to members — see commit 23b1032 for the chain.)
+      const nowIso = new Date().toISOString()
       const newRow = {
         name: trimmed,
         slug,
@@ -88,6 +89,11 @@ export async function POST(req: NextRequest) {
         roles: position ? [String(position).trim()] : [],
         known_for: [],
         representation: {},
+        // Stamp these explicitly so admin lists ordering/filtering by recency
+        // works even if the table doesn't have DEFAULT now() set on these
+        // columns (legacy WP-migration schema).
+        created_at: nowIso,
+        updated_at: nowIso,
       }
       const { data: created, error: insErr } = await supabase
         .from('crew_members')

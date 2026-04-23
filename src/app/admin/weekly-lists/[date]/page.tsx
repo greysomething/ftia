@@ -96,7 +96,7 @@ export default async function AdminWeekDetailPage({ params }: Props) {
           {p.production_date_start ? formatDate(p.production_date_start) : '—'}
         </td>
         <td className="text-xs text-gray-500 whitespace-nowrap">
-          {formatDate(p.wp_updated_at)}
+          {formatDate(p.updated_at ?? p.wp_updated_at)}
         </td>
         <td className="text-right">
           {entryByProductionId[p.id] ? (

@@ -171,10 +171,10 @@ export default async function CompanyPage({ params }: Props) {
                 </div>
               </div>
             </div>
-            {company.wp_updated_at && (
+            {(company.updated_at ?? company.wp_updated_at) && (
               <div className="text-right text-xs text-white/40 flex-shrink-0">
                 <div>Last Updated</div>
-                <div className="font-medium text-white/60">{formatDate(company.wp_updated_at)}</div>
+                <div className="font-medium text-white/60">{formatDate(company.updated_at ?? company.wp_updated_at)}</div>
               </div>
             )}
           </div>
@@ -531,10 +531,10 @@ export default async function CompanyPage({ params }: Props) {
                   <dt className="text-xs text-gray-500 uppercase tracking-wider">Staff Listed</dt>
                   <dd className="mt-0.5 font-medium text-gray-800">{effectiveStaff.length}</dd>
                 </div>
-                {company.wp_updated_at && (
+                {(company.updated_at ?? company.wp_updated_at) && (
                   <div>
                     <dt className="text-xs text-gray-500 uppercase tracking-wider">Last Updated</dt>
-                    <dd className="mt-0.5 text-gray-600">{formatDate(company.wp_updated_at)}</dd>
+                    <dd className="mt-0.5 text-gray-600">{formatDate(company.updated_at ?? company.wp_updated_at)}</dd>
                   </div>
                 )}
               </dl>

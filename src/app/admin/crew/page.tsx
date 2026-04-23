@@ -163,7 +163,7 @@ export default async function AdminCrewPage({ searchParams }: Props) {
                       {c.visibility === 'publish' ? 'Published' : c.visibility}
                     </span>
                   </td>
-                  <td className="text-xs text-gray-500 whitespace-nowrap">{formatDate(c.wp_updated_at)}</td>
+                  <td className="text-xs text-gray-500 whitespace-nowrap">{formatDate(c.updated_at ?? c.wp_updated_at)}</td>
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Link href={`/admin/crew/${c.id}/edit`} className="text-xs btn-outline py-1 px-2">Edit</Link>

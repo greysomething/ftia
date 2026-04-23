@@ -15,6 +15,7 @@ interface Production {
   visibility: string
   production_date_start: string | null
   wp_updated_at: string | null
+  updated_at: string | null
   created_at: string
 }
 
@@ -223,7 +224,7 @@ export function ProductionsTableClient({ productions, currentTab }: Props) {
                       {p.production_date_start || '—'}
                     </td>
                     <td className="text-xs text-gray-500 whitespace-nowrap">
-                      {formatDate(p.wp_updated_at)}
+                      {formatDate(p.updated_at ?? p.wp_updated_at)}
                     </td>
                     <td className="text-right">
                       <Link

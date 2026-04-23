@@ -179,7 +179,7 @@ export default async function ProductionPage({ params }: Props) {
                   <div className="text-right text-xs text-gray-400 flex-shrink-0">
                     <div>Last Updated</div>
                     <div className="font-medium text-gray-600">
-                      {formatDate(production.wp_updated_at)}
+                      {formatDate(production.updated_at ?? production.wp_updated_at)}
                     </div>
                   </div>
                 </div>
@@ -633,7 +633,7 @@ export default async function ProductionPage({ params }: Props) {
                 <div>
                   <dt className="text-xs text-gray-500 uppercase tracking-wider">Last Updated</dt>
                   <dd className="mt-0.5 text-gray-600">
-                    {formatDate(production.wp_updated_at)}
+                    {formatDate(production.updated_at ?? production.wp_updated_at)}
                   </dd>
                 </div>
               </dl>
