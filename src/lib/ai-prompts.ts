@@ -309,13 +309,15 @@ export const DEFAULT_PROMPTS: Record<string, { name: string } & PromptConfig> = 
     name: 'Company Research',
     prompt: DEFAULT_COMPANY_PROMPT,
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
+    // Bumped from 2048 — web_search adds tool_use/tool_result blocks plus
+    // field_metadata, so the final JSON often runs longer.
+    max_tokens: 4096,
   },
   crew: {
     name: 'Crew/Person Research',
     prompt: DEFAULT_CREW_PROMPT,
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
+    max_tokens: 4096,
   },
   blog_generation: {
     name: 'Blog Post Generation',

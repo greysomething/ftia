@@ -6,6 +6,10 @@ import { validateResearchUrls } from '@/lib/url-validator'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
+// Cap how many web searches Claude can run per research call.
+// Production extractor uses 8; for company/crew enrichment a few more is fine.
+const WEB_SEARCH_MAX_USES = 10
+
 export async function POST(req: NextRequest) {
   try { await requireAdmin() } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -26,6 +30,10 @@ export async function POST(req: NextRequest) {
     ? `\n\nExisting data we already have (fill in what's MISSING, don't repeat what we have):\n${JSON.stringify(existingData, null, 2)}`
     : ''
 
+  // Force the model to actually use web search rather than relying on training data —
+  // boutique production companies / individual crew often aren't in the training set.
+  const searchInstruction = `\n\nUSE THE web_search TOOL. Do not rely on memory alone. Search the web for the ${type}'s official website, LinkedIn, IMDb, social profiles, and any trade press coverage. Visit at least the first relevant result for each missing field. Then return the JSON.`
+
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -37,10 +45,13 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: config.model,
         max_tokens: config.max_tokens,
+        tools: [
+          { type: 'web_search_20250305', name: 'web_search', max_uses: WEB_SEARCH_MAX_USES },
+        ],
         messages: [
           {
             role: 'user',
-            content: `${config.prompt}${contextNote}\n\nResearch this ${type}: "${name}"`,
+            content: `${config.prompt}${contextNote}\n\nResearch this ${type}: "${name}"${searchInstruction}`,
           },
         ],
       }),
@@ -66,11 +77,17 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await response.json()
-    const text = result.content?.[0]?.text ?? ''
 
-    // Extract JSON from response
+    // With web_search enabled the response is a sequence of content blocks
+    // (text → tool_use → tool_result → text → ...). The final JSON sits in the
+    // LAST text block, not the first.
+    const textBlocks = (result.content ?? []).filter((b: any) => b.type === 'text' && b.text)
+    const text = textBlocks[textBlocks.length - 1]?.text ?? ''
+
+    // Extract JSON from response (greedy match the outermost object)
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
+      console.warn('[ai-research] No JSON in final text block. Raw:', text.slice(0, 500))
       return NextResponse.json({ error: 'AI did not return valid JSON' }, { status: 500 })
     }
 
