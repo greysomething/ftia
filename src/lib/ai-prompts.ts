@@ -105,8 +105,34 @@ Return ONLY valid JSON with this structure (use null for unknown fields, empty a
   "headquarters_city": "City name",
   "headquarters_country": "Country name",
   "founded_year": 2005,
-  "searched_but_not_found": ["list of fields you searched for but could not find, e.g. 'email', 'linkedin'"]
+  "searched_but_not_found": ["list of fields you searched for but could not find, e.g. 'email', 'linkedin'"],
+  "field_metadata": {
+    "address": { "confidence": 0.9, "sources": ["Source 1 (e.g. 'company website /contact page')", "Source 2"], "reasoning": "Brief explanation of how this was verified" },
+    "phone": { "confidence": 0.85, "sources": [...], "reasoning": "..." },
+    "email": { "confidence": 0.8, "sources": [...], "reasoning": "..." },
+    "website": { "confidence": 0.95, "sources": [...], "reasoning": "..." },
+    "linkedin": { "confidence": 0.9, "sources": [...], "reasoning": "..." },
+    "twitter": { "confidence": 0.8, "sources": [...], "reasoning": "..." },
+    "instagram": { "confidence": 0.8, "sources": [...], "reasoning": "..." },
+    "imdb": { "confidence": 0.95, "sources": [...], "reasoning": "..." },
+    "description": { "confidence": 0.85, "sources": [...], "reasoning": "..." }
+  }
 }
+
+FIELD METADATA — CRITICAL:
+For EVERY field you include (not null), you MUST provide a corresponding entry in "field_metadata" with:
+- "confidence": A score from 0.0 to 1.0 based on source reliability:
+  - 0.90-1.0 = Verified — found on the company's own website, official IMDb page, or confirmed by multiple reputable sources
+  - 0.75-0.89 = High — found in a reputable trade publication (Variety, THR, Deadline) or LinkedIn
+  - 0.60-0.74 = Moderate — found in a single source, or inferred from related information
+  - 0.40-0.59 = Low — inferred or unverified, single mention in a non-authoritative source
+  - Below 0.40 = Do not include the field at all — it's too speculative
+- "sources": Array of specific, verifiable sources where you found this information. Be precise:
+  - Good: "company website /contact page (acmefilms.com/contact)", "IMDb company page (imdb.com/company/co1234567)", "Variety article Jan 2025"
+  - Bad: "internet", "various sources", "public knowledge"
+- "reasoning": Brief explanation (1-2 sentences) of how you verified this data point and why you assigned this confidence level. Mention cross-referencing if applicable.
+
+Only include field_metadata entries for fields that have non-null values.
 
 IMPORTANT:
 - Be THOROUGH — search exhaustively for website, LinkedIn, Twitter/X, Instagram, and IMDb pages. Most entertainment companies have at least a website and IMDb page.
@@ -121,7 +147,8 @@ IMPORTANT:
   - 0.9-1.0 = Very confident (well-known public figure in this role, easily verifiable)
   - 0.7-0.89 = Confident (found in multiple sources, likely current)
   - 0.5-0.69 = Moderate (found but may be outdated or uncertain role)
-  - Below 0.5 = Low confidence (do not include, skip this person instead)`
+  - Below 0.5 = Low confidence (do not include, skip this person instead)
+- Confidence scores MUST be honest — a high score with a vague source is worse than a low score with a specific source. Cross-reference multiple sources to increase confidence.`
 
 export const DEFAULT_CREW_PROMPT = `You are an expert entertainment industry researcher. Given a person's name who works in film/television, conduct a THOROUGH research and provide ALL available information about them.
 
