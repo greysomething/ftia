@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/send-email'
 import { getTemplate, emailTemplates } from '@/lib/email-templates'
+import { reconcileStaleDigestRuns } from '@/lib/digest-reconcile'
 
 /**
  * GET /api/admin/email?action=logs|templates|audience-counts
@@ -206,6 +207,16 @@ export async function GET(req: NextRequest) {
   if (action === 'digest-stats') {
     const supabase = createAdminClient()
 
+    // Self-heal: any digest_runs row stuck in 'running' for >15 min gets
+    // reconciled against email_logs and updated to its true final status.
+    // This means the dashboard always shows current truth, no admin action
+    // required when the cron worker dies before its cleanup block.
+    try {
+      await reconcileStaleDigestRuns(supabase, { staleAfterMinutes: 15 })
+    } catch (e) {
+      console.error('[digest-stats] reconcile failed (continuing):', e)
+    }
+
     // Source of truth = digest_runs. One row per ISO week (week_monday is the
     // PK), updated at the end of each run with sent/failed/recipient counts.
     // Older "bulk:N" entries in email_logs are merged in for any historical
@@ -319,15 +330,58 @@ export async function GET(req: NextRequest) {
     const sends = Array.from(byWeek.values())
       .sort((a, b) => b.week_monday.localeCompare(a.week_monday))
 
-    const completedSends = sends.filter(s => s.status === 'completed')
+    // KPIs come from ALL-TIME aggregates, not just the visible 52-week
+    // window, so "Total Digests Sent" keeps growing past year 1 and
+    // "Last Sent" reflects truth across history. We compute by paging
+    // through all completed digest_runs once (one row per week → cheap
+    // even after years of operation) and merging in any legacy bulk:N
+    // entries from weeks not yet in digest_runs.
+    let totalSent = 0
+    let totalFailed = 0
+    let totalRecipientsAllWeeks = 0
+    let completedWeeks = 0
+    let lastSentAt: string | null = null
 
-    const totalSent = sends.reduce((s, d) => s + d.sent, 0)
-    const totalFailed = sends.reduce((s, d) => s + d.failed, 0)
-    const lastCompleted = completedSends[0]
-    const lastSentAt = lastCompleted?.sent_at_iso ?? null
-    const avgPerWeek = completedSends.length > 0
-      ? completedSends.reduce((s, d) => s + d.total, 0) / completedSends.length
-      : 0
+    {
+      let page = 0
+      while (page < 20) { // safety cap (10k weeks = 192 yrs)
+        const { data } = await supabase
+          .from('digest_runs')
+          .select('finished_at, sent_count, failed_count, recipients_count, status')
+          .eq('status', 'completed')
+          .order('finished_at', { ascending: false, nullsFirst: false })
+          .range(page * 500, page * 500 + 499)
+        if (!data || data.length === 0) break
+        for (const r of data as any[]) {
+          totalSent += r.sent_count ?? 0
+          totalFailed += r.failed_count ?? 0
+          totalRecipientsAllWeeks += r.recipients_count ?? 0
+          completedWeeks++
+          if (!lastSentAt && r.finished_at) lastSentAt = r.finished_at
+        }
+        if (data.length < 500) break
+        page++
+      }
+    }
+
+    // Backfill legacy weeks (only present in email_logs bulk:N) into the
+    // KPIs too, deduped by ISO week so we never double-count a week that
+    // already has a digest_runs row.
+    const weeksAlreadyCounted = new Set<string>(
+      sends.filter(s => s.status === 'completed').map(s => s.week_monday),
+    )
+    for (const s of sends) {
+      if (s.status === 'completed' && s.trigger_type === 'legacy' && !weeksAlreadyCounted.has(s.week_monday)) {
+        totalSent += s.sent
+        totalFailed += s.failed
+        totalRecipientsAllWeeks += s.total
+        completedWeeks++
+        weeksAlreadyCounted.add(s.week_monday)
+        if (!lastSentAt && s.sent_at_iso) lastSentAt = s.sent_at_iso
+      }
+    }
+
+    const avgPerWeek = completedWeeks > 0 ? totalRecipientsAllWeeks / completedWeeks : 0
 
     return NextResponse.json({
       sends,
@@ -335,6 +389,7 @@ export async function GET(req: NextRequest) {
       totalFailed,
       avgPerWeek,
       lastSentAt,
+      completedWeeks,
       cronEnabled: true,
     })
   }
@@ -382,6 +437,21 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
+
+  if (body.action === 'reconcile-digest-runs') {
+    // Manual self-heal — admin clicks "Reconcile stuck runs" in the
+    // Digest Reports tab. Uses a 0-minute threshold so the admin can
+    // recover something that JUST got stuck, not just rows older than
+    // 15 min like the auto-sweep on cron fire and stats load.
+    const supabase = createAdminClient()
+    try {
+      const minutes = typeof body.staleAfterMinutes === 'number' ? body.staleAfterMinutes : 5
+      const summary = await reconcileStaleDigestRuns(supabase, { staleAfterMinutes: minutes })
+      return NextResponse.json({ ok: true, ...summary })
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message ?? 'Reconcile failed' }, { status: 500 })
+    }
+  }
 
   if (body.action === 'send-test') {
     const { templateSlug, to } = body

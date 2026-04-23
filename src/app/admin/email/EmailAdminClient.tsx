@@ -1272,9 +1272,12 @@ function DigestReportsTab() {
     totalFailed: number
     avgPerWeek: number
     lastSentAt: string | null
+    completedWeeks?: number
     cronEnabled: boolean
   } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [reconciling, setReconciling] = useState(false)
+  const [reconcileMsg, setReconcileMsg] = useState<string | null>(null)
 
   useEffect(() => {
     fetchDigestStats()
@@ -1298,6 +1301,32 @@ function DigestReportsTab() {
     }
   }
 
+  async function reconcileStuckRuns() {
+    if (reconciling) return
+    setReconciling(true)
+    setReconcileMsg(null)
+    try {
+      const res = await fetch('/api/admin/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reconcile-digest-runs', staleAfterMinutes: 5 }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Reconcile failed')
+      setReconcileMsg(
+        data.reconciled === 0
+          ? 'No stuck runs found.'
+          : `Reconciled ${data.reconciled} stuck run${data.reconciled === 1 ? '' : 's'} from email_logs.`,
+      )
+      // Refresh the table so the new statuses show.
+      await fetchDigestStats()
+    } catch (e: any) {
+      setReconcileMsg(`Error: ${e.message}`)
+    } finally {
+      setReconciling(false)
+    }
+  }
+
   if (loading) {
     return <div className="admin-card text-center py-10 text-gray-400">Loading digest reports...</div>
   }
@@ -1306,21 +1335,29 @@ function DigestReportsTab() {
     return <div className="admin-card text-center py-10 text-gray-400">Failed to load digest data.</div>
   }
 
-  const { sends, totalSent, totalFailed, avgPerWeek, lastSentAt } = digestData
+  const { sends, totalSent, totalFailed, avgPerWeek, lastSentAt, completedWeeks } = digestData
+  const deliveryRate = (totalSent + totalFailed) > 0
+    ? ((totalSent / (totalSent + totalFailed)) * 100)
+    : 0
+  const lastSentDate = lastSentAt ? new Date(lastSentAt) : null
 
   return (
     <>
-      {/* Summary Cards */}
+      {/* Summary Cards — all values are all-time aggregates from digest_runs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="admin-card text-center">
           <p className="text-2xl font-bold text-[#1B2A4A]">{totalSent.toLocaleString()}</p>
           <p className="text-xs text-gray-500 mt-1">Total Digests Sent</p>
+          {completedWeeks != null && (
+            <p className="text-[11px] text-gray-400 mt-0.5">across {completedWeeks} week{completedWeeks === 1 ? '' : 's'}</p>
+          )}
         </div>
         <div className="admin-card text-center">
-          <p className="text-2xl font-bold text-green-600">
-            {totalSent > 0 ? ((totalSent / (totalSent + totalFailed)) * 100).toFixed(1) : '0'}%
+          <p className={`text-2xl font-bold ${deliveryRate >= 99 ? 'text-green-600' : deliveryRate >= 95 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {deliveryRate.toFixed(1)}%
           </p>
           <p className="text-xs text-gray-500 mt-1">Delivery Rate</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{totalFailed.toLocaleString()} failed</p>
         </div>
         <div className="admin-card text-center">
           <p className="text-2xl font-bold text-[#43B7F0]">{Math.round(avgPerWeek).toLocaleString()}</p>
@@ -1328,9 +1365,16 @@ function DigestReportsTab() {
         </div>
         <div className="admin-card text-center">
           <p className="text-2xl font-bold text-gray-700">
-            {lastSentAt ? new Date(lastSentAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Never'}
+            {lastSentDate
+              ? lastSentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+              : 'Never'}
           </p>
           <p className="text-xs text-gray-500 mt-1">Last Sent</p>
+          {lastSentDate && (
+            <p className="text-[11px] text-gray-400 mt-0.5" title={lastSentDate.toISOString()}>
+              {lastSentDate.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}
+            </p>
+          )}
         </div>
       </div>
 
@@ -1353,16 +1397,34 @@ function DigestReportsTab() {
 
       {/* Send History Table */}
       <div className="admin-card p-0 overflow-hidden">
-        <div className="px-4 py-3 border-b flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">Send History</h2>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              Sourced from <code>digest_runs</code> (one row per ISO week — duplicates impossible).
-            </p>
+        <div className="px-4 py-3 border-b">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Send History</h2>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Sourced from <code>digest_runs</code> (one row per ISO week — duplicates impossible).
+                Stuck "running" rows auto-reconcile after 15 min from <code>email_logs</code>.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={reconcileStuckRuns}
+                disabled={reconciling}
+                className="btn-outline text-xs px-3 py-1 disabled:opacity-50"
+                title="Force-recover any digest_runs row stuck in 'running' by deriving the true sent/failed counts from email_logs."
+              >
+                {reconciling ? 'Reconciling…' : 'Reconcile stuck runs'}
+              </button>
+              <button onClick={fetchDigestStats} className="btn-outline text-xs px-3 py-1">
+                Refresh
+              </button>
+            </div>
           </div>
-          <button onClick={fetchDigestStats} className="btn-outline text-xs px-3 py-1">
-            Refresh
-          </button>
+          {reconcileMsg && (
+            <p className={`text-xs mt-2 ${reconcileMsg.startsWith('Error') ? 'text-red-600' : 'text-gray-600'}`}>
+              {reconcileMsg}
+            </p>
+          )}
         </div>
         <table className="admin-table">
           <thead>

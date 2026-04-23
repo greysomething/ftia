@@ -21,6 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { runWeeklyDigestPipeline, getCurrentWeekMonday } from '@/lib/weekly-digest'
+import { reconcileStaleDigestRuns } from '@/lib/digest-reconcile'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -37,6 +38,20 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createAdminClient()
+
+  // Self-heal: if a previous worker died before its finally{} block updated
+  // the digest_runs row, that week is stuck in 'running' and would block a
+  // retry. Sweep here before doing anything else — the call is cheap when
+  // nothing is stale and is the difference between admin-needs-to-intervene
+  // and silent recovery.
+  try {
+    const summary = await reconcileStaleDigestRuns(supabase, { staleAfterMinutes: 15 })
+    if (summary.reconciled > 0) {
+      console.log(`[Cron] Reconciled ${summary.reconciled} stale digest_runs row(s):`, summary.rows)
+    }
+  } catch (e) {
+    console.error('[Cron] Stale-run reconcile failed (continuing):', e)
+  }
 
   // 1. Fetch digest settings
   const { data: settings } = await supabase
