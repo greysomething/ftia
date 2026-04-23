@@ -107,44 +107,59 @@ export function CompanyStaffManager({ companyId, initialStaff, aiSuggestedStaff,
   async function addAiStaff(suggestion: AIStaffSuggestion) {
     setAddingAiStaff(suggestion.name)
     try {
-      // First search for the person in the database
+      // Look for an existing crew member by name first.
       const searchRes = await fetch(`/api/admin/company-staff?q=${encodeURIComponent(suggestion.name)}`)
       const { results } = await searchRes.json()
 
-      if (results && results.length > 0) {
-        // Find best match (exact or closest)
-        const exactMatch = results.find((r: any) =>
-          r.name.toLowerCase() === suggestion.name.toLowerCase()
-        )
-        const match = exactMatch || results[0]
+      // Prefer an exact (case-insensitive) match. Fall back to the first result
+      // only if the company doesn't already have it linked.
+      const exactMatch = (results ?? []).find((r: any) =>
+        r.name.toLowerCase() === suggestion.name.toLowerCase().trim()
+      )
 
-        // Check if already added
-        if (staff.some(s => s.crew_id === match.id)) {
-          // Already exists, just remove from suggestions
+      let payload: Record<string, any>
+      if (exactMatch) {
+        // Already linked? Bail before re-inserting.
+        if (staff.some(s => s.crew_id === exactMatch.id)) {
           setAiSuggestions(prev => prev.filter(s => s.name !== suggestion.name))
           setAddingAiStaff(null)
           return
         }
-
-        // Add to company staff
-        const res = await fetch('/api/admin/company-staff', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            company_id: companyId,
-            crew_id: match.id,
-            position: suggestion.position || null,
-          }),
-        })
-        const { staff: newEntry } = await res.json()
-        if (newEntry) {
-          setStaff(prev => [...prev, newEntry])
+        payload = {
+          company_id: companyId,
+          crew_id: exactMatch.id,
+          position: suggestion.position || null,
+        }
+      } else {
+        // No existing crew row — ask the API to create one (as draft) then link.
+        payload = {
+          company_id: companyId,
+          name: suggestion.name,
+          position: suggestion.position || null,
+          confidence: suggestion.confidence,
         }
       }
-      // Remove from suggestions regardless
+
+      const res = await fetch('/api/admin/company-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        // Don't dismiss the suggestion on failure — let the admin retry.
+        console.error('[CompanyStaffManager] Failed to add staff:', json.error)
+        alert(`Could not add ${suggestion.name}: ${json.error ?? 'unknown error'}`)
+        setAddingAiStaff(null)
+        return
+      }
+      if (json.staff) {
+        setStaff(prev => [...prev, json.staff])
+      }
       setAiSuggestions(prev => prev.filter(s => s.name !== suggestion.name))
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error adding AI staff:', e)
+      alert(`Could not add ${suggestion.name}: ${e?.message ?? 'network error'}`)
     }
     setAddingAiStaff(null)
   }
