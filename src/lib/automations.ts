@@ -81,27 +81,39 @@ async function weeklyDigestStatus(supabase: SupabaseClient): Promise<AutomationS
     .from('digest_settings').select('enabled, day_of_week, hour_of_day, timezone').eq('id', 1).maybeSingle()
   const enabled = settings?.enabled !== false
 
+  // digest_runs schema: week_monday (date PK), status (running|completed|failed),
+  // started_at, finished_at, sent_count, trigger_type
   const { data: lastRun } = await supabase
     .from('digest_runs')
-    .select('week_start, sent_at, status, recipient_count, error')
-    .order('week_start', { ascending: false }).limit(1).maybeSingle()
+    .select('week_monday, status, started_at, finished_at, sent_count, trigger_type')
+    .order('week_monday', { ascending: false }).limit(1).maybeSingle()
 
   if (!lastRun) {
     return { enabled, last_run_at: null, last_run_outcome: null, last_run_summary: 'Never sent', next_run_at: null }
   }
 
   const outcome: AutomationStatus['last_run_outcome'] =
-    lastRun.status === 'sent' ? 'ok'
-    : lastRun.status === 'error' ? 'error'
+    lastRun.status === 'completed' ? 'ok'
+    : lastRun.status === 'failed' ? 'error'
+    : lastRun.status === 'running' ? 'partial'
     : 'skipped'
 
-  const summary = lastRun.status === 'sent'
-    ? `Sent to ${lastRun.recipient_count ?? '?'} recipients (week of ${String(lastRun.week_start).slice(0, 10)})`
-    : lastRun.status === 'error'
-      ? `Failed: ${lastRun.error?.slice(0, 80) ?? 'unknown error'}`
-      : `Status: ${lastRun.status}`
+  const summary = lastRun.status === 'completed'
+    ? `Sent to ${lastRun.sent_count ?? '?'} recipients · week of ${String(lastRun.week_monday).slice(0, 10)}`
+    : lastRun.status === 'failed'
+      ? `Failed for week of ${String(lastRun.week_monday).slice(0, 10)} — see digest_runs row for detail`
+      : lastRun.status === 'running'
+        ? `Send in progress (started ${lastRun.started_at})`
+        : `Status: ${lastRun.status}`
 
-  return { enabled, last_run_at: lastRun.sent_at ?? null, last_run_outcome: outcome, last_run_summary: summary, next_run_at: null }
+  // Most useful timestamp = finished_at if present, else started_at
+  return {
+    enabled,
+    last_run_at: lastRun.finished_at ?? lastRun.started_at ?? null,
+    last_run_outcome: outcome,
+    last_run_summary: summary,
+    next_run_at: null,
+  }
 }
 
 async function blogGenerateStatus(supabase: SupabaseClient): Promise<AutomationStatus> {
@@ -111,32 +123,56 @@ async function blogGenerateStatus(supabase: SupabaseClient): Promise<AutomationS
   for (const r of rows ?? []) settings[r.key] = r.value
   const enabled = settings.enabled === 'true'
 
-  // Most recent completed queue item
-  const { data: lastDone } = await supabase
-    .from('blog_generation_queue')
-    .select('completed_at, status, title, error_message')
-    .order('completed_at', { ascending: false, nullsFirst: false })
-    .limit(1).maybeSingle()
-
+  // The cron INSERTs into `blog_posts` with ai_generated=true on success — that's the
+  // ground-truth of "did the cron actually produce something". We also peek at the
+  // queue for a recent failure so we can surface it as the "outcome".
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-  const { count: todayCount } = await supabase
-    .from('blog_generation_queue')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'completed').gte('completed_at', todayStart.toISOString())
 
-  const outcome: AutomationStatus['last_run_outcome'] =
-    !lastDone ? null
-    : lastDone.status === 'completed' ? 'ok'
-    : lastDone.status === 'error' ? 'error'
-    : 'skipped'
+  const [latestPostRes, todayPostsRes, recentFailureRes] = await Promise.all([
+    supabase.from('blog_posts')
+      .select('created_at, title')
+      .eq('ai_generated', true)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('blog_posts')
+      .select('id', { count: 'exact', head: true })
+      .eq('ai_generated', true)
+      .gte('created_at', todayStart.toISOString()),
+    supabase.from('blog_generation_queue')
+      .select('completed_at, status, error')
+      .eq('status', 'failed')
+      .order('completed_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
+  ])
 
-  const summary = lastDone
-    ? lastDone.status === 'completed'
-      ? `Last post: "${(lastDone.title ?? '').slice(0, 60)}" — ${todayCount ?? 0} today`
-      : `Last attempt failed: ${(lastDone.error_message ?? '').slice(0, 80)}`
-    : 'No posts generated yet'
+  const latestPost = latestPostRes.data as { created_at: string; title: string } | null
+  const todayCount = todayPostsRes.count ?? 0
+  const recentFailure = recentFailureRes.data as { completed_at: string; status: string; error: string | null } | null
 
-  return { enabled, last_run_at: lastDone?.completed_at ?? null, last_run_outcome: outcome, last_run_summary: summary, next_run_at: null }
+  // Use whichever happened more recently as "last run" — a recent failure beats
+  // a successful post from yesterday because it's actionable.
+  const failureIsNewer = recentFailure?.completed_at && latestPost?.created_at
+    && new Date(recentFailure.completed_at).getTime() > new Date(latestPost.created_at).getTime()
+
+  if (failureIsNewer || (recentFailure && !latestPost)) {
+    return {
+      enabled,
+      last_run_at: recentFailure!.completed_at,
+      last_run_outcome: 'error',
+      last_run_summary: `Last attempt failed: ${(recentFailure!.error ?? '').slice(0, 100) || 'no error message'}`,
+      next_run_at: null,
+    }
+  }
+
+  if (latestPost) {
+    return {
+      enabled,
+      last_run_at: latestPost.created_at,
+      last_run_outcome: 'ok',
+      last_run_summary: `${todayCount} post${todayCount === 1 ? '' : 's'} today · last: "${latestPost.title.slice(0, 60)}"`,
+      next_run_at: null,
+    }
+  }
+
+  return { enabled, last_run_at: null, last_run_outcome: null, last_run_summary: 'No posts generated yet', next_run_at: null }
 }
 
 async function discoveryPollStatus(supabase: SupabaseClient): Promise<AutomationStatus> {
@@ -171,28 +207,56 @@ async function discoveryPollStatus(supabase: SupabaseClient): Promise<Automation
 async function discoveryExtractStatus(supabase: SupabaseClient): Promise<AutomationStatus> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  const [extracted, errors, pending, latest] = await Promise.all([
+  // discovery_items status values used by the extract cron:
+  //   'new'         → polled, awaiting extraction (pending pool)
+  //   'extracting'  → in-flight (rare to see)
+  //   'created'     → extracted AND auto-created a production draft (success!)
+  //   'extracted'   → extracted but score < threshold, awaiting admin review
+  //   'duplicate'   → matched an existing production
+  //   'filtered_out'→ AI judged not a production announcement
+  //   'error'       → extraction failed
+  //
+  // Successful processing stamps `processed_at` (NOT updated_at).
+  const [created24h, extractedOnly24h, errors24h, dupes24h, filtered24h, pending, latest] = await Promise.all([
     supabase.from('discovery_items').select('id', { count: 'exact', head: true })
-      .eq('status', 'extracted').gte('updated_at', since),
+      .eq('status', 'created').gte('processed_at', since),
     supabase.from('discovery_items').select('id', { count: 'exact', head: true })
-      .eq('status', 'error').gte('updated_at', since),
+      .eq('status', 'extracted').gte('processed_at', since),
     supabase.from('discovery_items').select('id', { count: 'exact', head: true })
-      .eq('status', 'pending'),
-    supabase.from('discovery_items').select('updated_at, status')
-      .in('status', ['extracted', 'error']).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      .eq('status', 'error').gte('processed_at', since),
+    supabase.from('discovery_items').select('id', { count: 'exact', head: true })
+      .eq('status', 'duplicate').gte('processed_at', since),
+    supabase.from('discovery_items').select('id', { count: 'exact', head: true })
+      .eq('status', 'filtered_out').gte('processed_at', since),
+    supabase.from('discovery_items').select('id', { count: 'exact', head: true })
+      .eq('status', 'new'),
+    supabase.from('discovery_items').select('processed_at, status')
+      .in('status', ['created', 'extracted', 'duplicate', 'filtered_out', 'error'])
+      .order('processed_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
   ])
+
+  const errCount = errors24h.count ?? 0
+  const totalProcessed = (created24h.count ?? 0) + (extractedOnly24h.count ?? 0)
+    + errCount + (dupes24h.count ?? 0) + (filtered24h.count ?? 0)
 
   const outcome: AutomationStatus['last_run_outcome'] =
     !latest.data ? null
-    : (latest.data as any).status === 'error' ? 'error'
-    : (errors.count ?? 0) > 0 ? 'partial'
-    : 'ok'
+    : (latest.data as any).status === 'error' && totalProcessed === errCount ? 'error'
+    : errCount > 0 ? 'partial'
+    : totalProcessed > 0 ? 'ok'
+    : 'skipped'
+
+  const summary = totalProcessed === 0 && (pending.count ?? 0) === 0
+    ? 'No items to process — feeds may be quiet'
+    : `${created24h.count ?? 0} drafts created, ${extractedOnly24h.count ?? 0} below-threshold, `
+      + `${dupes24h.count ?? 0} duplicates, ${filtered24h.count ?? 0} filtered out, `
+      + `${errCount} errors (24h) · ${pending.count ?? 0} pending`
 
   return {
-    enabled: true, // always on
-    last_run_at: (latest.data as any)?.updated_at ?? null,
+    enabled: true, // always on (per-source enable flag controls participation)
+    last_run_at: (latest.data as any)?.processed_at ?? null,
     last_run_outcome: outcome,
-    last_run_summary: `${extracted.count ?? 0} extracted, ${errors.count ?? 0} errors (24h) · ${pending.count ?? 0} pending`,
+    last_run_summary: summary,
     next_run_at: null,
   }
 }
