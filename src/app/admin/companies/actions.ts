@@ -20,7 +20,13 @@ export async function saveCompany(prevState: any, formData: FormData) {
   const faxVal = (formData.get('fax') as string)?.trim() || null
   const emailVal = (formData.get('email') as string)?.trim() || null
 
-  const row = {
+  // Stamp updated_at explicitly — the legacy WP-migrated `companies` table
+  // doesn't have a BEFORE UPDATE trigger, so without this the column stays
+  // at whatever the WP migration left behind (often null) and the admin
+  // "Updated" column never reflects edits made through this app.
+  const nowIso = new Date().toISOString()
+
+  const row: Record<string, any> = {
     title, slug, visibility,
     addresses: addressVal ? [addressVal] : [],
     phones: phoneVal ? [phoneVal] : [],
@@ -29,6 +35,7 @@ export async function saveCompany(prevState: any, formData: FormData) {
     linkedin: (formData.get('linkedin') as string) || null,
     twitter: (formData.get('twitter') as string) || null,
     content: (formData.get('content') as string) || null,
+    updated_at: nowIso,
   }
 
   if (!title) return { error: 'Title is required.' }
@@ -37,6 +44,9 @@ export async function saveCompany(prevState: any, formData: FormData) {
     const { error } = await supabase.from('companies').update(row).eq('id', id)
     if (error) return { error: error.message }
   } else {
+    // Stamp created_at on INSERT too so brand-new rows have a sane value
+    // even on the legacy schema (no DEFAULT now() guarantee).
+    row.created_at = nowIso
     const { error } = await supabase.from('companies').insert(row)
     if (error) return { error: error.message }
   }

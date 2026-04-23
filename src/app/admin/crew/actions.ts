@@ -38,7 +38,12 @@ export async function saveCrew(prevState: any, formData: FormData) {
     ? { agency: repAgency, agent: repAgent, manager: repManager }
     : {}
 
-  const row = {
+  // Stamp updated_at explicitly — the legacy WP-migrated `crew_members`
+  // table has no BEFORE UPDATE trigger, so without this the admin "Updated"
+  // column never reflects edits made through this app.
+  const nowIso = new Date().toISOString()
+
+  const row: Record<string, any> = {
     name, slug, visibility,
     emails: emailVal ? [emailVal] : [],
     phones: phoneVal ? [phoneVal] : [],
@@ -53,6 +58,7 @@ export async function saveCrew(prevState: any, formData: FormData) {
     roles,
     known_for: knownFor,
     representation,
+    updated_at: nowIso,
   }
 
   if (!name) return { error: 'Name is required.' }
@@ -61,6 +67,9 @@ export async function saveCrew(prevState: any, formData: FormData) {
     const { error } = await supabase.from('crew_members').update(row).eq('id', id)
     if (error) return { error: error.message }
   } else {
+    // Stamp created_at on INSERT too so brand-new rows have a sane value
+    // even on the legacy schema (no DEFAULT now() guarantee).
+    row.created_at = nowIso
     const { error } = await supabase.from('crew_members').insert(row)
     if (error) return { error: error.message }
   }
