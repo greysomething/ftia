@@ -1258,10 +1258,15 @@ function DigestReportsTab() {
   const [digestData, setDigestData] = useState<{
     sends: Array<{
       week: string
+      week_monday: string
       total: number
       sent: number
       failed: number
       date: string
+      sent_at_iso: string | null
+      status: 'completed' | 'failed' | 'running' | 'unknown'
+      trigger_type: string | null
+      error: string | null
     }>
     totalSent: number
     totalFailed: number
@@ -1278,7 +1283,12 @@ function DigestReportsTab() {
   async function fetchDigestStats() {
     setLoading(true)
     try {
-      const res = await fetch('/api/admin/email?action=digest-stats')
+      // Bypass any HTTP/Next caching so Refresh always reflects the latest
+      // digest_runs state (especially important right after a Monday cron).
+      const res = await fetch('/api/admin/email?action=digest-stats', {
+        cache: 'no-store',
+        headers: { 'cache-control': 'no-cache' },
+      })
       if (res.ok) {
         const data = await res.json()
         setDigestData(data)
@@ -1344,7 +1354,12 @@ function DigestReportsTab() {
       {/* Send History Table */}
       <div className="admin-card p-0 overflow-hidden">
         <div className="px-4 py-3 border-b flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Send History</h2>
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Send History</h2>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Sourced from <code>digest_runs</code> (one row per ISO week — duplicates impossible).
+            </p>
+          </div>
           <button onClick={fetchDigestStats} className="btn-outline text-xs px-3 py-1">
             Refresh
           </button>
@@ -1354,25 +1369,42 @@ function DigestReportsTab() {
             <tr>
               <th>Week</th>
               <th>Date Sent</th>
+              <th className="text-center">Status</th>
               <th className="text-center">Recipients</th>
               <th className="text-center">Sent</th>
               <th className="text-center">Failed</th>
               <th className="text-center">Success Rate</th>
+              <th className="text-center">Trigger</th>
             </tr>
           </thead>
           <tbody>
             {sends.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center text-gray-400 py-10">
-                  No weekly digests sent yet. Send your first digest from the Weekly Lists page.
+                <td colSpan={8} className="text-center text-gray-400 py-10">
+                  No weekly digests recorded yet. Send your first digest from the Weekly Lists page.
                 </td>
               </tr>
-            ) : sends.map((send, i) => {
+            ) : sends.map((send) => {
               const rate = send.total > 0 ? ((send.sent / send.total) * 100).toFixed(1) : '0'
+              const statusCls =
+                send.status === 'completed' ? 'bg-green-100 text-green-700' :
+                send.status === 'failed' ? 'bg-red-100 text-red-700' :
+                send.status === 'running' ? 'bg-blue-100 text-blue-700' :
+                'bg-gray-100 text-gray-600'
               return (
-                <tr key={i}>
+                <tr key={send.week_monday}>
                   <td className="font-medium text-gray-900">{send.week}</td>
                   <td className="text-sm text-gray-500">{send.date}</td>
+                  <td className="text-center">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase ${statusCls}`}>
+                      {send.status}
+                    </span>
+                    {send.error && send.status === 'failed' && (
+                      <div className="text-[11px] text-red-600 mt-1 truncate max-w-[180px] mx-auto" title={send.error}>
+                        {send.error.slice(0, 60)}{send.error.length > 60 ? '…' : ''}
+                      </div>
+                    )}
+                  </td>
                   <td className="text-center text-sm">{send.total.toLocaleString()}</td>
                   <td className="text-center">
                     <span className="text-sm font-medium text-green-600">{send.sent.toLocaleString()}</span>
@@ -1385,13 +1417,20 @@ function DigestReportsTab() {
                     )}
                   </td>
                   <td className="text-center">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      parseFloat(rate) >= 95 ? 'bg-green-100 text-green-700' :
-                      parseFloat(rate) >= 80 ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {rate}%
-                    </span>
+                    {send.status === 'completed' ? (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        parseFloat(rate) >= 95 ? 'bg-green-100 text-green-700' :
+                        parseFloat(rate) >= 80 ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>
+                        {rate}%
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="text-center text-[11px] text-gray-500 capitalize">
+                    {send.trigger_type ?? '—'}
                   </td>
                 </tr>
               )

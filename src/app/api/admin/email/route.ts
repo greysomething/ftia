@@ -206,70 +206,127 @@ export async function GET(req: NextRequest) {
   if (action === 'digest-stats') {
     const supabase = createAdminClient()
 
-    // Fetch all weekly-digest logs (both individual sends and bulk summaries)
-    const allDigestLogs: Array<{
-      recipient: string
-      status: string
-      sent_at: string
-      error_message: string | null
-    }> = []
+    // Source of truth = digest_runs. One row per ISO week (week_monday is the
+    // PK), updated at the end of each run with sent/failed/recipient counts.
+    // Older "bulk:N" entries in email_logs are merged in for any historical
+    // weeks that predate digest_runs (so the table doesn't suddenly look
+    // empty for older history).
+    const { data: runRows } = await supabase
+      .from('digest_runs')
+      .select('week_monday, status, started_at, finished_at, sent_count, failed_count, recipients_count, trigger_type, error_message')
+      .order('week_monday', { ascending: false })
+      .limit(52) // ~1 year of weeks
+
+    type Send = {
+      week: string                                // "Week of Apr 20, 2026"
+      week_monday: string                         // "2026-04-20" — for dedup
+      total: number
+      sent: number
+      failed: number
+      date: string                                // human-formatted send date
+      sent_at_iso: string | null                  // for sorting / KPI
+      status: 'completed' | 'failed' | 'running' | 'unknown'
+      trigger_type: string | null
+      error: string | null
+    }
+
+    const formatWeekLabel = (isoDate: string) => {
+      // isoDate is a YYYY-MM-DD or full ISO; render in UTC to avoid TZ drift
+      // on the date portion.
+      const d = new Date(`${String(isoDate).slice(0, 10)}T00:00:00Z`)
+      return d.toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+      })
+    }
+    const formatSendDate = (iso: string | null) => {
+      if (!iso) return '—'
+      return new Date(iso).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+      })
+    }
+
+    const byWeek = new Map<string, Send>()
+
+    for (const row of runRows ?? []) {
+      const r = row as any
+      const week_monday = String(r.week_monday).slice(0, 10)
+      const weekLabel = formatWeekLabel(week_monday)
+      const sendIso = r.finished_at ?? r.started_at ?? null
+      const status = (r.status as Send['status']) ?? 'unknown'
+
+      byWeek.set(week_monday, {
+        week: `Week of ${weekLabel}`,
+        week_monday,
+        // recipients_count is the total addressed; fall back to sent+failed
+        // so a row mid-update still shows something sensible.
+        total: r.recipients_count ?? ((r.sent_count ?? 0) + (r.failed_count ?? 0)),
+        sent: r.sent_count ?? 0,
+        failed: r.failed_count ?? 0,
+        date: formatSendDate(sendIso),
+        sent_at_iso: sendIso,
+        status,
+        trigger_type: r.trigger_type ?? null,
+        error: r.error_message ?? null,
+      })
+    }
+
+    // Backfill from email_logs `bulk:N` rows for any week not already covered
+    // by digest_runs (legacy data — digest_runs was added later). We dedupe
+    // by ISO-week (Monday in UTC) of the sent_at timestamp.
+    const isoWeekMondayUTC = (d: Date) => {
+      const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+      const day = x.getUTCDay() // 0=Sun
+      const diff = day === 0 ? -6 : 1 - day
+      x.setUTCDate(x.getUTCDate() + diff)
+      return x.toISOString().slice(0, 10)
+    }
 
     let dPage = 0
-    while (true) {
+    while (dPage < 5) { // hard cap so a malformed table can't OOM us
       const { data } = await supabase
         .from('email_logs')
         .select('recipient, status, sent_at, error_message')
         .eq('template_slug', 'weekly-digest')
+        .like('recipient', 'bulk:%')
         .order('sent_at', { ascending: false })
-        .range(dPage * 1000, dPage * 1000 + 999)
+        .range(dPage * 500, dPage * 500 + 499)
       if (!data || data.length === 0) break
-      allDigestLogs.push(...data)
-      if (data.length < 1000) break
-      dPage++
-    }
 
-    // Group bulk sends by week (bulk entries have recipient like "bulk:123")
-    const sends: Array<{
-      week: string
-      total: number
-      sent: number
-      failed: number
-      date: string
-    }> = []
+      for (const log of data) {
+        const wk = isoWeekMondayUTC(new Date(log.sent_at))
+        if (byWeek.has(wk)) continue // digest_runs wins
 
-    let totalSent = 0
-    let totalFailed = 0
-    let lastSentAt: string | null = null
-
-    for (const log of allDigestLogs) {
-      if (log.recipient.startsWith('bulk:')) {
-        const totalRecipients = parseInt(log.recipient.replace('bulk:', ''), 10) || 0
-        const failedCount = log.error_message
-          ? (log.error_message.split(';').length)
-          : 0
-        const sentCount = totalRecipients - failedCount
-
-        const sentDate = new Date(log.sent_at)
-        const weekLabel = sentDate.toLocaleDateString('en-US', {
-          month: 'short', day: 'numeric', year: 'numeric',
-        })
-
-        sends.push({
-          week: `Week of ${weekLabel}`,
+        const totalRecipients = parseInt(String(log.recipient).replace('bulk:', ''), 10) || 0
+        const failedCount = log.error_message ? log.error_message.split(';').length : 0
+        const sentCount = Math.max(0, totalRecipients - failedCount)
+        byWeek.set(wk, {
+          week: `Week of ${formatWeekLabel(wk)}`,
+          week_monday: wk,
           total: totalRecipients,
           sent: sentCount,
           failed: failedCount,
-          date: weekLabel,
+          date: formatSendDate(log.sent_at),
+          sent_at_iso: log.sent_at,
+          status: failedCount === 0 ? 'completed' : 'completed',
+          trigger_type: 'legacy',
+          error: log.error_message ?? null,
         })
-
-        totalSent += sentCount
-        totalFailed += failedCount
-        if (!lastSentAt) lastSentAt = log.sent_at
       }
+      if (data.length < 500) break
+      dPage++
     }
 
-    const avgPerWeek = sends.length > 0
-      ? sends.reduce((s, d) => s + d.total, 0) / sends.length
+    const sends = Array.from(byWeek.values())
+      .sort((a, b) => b.week_monday.localeCompare(a.week_monday))
+
+    const completedSends = sends.filter(s => s.status === 'completed')
+
+    const totalSent = sends.reduce((s, d) => s + d.sent, 0)
+    const totalFailed = sends.reduce((s, d) => s + d.failed, 0)
+    const lastCompleted = completedSends[0]
+    const lastSentAt = lastCompleted?.sent_at_iso ?? null
+    const avgPerWeek = completedSends.length > 0
+      ? completedSends.reduce((s, d) => s + d.total, 0) / completedSends.length
       : 0
 
     return NextResponse.json({
