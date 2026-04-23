@@ -74,12 +74,15 @@ export async function POST(req: NextRequest) {
       resolvedCrewId = existingByName[0].id
     } else {
       const slug = await generateUniqueSlug(supabase, trimmed)
-      // AI suggestions arrive with high confidence already filtered upstream; default
-      // to draft so admin can review the new profile before it goes public.
+      // The admin clicked "Add" to attach this person to a company, so the
+      // act of linking is itself the curation gate. Publish immediately so
+      // the staff card shows up to members on the public company page.
+      // (Drafts only get rendered for admins, which made AI-added staff
+      // silently invisible to members — see commit 23b1032 for the chain.)
       const newRow = {
         name: trimmed,
         slug,
-        visibility: 'draft',
+        visibility: 'publish',
         emails: [],
         phones: [],
         roles: position ? [String(position).trim()] : [],
