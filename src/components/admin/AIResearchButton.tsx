@@ -19,6 +19,13 @@ interface ApplyResult {
   low_confidence: string[]
   needs_review: Record<string, any>
   last_enriched_at: string
+  links_created?: Array<{
+    company_id: number
+    company_name: string
+    crew_id: number
+    crew_name: string
+    via: string
+  }>
 }
 
 export function AIResearchButton({ type, name, recordId, existingData, onResult }: AIResearchButtonProps) {
@@ -161,6 +168,28 @@ export function AIResearchButton({ type, name, recordId, existingData, onResult 
             <p className="text-xs text-gray-600">
               Skipped {applyResult.skipped_existing.length} field{applyResult.skipped_existing.length === 1 ? '' : 's'} where existing data is already present: {applyResult.skipped_existing.join(', ')}
             </p>
+          )}
+
+          {applyResult && applyResult.links_created && applyResult.links_created.length > 0 && (
+            <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded p-2">
+              <svg className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <div className="text-xs text-blue-800">
+                <strong>Auto-linked {applyResult.links_created.length} crew↔company relationship{applyResult.links_created.length === 1 ? '' : 's'}</strong>
+                <ul className="mt-1 space-y-0.5">
+                  {applyResult.links_created.map((l, i) => (
+                    <li key={i}>
+                      {type === 'crew'
+                        ? <>Linked to <strong>{l.company_name}</strong></>
+                        : <>Linked crew <strong>{l.crew_name}</strong></>
+                      }
+                      <span className="text-blue-600"> ({l.via})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           )}
 
           {!recordId && (

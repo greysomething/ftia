@@ -3,6 +3,14 @@ import { requireAdmin } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { parsePhpSerialized } from '@/lib/utils'
+import {
+  collectEmailDomains,
+  extractEmailDomain,
+  extractWebsiteDomain,
+  findCompanyByDomain,
+  findCrewByDomain,
+  linkCrewToCompany,
+} from '@/lib/crew-company-matcher'
 
 export const dynamic = 'force-dynamic'
 
@@ -158,6 +166,59 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 
+  // ── Domain-match auto-linking ─────────────────────────────────────
+  // If the enrichment produced an email or website at a non-generic domain,
+  // auto-link the crew member to the matching company (or vice versa).
+  // Failures here never abort the enrichment — the link is a bonus, not the goal.
+  const linksCreated: Array<{ company_id: number; company_name: string; crew_id: number; crew_name: string; via: string }> = []
+
+  try {
+    if (type === 'crew') {
+      // Crew got a new email → look for a company at that email's domain.
+      const newEmail = Array.isArray(applied.emails) ? applied.emails[0] : null
+      const domain = extractEmailDomain(newEmail)
+      if (domain) {
+        const company = await findCompanyByDomain(supabase, domain)
+        if (company) {
+          const created = await linkCrewToCompany(supabase, company.id, Number(id))
+          if (created) {
+            linksCreated.push({
+              company_id: company.id,
+              company_name: company.title,
+              crew_id: Number(id),
+              crew_name: current.name ?? '',
+              via: `email domain (${domain}) → company ${company.via}`,
+            })
+          }
+        }
+      }
+    } else {
+      // Company got a new website or email → look for crew with matching email domain.
+      const domains = new Set<string>()
+      const websiteDomain = extractWebsiteDomain(applied.website ?? null)
+      if (websiteDomain) domains.add(websiteDomain)
+      for (const d of collectEmailDomains(applied.emails)) domains.add(d)
+
+      for (const domain of domains) {
+        const crewList = await findCrewByDomain(supabase, domain)
+        for (const crew of crewList) {
+          const created = await linkCrewToCompany(supabase, Number(id), crew.id)
+          if (created) {
+            linksCreated.push({
+              company_id: Number(id),
+              company_name: current.title ?? '',
+              crew_id: crew.id,
+              crew_name: crew.name,
+              via: `crew email domain (${domain})`,
+            })
+          }
+        }
+      }
+    }
+  } catch (linkErr: any) {
+    console.warn('[ai-research/apply] auto-link failed (non-fatal):', linkErr?.message ?? linkErr)
+  }
+
   // Refresh the relevant admin pages so the new values render.
   if (type === 'company') {
     revalidatePath('/admin/companies')
@@ -168,6 +229,12 @@ export async function POST(req: NextRequest) {
     revalidatePath(`/admin/crew/${id}/edit`)
     revalidatePath('/production-role')
   }
+  // If we created any links, also bust the counterpart's edit cache so its
+  // staff/companies sidebar reflects the new relationship immediately.
+  for (const l of linksCreated) {
+    revalidatePath(`/admin/companies/${l.company_id}/edit`)
+    revalidatePath(`/admin/crew/${l.crew_id}/edit`)
+  }
 
   return NextResponse.json({
     ok: true,
@@ -177,5 +244,6 @@ export async function POST(req: NextRequest) {
     low_confidence: lowConfidence,
     needs_review: needsReview,
     last_enriched_at: updatePayload.last_enriched_at,
+    links_created: linksCreated,
   })
 }
