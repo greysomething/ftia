@@ -309,7 +309,7 @@ export function CompanyStaffManager({ companyId, initialStaff, aiSuggestedStaff,
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2">
                     <a
-                      href={`/admin/crew/${s.crew_members?.id}`}
+                      href={`/admin/crew/${s.crew_members?.id}/edit`}
                       className="font-medium text-gray-800 hover:text-blue-600"
                       target="_blank"
                     >
