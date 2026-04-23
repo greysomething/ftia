@@ -80,18 +80,27 @@ export async function POST(req: NextRequest) {
 
     // With web_search enabled the response is a sequence of content blocks
     // (text → tool_use → tool_result → text → ...). The final JSON sits in the
-    // LAST text block, not the first.
+    // LAST text block, not the first. Concatenate all text blocks as a fallback
+    // in case the model split the JSON across multiple text turns.
     const textBlocks = (result.content ?? []).filter((b: any) => b.type === 'text' && b.text)
-    const text = textBlocks[textBlocks.length - 1]?.text ?? ''
+    const finalText = textBlocks[textBlocks.length - 1]?.text ?? ''
+    const allText = textBlocks.map((b: any) => b.text).join('\n')
+    const stopReason = result.stop_reason ?? null
 
-    // Extract JSON from response (greedy match the outermost object)
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      console.warn('[ai-research] No JSON in final text block. Raw:', text.slice(0, 500))
-      return NextResponse.json({ error: 'AI did not return valid JSON' }, { status: 500 })
+    const data = extractJson(finalText) ?? extractJson(allText)
+    if (!data) {
+      console.warn('[ai-research] Could not parse JSON.', {
+        stop_reason: stopReason,
+        type, name,
+        finalText_preview: finalText.slice(0, 800),
+      })
+      return NextResponse.json({
+        error: stopReason === 'max_tokens'
+          ? 'AI response was cut off (max_tokens hit). Bump max_tokens in /admin/ai-settings to 4096+.'
+          : `AI did not return valid JSON. stop_reason=${stopReason}. Preview: ${finalText.slice(0, 240)}…`,
+        debug: { stop_reason: stopReason, preview: finalText.slice(0, 1500) },
+      }, { status: 500 })
     }
-
-    const data = JSON.parse(jsonMatch[0])
 
     // Validate all URLs in the AI response
     const { data: validated, validation_report, total_checked, total_valid, total_invalid } = await validateResearchUrls(data)
@@ -104,4 +113,62 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? 'AI research failed' }, { status: 500 })
   }
+}
+
+/**
+ * Robust JSON extraction from a free-form LLM response.
+ *
+ * Handles the common shapes the model returns when web_search is enabled:
+ *  • Plain JSON object
+ *  • JSON wrapped in ```json … ``` fences with prose around it
+ *  • Prose followed by JSON ("Based on my research, here's the data: { … }")
+ *  • Multiple `{…}` snippets in commentary (we prefer the longest valid one)
+ */
+function extractJson(text: string): any | null {
+  if (!text) return null
+
+  // 1. Strip ```json … ``` or ``` … ``` fences
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenceMatch) {
+    try { return JSON.parse(fenceMatch[1].trim()) } catch { /* fall through */ }
+  }
+
+  // 2. Try direct parse
+  try { return JSON.parse(text.trim()) } catch { /* fall through */ }
+
+  // 3. Greedy outermost-object match (works when there's prose around one JSON block)
+  const greedy = text.match(/\{[\s\S]*\}/)
+  if (greedy) {
+    try { return JSON.parse(greedy[0]) } catch { /* fall through */ }
+  }
+
+  // 4. Walk all `{…}` candidates with brace-balancing, keep the longest one that parses
+  const candidates: string[] = []
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '{') continue
+    let depth = 0
+    let inStr = false
+    let esc = false
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j]
+      if (esc) { esc = false; continue }
+      if (ch === '\\') { esc = true; continue }
+      if (ch === '"') { inStr = !inStr; continue }
+      if (inStr) continue
+      if (ch === '{') depth++
+      else if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          candidates.push(text.slice(i, j + 1))
+          break
+        }
+      }
+    }
+  }
+  candidates.sort((a, b) => b.length - a.length)
+  for (const c of candidates) {
+    try { return JSON.parse(c) } catch { /* keep trying */ }
+  }
+
+  return null
 }
