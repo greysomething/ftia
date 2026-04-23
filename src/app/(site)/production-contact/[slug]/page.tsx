@@ -45,7 +45,13 @@ export default async function CompanyPage({ params }: Props) {
 
   const c = company as any
   const categories = c.company_category_links ?? []
+  // Raw company_staff rows (may include rows whose joined crew_members is null
+  // because RLS hid the underlying crew_members row — e.g. drafts viewed by
+  // anon visitors). hasCuratedStaff is the source of truth for "did an admin
+  // curate this list?" so we only fall back to production-derived staff when
+  // it's TRULY empty, not when it's empty-after-RLS-filtering.
   const staff = c.company_staff ?? []
+  const hasCuratedStaff = staff.length > 0
 
   // Parse PHP serialized contact fields
   const addresses = parsePhpSerialized(company.addresses)
@@ -68,7 +74,7 @@ export default async function CompanyPage({ params }: Props) {
   const productionIds = productions.map((p: any) => p.id)
   let derivedStaff: Array<{ crew_id: number; name: string; slug: string; role: string; emails: any; phones: any }> = []
 
-  if (productionIds.length > 0 && staff.length === 0) {
+  if (productionIds.length > 0 && !hasCuratedStaff) {
     // Fetch crew roles for this company's productions (paginate for large companies)
     const batchSize = 50
     const allCrewRoles: any[] = []
@@ -107,8 +113,11 @@ export default async function CompanyPage({ params }: Props) {
     derivedStaff = Array.from(crewMap.values()).sort((a, b) => b.count - a.count)
   }
 
-  // Use derived staff if company_staff is empty
-  const effectiveStaff = staff.length > 0 ? staff : derivedStaff
+  // When admin curation exists, render only the rows whose embedded crew is
+  // visible to the current viewer (drops null-crew rows from RLS). When no
+  // admin curation exists at all, fall back to the production-derived list.
+  const visibleCuratedStaff = staff.filter((s: any) => s.crew_members)
+  const effectiveStaff = hasCuratedStaff ? visibleCuratedStaff : derivedStaff
 
   // Quick stats
   const hasContactInfo = addresses.length > 0 || phones.length > 0 || emails.length > 0

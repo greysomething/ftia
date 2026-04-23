@@ -571,7 +571,7 @@ export async function getCompanyBySlug(slug: string) {
       `
       *,
       company_category_links(is_primary, company_categories(*)),
-      company_staff(*, crew_members!inner(*)),
+      company_staff(*, crew_members(*)),
       media(*)
     `
     )
