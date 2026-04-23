@@ -13,10 +13,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No file provided' }, { status: 400 })
   }
 
+  // Optional folder param so callers (crew profile photos, company logos, etc.)
+  // can keep uploads organized. Restricted to a-z/0-9/dash/underscore so we
+  // never accept path traversal or unexpected nesting.
+  const rawFolder = (formData.get('folder') as string | null)?.trim() ?? 'blog'
+  const folder = /^[a-z0-9_-]+$/i.test(rawFolder) ? rawFolder : 'blog'
+
   const admin = createAdminClient()
 
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png'
-  const fileName = `blog/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+  const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
   const bytes = await file.arrayBuffer()
 
   const { error: uploadError } = await admin.storage

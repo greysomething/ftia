@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'productionlist-wp-local.local',
       },
+      {
+        // Used as the LinkedIn → headshot fallback proxy in src/lib/crew-avatar.ts
+        protocol: 'https',
+        hostname: 'unavatar.io',
+      },
     ],
   },
   // Preserve exact WP permalink structure

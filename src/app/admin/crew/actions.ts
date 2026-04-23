@@ -22,6 +22,7 @@ export async function saveCrew(prevState: any, formData: FormData) {
   const imdbVal = (formData.get('imdb') as string)?.trim() || null
   const instagramVal = (formData.get('instagram') as string)?.trim() || null
   const locationVal = (formData.get('location') as string)?.trim() || null
+  const profileImageUrlVal = (formData.get('profile_image_url') as string)?.trim() || null
 
   // Parse JSON arrays from hidden fields
   let roles: string[] = []
@@ -48,6 +49,7 @@ export async function saveCrew(prevState: any, formData: FormData) {
     content: contentVal,
     imdb: imdbVal,
     location: locationVal,
+    profile_image_url: profileImageUrlVal,
     roles,
     known_for: knownFor,
     representation,

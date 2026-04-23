@@ -56,6 +56,7 @@ const CREW_FIELD_MAP: FieldMap = {
   twitter:   { col: 'twitter' },
   instagram: { col: 'instagram' },
   imdb:      { col: 'imdb' },
+  profile_image_url: { col: 'profile_image_url' },
   bio:       { col: 'content' },
   location:  { col: 'location' },
   // known_for and representation are arrays/objects; auto-apply only when empty

@@ -7,6 +7,8 @@ import { ImageScanner } from '@/components/admin/ImageScanner'
 import { AIResearchButton } from '@/components/admin/AIResearchButton'
 import { LastEnrichedBadge } from '@/components/admin/LastEnrichedBadge'
 import { parsePhpSerialized, formatPhone } from '@/lib/utils'
+import { ProfilePhotoField } from '@/components/admin/ProfilePhotoField'
+import { getCrewProfileImageUrl } from '@/lib/crew-avatar'
 
 interface CrewFormProps {
   crew?: Record<string, any> | null
@@ -371,6 +373,24 @@ export function CrewForm({ crew }: CrewFormProps) {
             Add
           </button>
         </div>
+      </div>
+
+      {/* Profile Photo */}
+      <div className="admin-card space-y-3">
+        <h2 className="font-semibold text-gray-700">Profile Photo</h2>
+        <ProfilePhotoField
+          name="profile_image_url"
+          initialValue={crew?.profile_image_url ?? ''}
+          fallbackUrl={getCrewProfileImageUrl({
+            profile_image_url: null,
+            linkedin: linkedinVal,
+          })}
+          fallbackHint={
+            linkedinVal
+              ? 'Auto-pulled from LinkedIn via unavatar.io. Upload a custom photo to override.'
+              : 'No photo set. Upload one or fill in LinkedIn URL below to auto-pull.'
+          }
+        />
       </div>
 
       {/* Contact & Social */}

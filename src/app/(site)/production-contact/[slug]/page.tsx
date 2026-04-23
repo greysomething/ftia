@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { parsePhpSerialized, formatDate, formatPhone } from '@/lib/utils'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { EditSuggestButton } from '@/components/EditSuggestButton'
+import { CrewAvatar } from '@/components/CrewAvatar'
 import type { ProductionPhase } from '@/types/database'
 
 const PHASE_COLORS: Record<string, string> = {
@@ -390,9 +391,12 @@ export default async function CompanyPage({ params }: Props) {
                       return (
                         <div key={s.id ?? s.crew_id} className="border border-gray-200 rounded-lg p-3.5 hover:border-gray-300 transition-colors group">
                           <div className="flex items-start gap-3">
-                            <div className="w-9 h-9 rounded-full bg-[#1a2332]/10 flex items-center justify-center flex-shrink-0">
-                              <span className="text-sm font-bold text-[#1a2332]">{personName.charAt(0)}</span>
-                            </div>
+                            <CrewAvatar
+                              name={personName}
+                              profileImageUrl={person.profile_image_url}
+                              linkedin={person.linkedin}
+                              size={36}
+                            />
                             <div className="flex-1 min-w-0">
                               {member && personSlug ? (
                                 <Link

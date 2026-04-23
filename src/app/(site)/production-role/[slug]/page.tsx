@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { parsePhpSerialized, formatDate, formatPhone } from '@/lib/utils'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { EditSuggestButton } from '@/components/EditSuggestButton'
+import { CrewAvatar } from '@/components/CrewAvatar'
 
 const PHASE_COLORS: Record<string, string> = {
   'in-pre-production': 'bg-blue-100 text-blue-800',
@@ -108,9 +109,13 @@ export default async function CrewMemberPage({ params }: Props) {
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mt-4">
             <div className="flex items-center gap-4">
               {/* Avatar */}
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#3ea8c8] to-[#2d8ba8] flex items-center justify-center flex-shrink-0 text-2xl font-bold text-white shadow-lg">
-                {person.name.split(' ').map((n: string) => n.charAt(0)).slice(0, 2).join('')}
-              </div>
+              <CrewAvatar
+                name={person.name}
+                profileImageUrl={person.profile_image_url}
+                linkedin={person.linkedin}
+                size={64}
+                className="shadow-lg"
+              />
               <div>
                 <div className="flex items-start gap-3">
                   <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{person.name}</h1>

@@ -277,6 +277,8 @@ export interface CrewMember {
   known_for: string[]
   representation: { agency?: string | null; agent?: string | null; manager?: string | null } | null
   location: string | null
+  /** Optional manually-curated headshot URL. Falls back to unavatar.io via LinkedIn slug at render time. */
+  profile_image_url: string | null
   visibility: PostVisibility
   wp_author_id: number | null
   wp_created_at: string | null
