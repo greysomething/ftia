@@ -233,10 +233,17 @@ export async function extractProductionFromArticle(
 
   // Normalize/clamp
   const sanitize = <T>(v: T | undefined | null): T | null => v ?? null
+  // Strip any HTML tags / entities the model emitted in narrative fields.
+  // The system prompt asks for plain text but Claude sometimes wraps the
+  // description in <p>...</p> or includes &amp; etc. — without this, those
+  // tags end up double-escaped by draft-creator and render as visible
+  // "<p></p>" markers in the production description.
+  const cleanExcerpt = parsed.excerpt ? stripNarrativeHtml(String(parsed.excerpt)) : null
+  const cleanDescription = parsed.description ? stripNarrativeHtml(String(parsed.description)) : null
   return {
     title: String(parsed.title).slice(0, 200),
-    excerpt: parsed.excerpt ? String(parsed.excerpt).slice(0, 800) : null,
-    description: parsed.description ? String(parsed.description).slice(0, 2500) : null,
+    excerpt: cleanExcerpt ? cleanExcerpt.slice(0, 800) : null,
+    description: cleanDescription ? cleanDescription.slice(0, 2500) : null,
     production_phase: parsed.production_phase ?? null,
     production_type_slug: parsed.production_type_slug ?? null,
     production_status_slug: parsed.production_status_slug ?? null,
@@ -251,4 +258,36 @@ export async function extractProductionFromArticle(
     searched_but_not_found: Array.isArray(parsed.searched_but_not_found) ? parsed.searched_but_not_found : [],
     notes: parsed.notes ? String(parsed.notes).slice(0, 1000) : '',
   }
+}
+
+/**
+ * Strip HTML tags and decode common entities from AI-generated narrative
+ * text. The extractor model is instructed to return plain text but
+ * occasionally emits <p>...</p> wrappers, <br> breaks, or escaped entities.
+ * Cleaning here means downstream consumers (draft-creator, audit log,
+ * admin UI) can treat the text as pure prose without further sanitization.
+ *
+ * Block-level tags become paragraph breaks so a description like
+ * "<p>Para one.</p><p>Para two.</p>" still splits correctly when
+ * draft-creator wraps each paragraph in its own <p>.
+ */
+function stripNarrativeHtml(s: string): string {
+  return s
+    // Block-level tags → paragraph break
+    .replace(/<\/(?:p|div|section|article|h[1-6]|li)>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    // Strip every remaining tag
+    .replace(/<[^>]+>/g, '')
+    // Decode the handful of entities Claude commonly emits
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    // Tidy whitespace
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
