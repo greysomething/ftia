@@ -91,11 +91,28 @@ function formatScheduleDate(dateStr: string) {
   return `${formatted} at ${time}`
 }
 
+interface VerifyProgress {
+  processed: number
+  total: number
+  results: Array<{
+    id: number
+    title: string
+    score?: number
+    trashed?: boolean
+    error?: string
+  }>
+  done: boolean
+  errors: number
+  trashed: number
+}
+
 export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkAction, setBulkAction] = useState('')
   const [bulkCategory, setBulkCategory] = useState('')
   const [isPending, startTransition] = useTransition()
+  const [verifyProgress, setVerifyProgress] = useState<VerifyProgress | null>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
   const router = useRouter()
 
   const allSelected = posts.length > 0 && posts.every(p => selected.has(p.id))
@@ -117,6 +134,101 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
     })
   }
 
+  async function runBulkVerify(ids: number[]) {
+    setVerifyError(null)
+    setVerifyProgress({ processed: 0, total: ids.length, results: [], done: false, errors: 0, trashed: 0 })
+
+    let res: Response
+    try {
+      res = await fetch('/api/admin/blog/bulk-verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+    } catch (e: any) {
+      setVerifyError(e?.message ?? 'Network error starting verification.')
+      setVerifyProgress(null)
+      return
+    }
+
+    if (!res.ok) {
+      let msg = `Failed (${res.status}).`
+      try {
+        const j = await res.json()
+        if (j?.error) msg = j.error
+      } catch { /* not JSON */ }
+      setVerifyError(msg)
+      setVerifyProgress(null)
+      return
+    }
+
+    // The endpoint may return a plain JSON "nothing to verify" response or an
+    // SSE stream with progress events. Detect by content-type.
+    const ct = res.headers.get('content-type') || ''
+    if (!ct.includes('text/event-stream')) {
+      try {
+        const j = await res.json()
+        if (j?.message) setVerifyError(j.message)
+      } catch { /* ignore */ }
+      setVerifyProgress(null)
+      return
+    }
+
+    const reader = res.body?.getReader()
+    if (!reader) {
+      setVerifyError('Streaming not supported in this browser.')
+      setVerifyProgress(null)
+      return
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      // SSE frames are separated by blank lines. Each "data: ..." line carries
+      // a single JSON event from the server.
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) {
+        const line = frame.split('\n').find(l => l.startsWith('data: '))
+        if (!line) continue
+        try {
+          const evt = JSON.parse(line.slice(6))
+          setVerifyProgress(prev => {
+            if (!prev) return prev
+            if (evt.type === 'start') {
+              return { ...prev, total: evt.total }
+            }
+            if (evt.type === 'progress') {
+              return {
+                ...prev,
+                processed: evt.processed,
+                total: evt.total,
+                results: [...prev.results, { id: evt.id, title: evt.title, score: evt.score, trashed: evt.trashed }],
+                trashed: prev.trashed + (evt.trashed ? 1 : 0),
+              }
+            }
+            if (evt.type === 'error') {
+              return {
+                ...prev,
+                results: [...prev.results, { id: evt.id, title: evt.title, error: evt.message }],
+                errors: prev.errors + 1,
+              }
+            }
+            if (evt.type === 'done') {
+              return { ...prev, done: true }
+            }
+            return prev
+          })
+        } catch { /* skip malformed frame */ }
+      }
+    }
+
+    router.refresh()
+  }
+
   function handleBulkApply() {
     if (selected.size === 0 || !bulkAction) return
 
@@ -130,6 +242,17 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
     } else if (action === 'remove-category') {
       if (!bulkCategory) return
       value = bulkCategory
+    }
+
+    // Re-verify is its own SSE-streamed flow — split it off before falling
+    // through to the standard bulkBlogAction server action.
+    if (action === 'reverify') {
+      if (!confirm(`Re-verify ${ids.length} post(s)? This calls the AI fact-checker on each one and can take a couple minutes per post.`)) return
+      runBulkVerify(ids).then(() => {
+        setSelected(new Set())
+        setBulkAction('')
+      })
+      return
     }
 
     // Confirm destructive actions
@@ -166,6 +289,7 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
                 <option value="publish">Set Published</option>
                 <option value="draft">Set Draft</option>
                 <option value="trash">Move to Trash</option>
+                <option value="reverify">Re-verify Scores</option>
                 <option value="set-category">Add Category</option>
                 <option value="remove-category">Remove Category</option>
               </>
@@ -197,6 +321,75 @@ export function BlogTable({ posts, isTrash, tab, categories }: BlogTableProps) {
             <span className="text-xs text-gray-400 ml-1">
               {selected.size} selected
             </span>
+          )}
+        </div>
+      )}
+
+      {/* Re-verify progress panel — appears while a bulk verification is running
+          and persists with the per-post results until the admin dismisses it. */}
+      {(verifyProgress || verifyError) && (
+        <div className="mb-4 admin-card p-4 border border-[#3ea8c8]/30 bg-[#3ea8c8]/5">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">
+                {verifyError
+                  ? 'Re-verify failed'
+                  : verifyProgress?.done
+                    ? `Re-verify complete: ${verifyProgress.processed}/${verifyProgress.total} processed`
+                    : `Re-verifying ${verifyProgress?.processed ?? 0}/${verifyProgress?.total ?? 0}…`}
+              </div>
+              {verifyProgress && !verifyError && (
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {verifyProgress.trashed > 0 && <span className="text-red-600 mr-2">{verifyProgress.trashed} trashed</span>}
+                  {verifyProgress.errors > 0 && <span className="text-orange-600">{verifyProgress.errors} errors</span>}
+                </div>
+              )}
+              {verifyError && (
+                <div className="text-xs text-red-600 mt-0.5">{verifyError}</div>
+              )}
+            </div>
+            {(verifyProgress?.done || verifyError) && (
+              <button
+                onClick={() => { setVerifyProgress(null); setVerifyError(null) }}
+                className="text-xs text-gray-400 hover:text-gray-700"
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+          {verifyProgress && verifyProgress.total > 0 && (
+            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-3">
+              <div
+                className="h-full bg-[#3ea8c8] transition-all"
+                style={{ width: `${Math.round((verifyProgress.processed / verifyProgress.total) * 100)}%` }}
+              />
+            </div>
+          )}
+          {verifyProgress && verifyProgress.results.length > 0 && (
+            <div className="max-h-40 overflow-y-auto text-xs">
+              <ul className="space-y-1">
+                {verifyProgress.results.slice().reverse().map((r, i) => (
+                  <li key={`${r.id}-${i}`} className="flex items-center gap-2">
+                    <span className="text-gray-400 w-10 shrink-0">#{r.id}</span>
+                    {r.error ? (
+                      <span className="text-red-600">Error — {r.error}</span>
+                    ) : (
+                      <>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded ${
+                          (r.score ?? 0) >= 85 ? 'bg-green-100 text-green-700'
+                            : (r.score ?? 0) >= 60 ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {r.score}/100
+                        </span>
+                        {r.trashed && <span className="text-[10px] text-red-600 font-medium">trashed</span>}
+                      </>
+                    )}
+                    <span className="text-gray-700 truncate">{r.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}
