@@ -76,7 +76,7 @@ export default async function AutomationsHubPage() {
                     }
                   />
                   <Row
-                    label="Next run"
+                    label={def.next_run_label ?? 'Next run'}
                     value={next ? `${formatDate(next.toISOString())} (${formatRelativeTime(next.toISOString())})` : 'Unknown'}
                   />
                   <Row
@@ -91,6 +91,16 @@ export default async function AutomationsHubPage() {
                     label="Outcome"
                     value={<OutcomePill outcome={status?.last_run_outcome ?? null} />}
                   />
+                  {status?.next_action_at && (
+                    <Row
+                      label={status.next_action_label ?? 'Next action'}
+                      value={
+                        <span className="text-gray-700">
+                          {formatDate(status.next_action_at)} ({formatRelativeTime(status.next_action_at)})
+                        </span>
+                      }
+                    />
+                  )}
                   {status?.last_run_summary && (
                     <Row label="Summary" value={<span className="text-gray-700">{status.last_run_summary}</span>} colSpan={2} />
                   )}

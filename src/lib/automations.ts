@@ -18,6 +18,12 @@ export type AutomationStatus = {
   last_run_outcome: 'ok' | 'skipped' | 'error' | 'partial' | null
   last_run_summary: string | null    // e.g. "5 posts created", "12 fields updated, 1 error"
   next_run_at: string | null         // estimated UTC ISO if computable
+  // Polling crons (e.g. weekly-digest) tick way more often than they actually
+  // do anything. `next_action_at` is the next time we expect a real
+  // user-facing side effect (e.g. an email actually being sent), as opposed
+  // to `next_run_at` which is just the next cron invocation.
+  next_action_at?: string | null     // estimated UTC ISO of the next *action* (vs check)
+  next_action_label?: string         // e.g. "Next email"
   notes?: string                     // optional inline annotation
 }
 
@@ -31,6 +37,10 @@ export interface AutomationDefinition {
   api_path: string                   // /api/cron/...
   dashboard_path?: string            // optional in-app deep link to a settings page
   settings_path?: string             // optional in-app deep link to settings
+  // For polling crons, override "Next run" with a more accurate label
+  // (e.g. "Next check") so admins don't think the timestamp means
+  // "the next time something will happen".
+  next_run_label?: string
   getStatus: (supabase: SupabaseClient) => Promise<AutomationStatus>
 }
 
@@ -78,7 +88,10 @@ async function enrichmentStatus(supabase: SupabaseClient): Promise<AutomationSta
 
 async function weeklyDigestStatus(supabase: SupabaseClient): Promise<AutomationStatus> {
   const { data: settings } = await supabase
-    .from('digest_settings').select('enabled, day_of_week, hour_of_day, timezone').eq('id', 1).maybeSingle()
+    .from('digest_settings')
+    .select('enabled, day_of_week, send_hour, timezone')
+    .eq('id', 1)
+    .maybeSingle()
   const enabled = settings?.enabled !== false
 
   // digest_runs schema: week_monday (date PK), status (running|completed|failed),
@@ -88,8 +101,44 @@ async function weeklyDigestStatus(supabase: SupabaseClient): Promise<AutomationS
     .select('week_monday, status, started_at, finished_at, sent_count, trigger_type')
     .order('week_monday', { ascending: false }).limit(1).maybeSingle()
 
+  // Compute the next *email* timestamp (as opposed to the next cron tick).
+  // The cron polls hourly; the actual email goes out on the configured
+  // day-of-week + hour in the configured timezone, and only once per ISO
+  // week. We have to compute it in the target TZ and then bump by 7 days
+  // if the candidate falls inside an already-sent week.
+  let nextActionAt: string | null = null
+  if (enabled && settings) {
+    const tz = settings.timezone || 'America/Los_Angeles'
+    const dow = settings.day_of_week ?? 1     // default Monday
+    const hour = settings.send_hour ?? 10     // default 10am
+
+    let candidate = nextOccurrenceInTz(dow, hour, tz)
+    if (candidate) {
+      // If we've already sent for the ISO week containing this candidate,
+      // jump forward seven days to next week's send window.
+      const lastSentWeek = lastRun?.status === 'completed'
+        ? String(lastRun.week_monday).slice(0, 10)
+        : null
+      if (lastSentWeek) {
+        let candidateMonday = isoMondayInTz(candidate, tz)
+        if (lastSentWeek >= candidateMonday) {
+          candidate = new Date(candidate.getTime() + 7 * 24 * 60 * 60 * 1000)
+        }
+      }
+      nextActionAt = candidate.toISOString()
+    }
+  }
+
   if (!lastRun) {
-    return { enabled, last_run_at: null, last_run_outcome: null, last_run_summary: 'Never sent', next_run_at: null }
+    return {
+      enabled,
+      last_run_at: null,
+      last_run_outcome: null,
+      last_run_summary: 'Never sent',
+      next_run_at: null,
+      next_action_at: nextActionAt,
+      next_action_label: 'Next email',
+    }
   }
 
   const outcome: AutomationStatus['last_run_outcome'] =
@@ -113,6 +162,8 @@ async function weeklyDigestStatus(supabase: SupabaseClient): Promise<AutomationS
     last_run_outcome: outcome,
     last_run_summary: summary,
     next_run_at: null,
+    next_action_at: nextActionAt,
+    next_action_label: 'Next email',
   }
 }
 
@@ -285,6 +336,7 @@ export const AUTOMATIONS: AutomationDefinition[] = [
     cron_pacific_hint: 'Hourly check · sends on configured day/time',
     api_path: '/api/cron/weekly-digest',
     settings_path: '/admin/email/digest-settings',
+    next_run_label: 'Next check',
     getStatus: weeklyDigestStatus,
   },
   {
@@ -322,6 +374,79 @@ export const AUTOMATIONS: AutomationDefinition[] = [
     getStatus: discoveryExtractStatus,
   },
 ]
+
+// ── Timezone-aware "next occurrence" helpers ────────────────────────────────
+
+const DOW_MAP: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+}
+
+/**
+ * Find the next moment after `from` whose (day-of-week, hour) match `targetDow`
+ * + `targetHour` when interpreted in the IANA timezone `tz`. Returns a UTC
+ * Date ready for ISO serialization.
+ *
+ * The Date object only knows UTC and machine-local time, so we can't just
+ * `setHours(...)` and trust the result for an arbitrary IANA zone. Instead we
+ * walk forward in 1-hour steps and ask Intl.DateTimeFormat to render each
+ * candidate in the target zone — first hit wins. 8 days × 24 hours = 192
+ * iterations max, so this is cheap.
+ */
+function nextOccurrenceInTz(
+  targetDow: number,
+  targetHour: number,
+  tz: string,
+  from: Date = new Date(),
+): Date | null {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+    hour: 'numeric',
+    hour12: false,
+  })
+
+  // Snap to the next top-of-hour so we don't return "now" for a window we're
+  // already inside (e.g. it's 10:42 AM Mon and target is Mon 10:00 — that
+  // window is already past).
+  const cursor = new Date(from)
+  cursor.setUTCMinutes(0, 0, 0)
+  cursor.setUTCHours(cursor.getUTCHours() + 1)
+
+  for (let i = 0; i < 24 * 8; i++) {
+    const parts = fmt.formatToParts(cursor)
+    const wkPart = parts.find(p => p.type === 'weekday')?.value ?? ''
+    const hourPart = parts.find(p => p.type === 'hour')?.value ?? ''
+    const dow = DOW_MAP[wkPart]
+    const hour = parseInt(hourPart, 10)
+    if (dow === targetDow && hour === targetHour) {
+      return new Date(cursor.getTime())
+    }
+    cursor.setUTCHours(cursor.getUTCHours() + 1)
+  }
+  return null
+}
+
+/**
+ * Given any UTC Date and an IANA timezone, return the YYYY-MM-DD of the
+ * Monday of the ISO week that contains that instant *in the target zone*.
+ * Used to compare against `digest_runs.week_monday`, which is a date string.
+ */
+function isoMondayInTz(date: Date, tz: string): string {
+  const wkFmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' })
+  const dateFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  const dow = DOW_MAP[wkFmt.format(date)] ?? 1
+  const ymdParts = dateFmt.formatToParts(date)
+  const y = ymdParts.find(p => p.type === 'year')!.value
+  const m = ymdParts.find(p => p.type === 'month')!.value
+  const d = ymdParts.find(p => p.type === 'day')!.value
+  const daysSinceMonday = dow === 0 ? 6 : dow - 1
+  // Anchor to UTC for the date arithmetic — we only care about Y-M-D, not time.
+  const dt = new Date(`${y}-${m}-${d}T00:00:00Z`)
+  dt.setUTCDate(dt.getUTCDate() - daysSinceMonday)
+  return dt.toISOString().slice(0, 10)
+}
 
 // ── Cron parsing helpers ─────────────────────────────────────────────────────
 
