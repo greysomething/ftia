@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
   const results: any[] = []
   for (const item of items) {
     try {
-      const result = await processQueueItem(item, supabase, apiKey, config, autoPublish)
+      const result: any = await processQueueItem(item, supabase, apiKey, config, autoPublish)
       // Run verification pass for successfully generated posts
       if (verifyEnabled && result.status === 'completed' && result.blogPostId) {
         try {
@@ -346,9 +346,36 @@ async function processQueueItem(
 
     return { productionId, status: 'completed', blogPostId: blogPost.id, title: blogPost.title }
   } catch (err: any) {
+    // Detect transient Anthropic capacity errors (HTTP 529 "overloaded_error",
+    // also occasionally 503 during region failovers). These are not bugs in
+    // our code and the API typically recovers within minutes — re-queue the
+    // item to 'pending' so the next cron firing picks it up automatically.
+    //
+    // Cap retries at MAX_RETRIES so a sustained outage doesn't spin a single
+    // production forever. The queue's `attempts` column was already
+    // incremented at the top of this function, so item.attempts + 1 is the
+    // count we just consumed.
+    const errMsg = String(err?.message ?? '')
+    const isTransient =
+      errMsg.includes('overloaded_error') ||
+      errMsg.includes('AI API error: 529') ||
+      errMsg.includes('AI API error: 503')
+    const MAX_RETRIES = 5
+    const attemptsUsed = (item.attempts ?? 0) + 1
+
+    if (isTransient && attemptsUsed < MAX_RETRIES) {
+      await supabase.from('blog_generation_queue').update({
+        status: 'pending',
+        // Leave completed_at NULL so the queue still treats this as live work
+        started_at: null,
+        error: `Retry ${attemptsUsed}/${MAX_RETRIES} after transient API error: ${errMsg.slice(0, 200)}`,
+      }).eq('id', item.id)
+      return { productionId, status: 'retrying', attempts: attemptsUsed, error: errMsg }
+    }
+
     await supabase.from('blog_generation_queue').update({
-      status: 'failed', error: err.message?.slice(0, 500), completed_at: new Date().toISOString(),
+      status: 'failed', error: errMsg.slice(0, 500), completed_at: new Date().toISOString(),
     }).eq('id', item.id)
-    return { productionId, status: 'failed', error: err.message }
+    return { productionId, status: 'failed', error: errMsg }
   }
 }
