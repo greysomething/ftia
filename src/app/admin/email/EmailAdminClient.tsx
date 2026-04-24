@@ -870,7 +870,7 @@ function AutomationTab() {
             day_of_week: 1,
             send_hour: 10,
             send_minute: 0,
-            timezone: 'America/New_York',
+            timezone: 'America/Los_Angeles',
             min_productions: 40,
             send_to_audience: 'newsletter',
           })
@@ -1274,6 +1274,13 @@ function DigestReportsTab() {
     lastSentAt: string | null
     completedWeeks?: number
     cronEnabled: boolean
+    schedule?: {
+      enabled: boolean
+      day_of_week: number  // 0 = Sunday
+      send_hour: number    // 0–23
+      timezone: string     // e.g. "America/Los_Angeles"
+      min_productions: number
+    } | null
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [reconciling, setReconciling] = useState(false)
@@ -1335,11 +1342,37 @@ function DigestReportsTab() {
     return <div className="admin-card text-center py-10 text-gray-400">Failed to load digest data.</div>
   }
 
-  const { sends, totalSent, totalFailed, avgPerWeek, lastSentAt, completedWeeks } = digestData
+  const { sends, totalSent, totalFailed, avgPerWeek, lastSentAt, completedWeeks, schedule } = digestData
   const deliveryRate = (totalSent + totalFailed) > 0
     ? ((totalSent / (totalSent + totalFailed)) * 100)
     : 0
   const lastSentDate = lastSentAt ? new Date(lastSentAt) : null
+
+  // Render the schedule line directly from digest_settings so the cron
+  // banner can never drift from what the Automation tab actually saved.
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  const formatScheduleHour = (h: number) => {
+    const am = h < 12
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+    return `${h12}:00 ${am ? 'AM' : 'PM'}`
+  }
+  const friendlyTz = (tz: string) => {
+    // Map IANA → short label. Fall back to the raw zone for anything we
+    // haven't mapped, so changes in the dropdown still render readably.
+    const map: Record<string, string> = {
+      'America/Los_Angeles': 'Pacific Time',
+      'America/Denver': 'Mountain Time',
+      'America/Chicago': 'Central Time',
+      'America/New_York': 'Eastern Time',
+      'UTC': 'UTC',
+    }
+    return map[tz] ?? tz
+  }
+  const scheduleLine = schedule
+    ? `every ${DAY_NAMES[schedule.day_of_week] ?? 'Monday'} at ${formatScheduleHour(schedule.send_hour)} ${friendlyTz(schedule.timezone)}`
+    : 'every Monday at 10:00 AM Pacific Time'
+  const minProductionsLine = schedule?.min_productions ?? 40
+  const cronActive = schedule ? schedule.enabled : true
 
   return (
     <>
@@ -1378,19 +1411,24 @@ function DigestReportsTab() {
         </div>
       </div>
 
-      {/* Cron Status */}
+      {/* Cron Status — schedule string comes from digest_settings so this
+          always matches whatever the admin saved on the Automation tab. */}
       <div className="admin-card mb-6">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-gray-900">Automated Cron Schedule</h3>
             <p className="text-sm text-gray-500 mt-1">
-              Weekly digest is scheduled to send every <strong>Monday at 10:00 AM ET</strong> via Vercel Cron.
-              It only fires when the production list has 40+ productions.
+              Weekly digest is scheduled to send <strong>{scheduleLine}</strong> via Vercel Cron.
+              It only fires when the production list has {minProductionsLine}+ productions.
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-            Active
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+              cronActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${cronActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+            {cronActive ? 'Active' : 'Disabled'}
           </span>
         </div>
       </div>

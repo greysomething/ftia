@@ -161,6 +161,36 @@ export function ProductionForm({ production, typeOptions, statusOptions }: Produ
         const data = await res.json()
         setCompanyMatches(data.companyMatches ?? {})
         setCrewMatches(data.crewMatches ?? {})
+
+        // Auto-link unmatched rows when the top candidate clears the
+        // admin-controlled threshold. `autoMatchThreshold` is null when the
+        // feature is disabled — leave existing selections (and unset rows)
+        // alone in that case so the admin still has manual control.
+        const threshold: number | null =
+          typeof data.autoMatchThreshold === 'number' ? data.autoMatchThreshold : null
+
+        if (threshold != null) {
+          if (data.companyMatches) {
+            setCompanies(prev => prev.map(c => {
+              if (c.company_id || !c.inline_name) return c
+              const matches = data.companyMatches[c.inline_name]
+              if (matches?.length && matches[0].score >= threshold) {
+                return { ...c, company_id: matches[0].id }
+              }
+              return c
+            }))
+          }
+          if (data.crewMatches) {
+            setCrew(prev => prev.map(c => {
+              if (c.crew_id || !c.inline_name) return c
+              const matches = data.crewMatches[c.inline_name]
+              if (matches?.length && matches[0].score >= threshold) {
+                return { ...c, crew_id: matches[0].id }
+              }
+              return c
+            }))
+          }
+        }
       }
     } catch {
       // silently fail — matching is optional

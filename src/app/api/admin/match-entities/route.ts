@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { cleanPgArray } from '@/lib/php-unserialize'
+import { getMatchSettings } from '@/lib/match-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,12 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createAdminClient()
+
+  // Load auto-match settings in parallel with the matching work below.
+  // The threshold travels back with the response so all consumers (Scanner,
+  // ProductionForm) auto-accept at the same admin-controlled cutoff. Returns
+  // null when disabled, which clients use as the "never auto-accept" signal.
+  const matchSettingsPromise = getMatchSettings()
 
   // ── Strategy ──
   // Original implementation fetched the entire publish pool (capped at
@@ -63,7 +70,10 @@ export async function POST(req: NextRequest) {
   const companyMatches: Record<string, MatchCandidate[]> = Object.fromEntries(companyEntries)
   const crewMatches: Record<string, MatchCandidate[]> = Object.fromEntries(crewEntries)
 
-  return NextResponse.json({ companyMatches, crewMatches })
+  const matchSettings = await matchSettingsPromise
+  const autoMatchThreshold = matchSettings.enabled ? matchSettings.auto_threshold : null
+
+  return NextResponse.json({ companyMatches, crewMatches, autoMatchThreshold })
 }
 
 // Industry-generic words to skip when building per-token candidate pools.

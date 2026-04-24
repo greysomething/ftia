@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   // The atomic digest_runs lock and the email_logs pre-check in
   // runWeeklyDigestPipeline guarantee we never double-send, regardless
   // of which hour the cron fires on.
-  const tz = settings.timezone || 'America/New_York'
+  const tz = settings.timezone || 'America/Los_Angeles'
   const now = new Date()
 
   const formatter = new Intl.DateTimeFormat('en-US', {

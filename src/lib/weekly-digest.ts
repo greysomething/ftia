@@ -320,7 +320,15 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
 
   emit({ phase: 'audience', message: `Fetching "${audience}" subscribers...` })
 
-  // Fetch subscribers from Supabase (paginated)
+  // Fetch subscribers from Supabase (paginated).
+  //
+  // CRITICAL: .order('id') is required, not cosmetic. Postgres does not
+  // guarantee stable row order across separate `.range()` queries unless an
+  // ORDER BY is supplied — between page calls a hot-update, autovacuum, or
+  // concurrent insert can shift the heap scan order, causing some rows to be
+  // returned twice (the Set collapses them) and others to be skipped entirely.
+  // Without this clause we silently lost ~18% of our active audience on every
+  // weekly send.
   {
     let page = 0
     const PAGE_SIZE = 1000
@@ -329,6 +337,7 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
         .from('newsletter_subscribers')
         .select('email, first_name')
         .eq('unsubscribed', false)
+        .order('id', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
       if (!data || data.length === 0) break
       for (const row of data as any[]) {
@@ -359,6 +368,9 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
 
   const alreadySent = new Set<string>()
   {
+    // Same .order() requirement as the audience fetch above — without a
+    // stable ORDER BY, paginated reads can skip rows and let already-sent
+    // recipients leak through, resulting in duplicate digests.
     let sentPage = 0
     while (true) {
       const { data: sentLogs } = await supabase
@@ -367,6 +379,7 @@ export async function runWeeklyDigestPipeline(opts: PipelineOptions): Promise<Pi
         .eq('template_slug', 'weekly-digest')
         .not('recipient', 'like', 'bulk:%')
         .gte('sent_at', dedupWindowStart.toISOString())
+        .order('id', { ascending: true })
         .range(sentPage * 1000, sentPage * 1000 + 999)
       if (!sentLogs || sentLogs.length === 0) break
       for (const log of sentLogs as any[]) {

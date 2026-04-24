@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { MatchSettingsCard } from './MatchSettingsCard'
 
 interface PromptRow {
   id: number
@@ -175,6 +176,8 @@ export default function AISettingsPage() {
       </div>
 
       <div className="space-y-6">
+        <MatchSettingsCard />
+
         {slugs.map(slug => {
           const d = defaults[slug]
           const row = rows.find(r => r.slug === slug)

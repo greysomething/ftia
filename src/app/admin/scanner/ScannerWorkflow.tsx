@@ -1181,20 +1181,25 @@ export function ScannerWorkflow({ typeOptions, statusOptions }: ScannerWorkflowP
         setCrewMatches(result.crewMatches ?? {})
         setCompanyMatches(result.companyMatches ?? {})
 
-        // Auto-accept high-confidence matches (90%+)
-        if (result.crewMatches) {
+        // Auto-accept high-confidence matches when the admin-controlled
+        // threshold is set. The server returns `autoMatchThreshold: number |
+        // null` — null means the feature is disabled and we never auto-link.
+        const threshold: number | null =
+          typeof result.autoMatchThreshold === 'number' ? result.autoMatchThreshold : null
+
+        if (threshold != null && result.crewMatches) {
           setCrew(prev => prev.map(c => {
             const matches = result.crewMatches[c.inline_name]
-            if (matches?.length && matches[0].score >= 90 && !c.crew_id) {
+            if (matches?.length && matches[0].score >= threshold && !c.crew_id) {
               return { ...c, crew_id: matches[0].id }
             }
             return c
           }))
         }
-        if (result.companyMatches) {
+        if (threshold != null && result.companyMatches) {
           setCompanies(prev => prev.map(c => {
             const matches = result.companyMatches[c.inline_name]
-            if (matches?.length && matches[0].score >= 90 && !c.company_id) {
+            if (matches?.length && matches[0].score >= threshold && !c.company_id) {
               return { ...c, company_id: matches[0].id }
             }
             return c

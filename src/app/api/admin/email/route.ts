@@ -383,6 +383,15 @@ export async function GET(req: NextRequest) {
 
     const avgPerWeek = completedWeeks > 0 ? totalRecipientsAllWeeks / completedWeeks : 0
 
+    // Pull current digest schedule so the "Automated Cron Schedule" banner and
+    // anything else in the UI can render the real configured day/hour/tz
+    // instead of a hardcoded "Monday 10am ET" string.
+    const { data: schedule } = await supabase
+      .from('digest_settings')
+      .select('enabled, day_of_week, send_hour, timezone, min_productions')
+      .eq('id', 1)
+      .single()
+
     return NextResponse.json({
       sends,
       totalSent,
@@ -390,7 +399,16 @@ export async function GET(req: NextRequest) {
       avgPerWeek,
       lastSentAt,
       completedWeeks,
-      cronEnabled: true,
+      cronEnabled: !!schedule?.enabled,
+      schedule: schedule
+        ? {
+            enabled: !!schedule.enabled,
+            day_of_week: schedule.day_of_week,
+            send_hour: schedule.send_hour,
+            timezone: schedule.timezone,
+            min_productions: schedule.min_productions,
+          }
+        : null,
     })
   }
 
@@ -532,7 +550,7 @@ export async function POST(req: NextRequest) {
         day_of_week: day_of_week ?? 1,
         send_hour: send_hour ?? 10,
         send_minute: send_minute ?? 0,
-        timezone: timezone ?? 'America/New_York',
+        timezone: timezone ?? 'America/Los_Angeles',
         min_productions: min_productions ?? 40,
         send_to_audience: send_to_audience ?? 'active_members',
         updated_at: new Date().toISOString(),
