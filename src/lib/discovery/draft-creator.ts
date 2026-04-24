@@ -11,15 +11,6 @@ import type { createAdminClient } from '@/lib/supabase/server'
 import type { ExtractedProduction } from './extractor'
 import { slugify } from '@/lib/utils'
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
 export type CreateDraftResult =
   | { isNew: true;  productionId: number; slug: string }
   | { isNew: false; duplicateOfId: number; existingSlug: string; existingTitle: string }
@@ -37,14 +28,21 @@ export async function createDraftFromExtraction(
   // admins can audit from the Discovery queue).
   // Falls back to the excerpt if the model omitted the description for any
   // reason. The admin can always edit before publishing.
+  //
+  // We store plain text (with \n\n paragraph breaks), NOT HTML. The previous
+  // version wrapped each paragraph in <p>...</p> and HTML-escaped the body —
+  // that rendered fine on the public production page (which uses
+  // dangerouslySetInnerHTML) but the admin edit form is a plain <textarea>,
+  // so admins were seeing raw `<p>O&#39;Driscoll said &quot;...&quot;</p>`
+  // markup in the Description / Notes field. Public renderers now detect
+  // plain-text content via `looksLikeHtml()` and split on `\n\n` themselves.
   const description = ext.description?.trim() || ext.excerpt?.trim() || ''
-  const contentParagraphs = description
+  const contentText = description
     ? description
         .split(/\n{2,}/)
         .map(p => p.trim())
         .filter(Boolean)
-        .map(p => `<p>${escapeHtml(p)}</p>`)
-        .join('')
+        .join('\n\n')
     : ''
 
   // Slug-collision backstop: if the base slug ALREADY exists in the database,
@@ -89,7 +87,7 @@ export async function createDraftFromExtraction(
       title: ext.title,
       slug,
       visibility: 'draft',
-      content: contentParagraphs,
+      content: contentText,
       excerpt: ext.excerpt,
       computed_status: ext.production_phase,
       production_date_start: ext.production_date_start,

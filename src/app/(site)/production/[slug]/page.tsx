@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getProductionBySlug, getProductionSlugs, getProductionSlugRedirect } from '@/lib/queries'
 import { getUser, isMember, isAdmin } from '@/lib/auth'
-import { formatProductionDate, formatLocation, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, formatPhone, maskEmail, maskPhone, parsePhpSerialized } from '@/lib/utils'
+import { formatProductionDate, formatLocation, formatLocations, PHASE_LABELS, PHASE_COLORS, formatDate, formatPhone, maskEmail, maskPhone, parsePhpSerialized, looksLikeHtml } from '@/lib/utils'
 import { MemberGate } from '@/components/MemberGate'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { TrendingSearches } from '@/components/TrendingSearches'
@@ -266,10 +266,20 @@ export default async function ProductionPage({ params }: Props) {
               <div className="white-bg p-6 mb-6">
                 <h2 className="pro-title !mt-0">Project Summary</h2>
                 {production.content ? (
-                  <div
-                    className="prose prose-sm max-w-none text-gray-700 leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: production.content }}
-                  />
+                  looksLikeHtml(production.content) ? (
+                    <div
+                      className="prose prose-sm max-w-none text-gray-700 leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: production.content }}
+                    />
+                  ) : (
+                    <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
+                      {production.content
+                        .split(/\n{2,}/)
+                        .map((para: string) => para.trim())
+                        .filter(Boolean)
+                        .map((para: string, i: number) => <p key={i}>{para}</p>)}
+                    </div>
+                  )
                 ) : production.excerpt ? (
                   <p className="text-sm text-gray-700 leading-relaxed">{production.excerpt}</p>
                 ) : null}

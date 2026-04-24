@@ -1,4 +1,4 @@
-import type { ProductionPhase } from '@/types/database'
+import type { ProductionPhase, PitchFormat, PitchBudgetRange, PitchDevelopmentStage } from '@/types/database'
 
 export function cn(...classes: (string | undefined | null | false)[]) {
   return classes.filter(Boolean).join(' ')
@@ -49,6 +49,32 @@ export const PHASE_COLORS: Record<ProductionPhase, string> = {
   'in-production': 'bg-green-100 text-green-800',
   'in-post-production': 'bg-purple-100 text-purple-800',
   'completed': 'bg-gray-100 text-gray-600',
+}
+
+export const PITCH_FORMAT_LABELS: Record<PitchFormat, string> = {
+  'feature-film': 'Feature Film',
+  'tv-pilot': 'TV Pilot',
+  'tv-series': 'TV Series',
+  'limited-series': 'Limited Series',
+  'documentary': 'Documentary',
+  'short-film': 'Short Film',
+  'book-ip': 'Book / IP',
+}
+
+export const BUDGET_RANGE_LABELS: Record<PitchBudgetRange, string> = {
+  'micro': 'Micro (< $500K)',
+  'low': 'Low ($500K - $5M)',
+  'mid': 'Mid ($5M - $20M)',
+  'high': 'High ($20M - $80M)',
+  'tentpole': 'Tentpole ($80M+)',
+}
+
+export const DEVELOPMENT_STAGE_LABELS: Record<PitchDevelopmentStage, string> = {
+  'concept': 'Concept',
+  'treatment': 'Treatment',
+  'script-in-progress': 'Script In Progress',
+  'script-complete': 'Script Complete',
+  'package-attached': 'Package Attached',
 }
 
 export function slugify(str: string): string {
@@ -305,4 +331,21 @@ export function getPaginationRange(current: number, total: number, perPage: numb
   if (totalPages > 1) range.push(totalPages)
 
   return { range, totalPages }
+}
+
+/**
+ * Heuristic — does this string look like it contains HTML markup?
+ *
+ * Used to decide whether a `productions.content` value should be rendered via
+ * `dangerouslySetInnerHTML` (legacy WordPress imports, hand-edited HTML) or
+ * treated as plain text with `\n\n` paragraph breaks (AI-generated drafts
+ * created by `discovery/draft-creator.ts`).
+ *
+ * The check looks for `<` followed by an alpha char (i.e. an opening tag),
+ * which catches `<p>`, `<a>`, `<strong>`, `<br>`, etc. without false-positiving
+ * on things like "5 < 10".
+ */
+export function looksLikeHtml(s: string | null | undefined): boolean {
+  if (!s) return false
+  return /<[a-zA-Z][\s\S]*?>/.test(s)
 }

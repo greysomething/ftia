@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getProductionsForWeek } from '@/lib/queries'
 import { getUser, isMember } from '@/lib/auth'
-import { formatProductionDate, formatLocations, formatDate, formatPhone, parsePhpSerialized, PHASE_LABELS, PHASE_COLORS } from '@/lib/utils'
+import { formatProductionDate, formatLocations, formatDate, formatPhone, parsePhpSerialized, PHASE_LABELS, PHASE_COLORS, looksLikeHtml } from '@/lib/utils'
 import { MemberGate } from '@/components/MemberGate'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ShareWeeklyDigest } from '@/components/ShareWeeklyDigest'
@@ -220,10 +220,14 @@ export default async function WeeklyListPage({ params }: Props) {
                   {(p.content || p.excerpt) && (
                     <div className="mb-4">
                       {p.content ? (
-                        <div
-                          className="prose prose-sm max-w-none text-gray-600 leading-relaxed line-clamp-3"
-                          dangerouslySetInnerHTML={{ __html: p.content }}
-                        />
+                        looksLikeHtml(p.content) ? (
+                          <div
+                            className="prose prose-sm max-w-none text-gray-600 leading-relaxed line-clamp-3"
+                            dangerouslySetInnerHTML={{ __html: p.content }}
+                          />
+                        ) : (
+                          <p className="text-sm text-gray-600 leading-relaxed line-clamp-3 whitespace-pre-line">{p.content}</p>
+                        )
                       ) : (
                         <p className="text-sm text-gray-600 leading-relaxed line-clamp-3">{p.excerpt}</p>
                       )}
