@@ -5,7 +5,6 @@ import { getUser, isMember } from '@/lib/auth'
 import { gatePublicPitchRoute } from '@/lib/pitch-marketplace-gate'
 import {
   getPitchBySlug,
-  getPitchSlugs,
   getUserFavorites,
   incrementViewCount,
 } from '@/lib/pitch-queries'
@@ -18,10 +17,9 @@ import {
 import { PitchFavoriteButton } from '@/components/PitchFavoriteButton'
 import type { PitchFormat, PitchBudgetRange, PitchDevelopmentStage } from '@/types/database'
 
-export async function generateStaticParams() {
-  const slugs = await getPitchSlugs()
-  return slugs.map((slug: string) => ({ slug }))
-}
+// Pitches are user-generated and change frequently — render on-demand
+// rather than statically generating at build time.
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({
   params,

@@ -128,15 +128,6 @@ export async function getPitchBySlug(slug: string) {
   return data
 }
 
-export async function getPitchSlugs() {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('pitches')
-    .select('slug')
-    .eq('visibility', 'publish')
-  return (data ?? []).map((p: any) => p.slug)
-}
-
 export async function getPitchGenres() {
   const supabase = await createClient()
   const { data } = await supabase
