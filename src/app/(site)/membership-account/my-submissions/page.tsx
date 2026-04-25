@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { requireAuth } from '@/lib/auth'
+import { requireAuth, getUserProfile } from '@/lib/auth'
+import { getFeatureFlags } from '@/lib/feature-flags'
 import { getMySubmissions, getMySubmissionCounts } from '@/lib/submission-queries'
 import { formatDate } from '@/lib/utils'
 
@@ -24,10 +25,24 @@ export default async function MySubmissionsPage({ searchParams }: Props) {
   const { page: pageParam, tab = 'all', submitted } = await searchParams
   const page = Math.max(1, Number(pageParam) || 1)
 
-  const [{ submissions, total, perPage }, counts] = await Promise.all([
+  const [{ submissions, total, perPage }, counts, profile, flags] = await Promise.all([
     getMySubmissions(user.id, { status: tab, page }),
     getMySubmissionCounts(user.id),
+    getUserProfile(),
+    getFeatureFlags(),
   ])
+
+  const isAdmin = profile?.role === 'admin'
+  const showPitches = flags.pitch_marketplace_enabled || isAdmin
+  const sidebarLinks: Array<[string, string]> = [
+    ['My Account', '/membership-account'],
+    ...(showPitches ? ([['My Pitches', '/membership-account/my-pitches']] as Array<[string, string]>) : []),
+    ['My Submissions', '/membership-account/my-submissions'],
+    ['Billing', '/membership-account/membership-billing'],
+    ['Cancel', '/membership-account/membership-cancel'],
+    ['Membership Plans', '/membership-plans'],
+    ['Invoice', '/membership-account/membership-invoice'],
+  ]
 
   const totalPages = Math.ceil(total / perPage)
 
@@ -45,15 +60,7 @@ export default async function MySubmissionsPage({ searchParams }: Props) {
         {/* Sidebar nav */}
         <aside className="lg:w-56 flex-shrink-0">
           <nav className="white-bg p-4 space-y-1">
-            {[
-              ['My Account', '/membership-account'],
-              ['My Pitches', '/membership-account/my-pitches'],
-              ['My Submissions', '/membership-account/my-submissions'],
-              ['Billing', '/membership-account/membership-billing'],
-              ['Cancel', '/membership-account/membership-cancel'],
-              ['Membership Plans', '/membership-plans'],
-              ['Invoice', '/membership-account/membership-invoice'],
-            ].map(([label, href]) => (
+            {sidebarLinks.map(([label, href]) => (
               <Link
                 key={href}
                 href={href}

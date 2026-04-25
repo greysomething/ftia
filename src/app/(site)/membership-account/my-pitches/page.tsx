@@ -1,12 +1,14 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { requireAuth } from '@/lib/auth'
+import { gatePublicPitchRoute } from '@/lib/pitch-marketplace-gate'
 
 export const metadata: Metadata = {
   title: 'My Pitches | Production List',
 }
 
 export default async function MyPitchesPage() {
+  await gatePublicPitchRoute()
   await requireAuth()
 
   return (

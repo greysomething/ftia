@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { requireAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { getFeatureFlags } from '@/lib/feature-flags'
 import { formatDate } from '@/lib/utils'
 import ChangePasswordForm from '@/components/ChangePasswordForm'
 
@@ -13,7 +14,7 @@ export default async function MembershipAccountPage() {
   const user = await requireAuth()
   const supabase = await createClient()
 
-  const [{ data: profile }, { data: membership }, { data: orders }] = await Promise.all([
+  const [{ data: profile }, { data: membership }, { data: orders }, flags] = await Promise.all([
     supabase.from('user_profiles').select('*').eq('id', user.id).single(),
     supabase
       .from('user_memberships')
@@ -28,7 +29,20 @@ export default async function MembershipAccountPage() {
       .eq('user_id', user.id)
       .order('timestamp', { ascending: false })
       .limit(5),
+    getFeatureFlags(),
   ])
+
+  const isAdmin = profile?.role === 'admin'
+  const showPitches = flags.pitch_marketplace_enabled || isAdmin
+  const sidebarLinks: Array<[string, string]> = [
+    ['My Account', '/membership-account'],
+    ...(showPitches ? ([['My Pitches', '/membership-account/my-pitches']] as Array<[string, string]>) : []),
+    ['My Submissions', '/membership-account/my-submissions'],
+    ['Billing', '/membership-account/membership-billing'],
+    ['Cancel', '/membership-account/membership-cancel'],
+    ['Membership Plans', '/membership-plans'],
+    ['Invoice', '/membership-account/membership-invoice'],
+  ]
 
   const isCancelled = membership?.status === 'cancelled'
   const hasActiveMembership =
@@ -41,15 +55,7 @@ export default async function MembershipAccountPage() {
         {/* Sidebar nav */}
         <aside className="lg:w-56 flex-shrink-0">
           <nav className="white-bg p-4 space-y-1">
-            {[
-              ['My Account', '/membership-account'],
-              ['My Pitches', '/membership-account/my-pitches'],
-              ['My Submissions', '/membership-account/my-submissions'],
-              ['Billing', '/membership-account/membership-billing'],
-              ['Cancel', '/membership-account/membership-cancel'],
-              ['Membership Plans', '/membership-plans'],
-              ['Invoice', '/membership-account/membership-invoice'],
-            ].map(([label, href]) => (
+            {sidebarLinks.map(([label, href]) => (
               <Link
                 key={href}
                 href={href}

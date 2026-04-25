@@ -1,13 +1,16 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { getUser, getUserProfile } from '@/lib/auth'
+import { getFeatureFlags } from '@/lib/feature-flags'
 import { MobileMenu } from './MobileMenu'
 import { UserNav } from './UserNav'
 import { JoinButton } from './JoinButton'
 
 export async function Header() {
-  const [user, profile] = await Promise.all([getUser(), getUserProfile()])
+  const [user, profile, flags] = await Promise.all([getUser(), getUserProfile(), getFeatureFlags()])
   const isAdmin = profile?.role === 'admin'
+  // While the marketplace is dark, only admins see the "Pitches" link.
+  const showPitches = flags.pitch_marketplace_enabled || isAdmin
 
   return (
     <header className="bg-charcoal text-white shadow-md sticky top-0 z-50">
@@ -41,6 +44,11 @@ export async function Header() {
             <Link href="/production-role" className="text-white/90 hover:text-accent transition-colors">
               People
             </Link>
+            {showPitches && (
+              <Link href="/pitches" className="text-white/90 hover:text-accent transition-colors">
+                Pitches
+              </Link>
+            )}
             <Link href="/blog" className="text-white/90 hover:text-accent transition-colors">
               News
             </Link>
@@ -57,7 +65,7 @@ export async function Header() {
           {/* Right side */}
           <div className="flex items-center space-x-3">
             {user ? (
-              <UserNav user={user} isAdmin={isAdmin} />
+              <UserNav user={user} isAdmin={isAdmin} showPitches={showPitches} />
             ) : (
               <>
                 <Link href="/login" className="text-sm text-white/90 hover:text-white">
@@ -68,7 +76,7 @@ export async function Header() {
                 </JoinButton>
               </>
             )}
-            <MobileMenu user={user} />
+            <MobileMenu user={user} showPitches={showPitches} />
           </div>
         </div>
       </div>

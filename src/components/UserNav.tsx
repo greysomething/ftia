@@ -9,9 +9,10 @@ import type { User } from '@supabase/supabase-js'
 interface UserNavProps {
   user: User
   isAdmin?: boolean
+  showPitches?: boolean
 }
 
-export function UserNav({ user, isAdmin }: UserNavProps) {
+export function UserNav({ user, isAdmin, showPitches = false }: UserNavProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const router = useRouter()
@@ -84,6 +85,15 @@ export function UserNav({ user, isAdmin }: UserNavProps) {
           >
             Production Database
           </Link>
+          {showPitches && (
+            <Link
+              href="/membership-account/my-pitches"
+              className="block px-4 py-2 text-sm hover:bg-gray-100"
+              onClick={() => setOpen(false)}
+            >
+              My Pitches
+            </Link>
+          )}
           <Link
             href="/membership-account/membership-billing"
             className="block px-4 py-2 text-sm hover:bg-gray-100"

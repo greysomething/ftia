@@ -4,8 +4,17 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
 
-export function MobileMenu({ user }: { user: User | null }) {
+export function MobileMenu({ user, showPitches = false }: { user: User | null; showPitches?: boolean }) {
   const [open, setOpen] = useState(false)
+
+  const navItems: Array<[string, string]> = [
+    ['Productions', '/productions'],
+    ['Companies', '/production-contact'],
+    ['People', '/production-role'],
+    ...(showPitches ? ([['Pitches', '/pitches']] as Array<[string, string]>) : []),
+    ['News', '/blog'],
+    ['About', '/what-is-production-list'],
+  ]
 
   return (
     <div className="md:hidden">
@@ -26,13 +35,7 @@ export function MobileMenu({ user }: { user: User | null }) {
       {open && (
         <div className="absolute top-16 left-0 right-0 bg-primary shadow-lg z-50">
           <nav className="flex flex-col py-2">
-            {[
-              ['Productions', '/productions'],
-              ['Companies', '/production-contact'],
-              ['People', '/production-role'],
-              ['News', '/blog'],
-              ['About', '/what-is-production-list'],
-            ].map(([label, href]) => (
+            {navItems.map(([label, href]) => (
               <Link
                 key={href}
                 href={href}
